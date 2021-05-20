@@ -63,6 +63,8 @@ if __name__ == "__main__":
         ignition_method=ignition_method,
         fuel_build_up=fuel_build_up.data[0, :, 0],
         fapar_diag_pft=fapar_diag_pft.data[0, :, 0],
+        # 1 - old, 2 - new flammability calculation
+        flammability_method=1,
     )
 
     # Compare to the values calculated within JULES.

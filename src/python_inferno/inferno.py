@@ -26,6 +26,7 @@ def inferno_io(
     ignition_method,
     fuel_build_up,
     fapar_diag_pft,
+    flammability_method,
 ):
     # Description:
     #   Called every model timestep, this subroutine updates INFERNO's
@@ -234,6 +235,9 @@ def inferno_io(
                 inferno_fuel[l],
                 inferno_sm[l],
                 inferno_rain[l],
+                fuel_build_up[i, l],
+                fapar_diag_pft[i, l],
+                flammability_method,
             )
 
             burnt_area_ft[i, l] = calc_burnt_area(
@@ -320,7 +324,18 @@ def calc_ignitions(pop_den_l, flash_rate_l, ignition_method):
 
 
 @njit(cache=True)
-def calc_flam(temp_l, rhum_l, fuel_l, sm_l, rain_l):
+def fuel_param(x, factor, centre):
+    # Description:
+    # Takes the value to be transformed, `x`, and applies a simple linear
+    # transformation about `centre` with a slope determined by `factor`
+    # (+ve or -ve). The result is in [0, 1].
+    return max(min(factor * (x - centre), 0.5), -0.5) + 0.5
+
+
+@njit(cache=True)
+def calc_flam(
+    temp_l, rhum_l, fuel_l, sm_l, rain_l, fuel_build_up, fapar, flammability_method
+):
     # Description:
     #   Performs the calculation of the flammibility
     #
@@ -395,9 +410,19 @@ def calc_flam(temp_l, rhum_l, fuel_l, sm_l, rain_l):
     # convert rain rate from kg/m2/s to mm/day
     rain_rate = rain_l * s_in_day
 
-    return max(
-        min(10.0 ** Z_l * f_rhum_l * fuel_l * f_sm_l * np.exp(cr * rain_rate), 1.0), 0.0
-    )
+    if flammability_method == 1:
+        # Old flammability calculation.
+        return max(
+            min(10.0 ** Z_l * f_rhum_l * fuel_l * f_sm_l * np.exp(cr * rain_rate), 1.0),
+            0.0,
+        )
+
+    elif flammability_method == 2:
+        # New calculation, based solely on FAPAR (and derived fuel_build_up).
+        # Convert fuel build-up index to flammability factor.
+        return fuel_param(fuel_build_up, 1.0, 0.4) * fuel_param(fapar, -1.0, 0.4)
+    else:
+        return -1.0
 
 
 @njit(cache=True)
