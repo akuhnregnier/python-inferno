@@ -27,6 +27,10 @@ def inferno_io(
     fuel_build_up,
     fapar_diag_pft,
     flammability_method,
+    fapar_factor,
+    fapar_centre,
+    fuel_build_up_factor,
+    fuel_build_up_centre,
 ):
     # Description:
     #   Called every model timestep, this subroutine updates INFERNO's
@@ -238,6 +242,10 @@ def inferno_io(
                 fuel_build_up[i, l],
                 fapar_diag_pft[i, l],
                 flammability_method,
+                fapar_factor,
+                fapar_centre,
+                fuel_build_up_factor,
+                fuel_build_up_centre,
             )
 
             burnt_area_ft[i, l] = calc_burnt_area(
@@ -334,7 +342,18 @@ def fuel_param(x, factor, centre):
 
 @njit(cache=True)
 def calc_flam(
-    temp_l, rhum_l, fuel_l, sm_l, rain_l, fuel_build_up, fapar, flammability_method
+    temp_l,
+    rhum_l,
+    fuel_l,
+    sm_l,
+    rain_l,
+    fuel_build_up,
+    fapar,
+    flammability_method,
+    fapar_factor,
+    fapar_centre,
+    fuel_build_up_factor,
+    fuel_build_up_centre,
 ):
     # Description:
     #   Performs the calculation of the flammibility
@@ -420,7 +439,9 @@ def calc_flam(
     elif flammability_method == 2:
         # New calculation, based solely on FAPAR (and derived fuel_build_up).
         # Convert fuel build-up index to flammability factor.
-        return fuel_param(fuel_build_up, 1.0, 0.4) * fuel_param(fapar, -1.0, 0.4)
+        return fuel_param(
+            fuel_build_up, fuel_build_up_factor, fuel_build_up_centre
+        ) * fuel_param(fapar, fapar_factor, fapar_centre)
     else:
         return -1.0
 
