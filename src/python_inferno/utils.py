@@ -26,7 +26,7 @@ def temporal_nearest_neighbour_interp(data, factor):
     return data[closest_indices]
 
 
-@njit(cache=True)
+@njit(parallel=True, nogil=True, cache=True)
 def exponential_average(data, alpha):
     """Exponential averaging (temporal shifting).
 
@@ -48,7 +48,7 @@ def exponential_average(data, alpha):
     return weighted
 
 
-@njit(cache=True)
+@njit(parallel=True, nogil=True, cache=True)
 def pre_seed_exponential_average(data, alpha, weighted):
     """Exponential averaging (temporal shifting).
 

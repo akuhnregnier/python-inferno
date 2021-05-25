@@ -4,7 +4,7 @@ from numba import njit
 from .configuration import a_wl, a_ws, b_wl, cmass, eta_sl, l_trait_phys, lma, sigl
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def calc_c_comps_triffid(n, ht):
     # Description:
     #   Calculates carbon contents from vegetation height

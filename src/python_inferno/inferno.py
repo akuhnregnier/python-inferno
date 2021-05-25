@@ -9,7 +9,7 @@ from .qsat_wat import qsat_wat
 # Indexing convention is time, pft, land
 
 
-@njit(cache=True)
+@njit(parallel=True, nogil=True, cache=True)
 def inferno_io(
     t1p5m_tile,
     q1p5m_tile,
@@ -267,7 +267,7 @@ def inferno_io(
 # These are then aggregated in inferno_io_mod into pft arrays.
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def calc_ignitions(pop_den_l, flash_rate_l, ignition_method):
     # Description:
     #     Calculate the number of ignitions/m2/s at each gridpoint
@@ -334,7 +334,7 @@ def calc_ignitions(pop_den_l, flash_rate_l, ignition_method):
         return ignitions_l * tune_MODIS
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def fuel_param(x, factor, centre):
     # Description:
     # Takes the value to be transformed, `x`, and applies a simple linear
@@ -343,7 +343,7 @@ def fuel_param(x, factor, centre):
     return 1.0 / (1.0 + np.exp(-factor * (x - centre)))
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def calc_flam(
     temp_l,
     rhum_l,
@@ -453,7 +453,7 @@ def calc_flam(
         return -1.0
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def calc_burnt_area(flam_l, ignitions_l, avg_ba_i):
     # Description:
     #    Calculate the burnt area

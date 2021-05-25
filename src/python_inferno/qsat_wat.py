@@ -5,7 +5,7 @@ from numba import njit
 from .qsat_data import es_wat as es
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def qsat_wat(t, p):
     """
     Calculates saturation vapour pressure
