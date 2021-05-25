@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import (
     cube_1d_to_2d,
+    get_1d_data_cube,
     get_1d_to_2d_indices,
     n96e_lats,
     n96e_lons,
@@ -83,67 +84,9 @@ def plot_comparison(jules_ba_gb, python_ba_gb, label="BA", title="", mask_cube=N
     ax.set_title("Python BA with new Flamm. & Obs FAPAR")
 
 
-def get_1d_data_cube(data, lats, lons):
-    # 1D JULES land points only.
-    assert data.shape == (7771,)
-    cube = iris.cube.Cube(data[np.newaxis])
-    cube.add_aux_coord(lats, data_dims=(0, 1))
-    cube.add_aux_coord(lons, data_dims=(0, 1))
-    return cube[0]
-
-
 def run_inferno(
-    t1p5m_tile,
-    q1p5m_tile,
-    pstar,
-    sthu_soilt,
-    frac,
-    c_soil_dpm_gb,
-    c_soil_rpm_gb,
-    canht,
-    ls_rain,
-    con_rain,
-    pop_den,
-    flash_rate,
-    ignition_method,
-    fuel_build_up,
-    fapar_diag_pft,
-    fapar_factor,
-    fapar_centre,
-    fuel_build_up_factor,
-    fuel_build_up_centre,
-    temperature_factor,
-    temperature_centre,
-    jules_lats,
-    jules_lons,
-    obs_fapar_1d,
-    obs_fuel_build_up_1d,
+    jules_lats, jules_lons, obs_fapar_1d, obs_fuel_build_up_1d, **inferno_kwargs
 ):
-    inferno_kwargs = dict(
-        t1p5m_tile=t1p5m_tile,
-        q1p5m_tile=q1p5m_tile,
-        pstar=pstar,
-        sthu_soilt=sthu_soilt,
-        frac=frac,
-        c_soil_dpm_gb=c_soil_dpm_gb,
-        c_soil_rpm_gb=c_soil_rpm_gb,
-        canht=canht,
-        ls_rain=ls_rain,
-        con_rain=con_rain,
-        # Not used for ignition mode 1.
-        pop_den=pop_den,
-        flash_rate=flash_rate,
-        ignition_method=ignition_method,
-        fuel_build_up=fuel_build_up,
-        fapar_diag_pft=fapar_diag_pft,
-        fapar_factor=fapar_factor,
-        fapar_centre=fapar_centre,
-        fuel_build_up_factor=fuel_build_up_factor,
-        fuel_build_up_centre=fuel_build_up_centre,
-        temperature_factor=temperature_factor,
-        temperature_centre=temperature_centre,
-    )
-
     python_ba_gb = {
         "normal": inferno_io(
             **inferno_kwargs,
@@ -158,10 +101,10 @@ def run_inferno(
     }
 
     inferno_kwargs["fuel_build_up"] = np.repeat(
-        obs_fuel_build_up_1d[ti][np.newaxis], repeats=13, axis=0
+        obs_fuel_build_up_1d[np.newaxis], repeats=13, axis=0
     )
     inferno_kwargs["fapar_diag_pft"] = np.repeat(
-        obs_fapar_1d[ti][np.newaxis], repeats=13, axis=0
+        obs_fapar_1d[np.newaxis], repeats=13, axis=0
     )
 
     python_ba_gb["new_obs_fapar"] = inferno_io(
@@ -179,7 +122,7 @@ def run_inferno(
     return python_ba_gb
 
 
-if __name__ == "__main__":
+def main():
     # Load data.
     cubes = iris.load(
         str(
@@ -210,9 +153,9 @@ if __name__ == "__main__":
         / darray.sum(frac.core_data()[:, :13], axis=1)
     )[:, 0]
 
-    jules_lat_coord = pstar.coord("latitude")
+    pstar.coord("latitude")
     jules_lats = pstar.coord("latitude")
-    jules_lon_coord = pstar.coord("longitude")
+    pstar.coord("longitude")
     jules_lons = pstar.coord("longitude")
 
     data_time_coord = fapar_diag_pft.coord("time")
@@ -221,7 +164,7 @@ if __name__ == "__main__":
     gfed = GFEDv4()
     gfed.limit_months(data_time_coord.cell(0).point, data_time_coord.cell(-1).point)
     gfed.regrid(new_latitudes=n96e_lats, new_longitudes=n96e_lons, area_weighted=True)
-    gfed_ba = gfed.cube
+    gfed.cube
 
     # Load population density (`pop_den`).
     # hyde_popd = Datasets(Ext_HYDE()).select_variables("popd").dataset
@@ -304,8 +247,8 @@ if __name__ == "__main__":
         temperature_centre=300,
         jules_lats=jules_lats,
         jules_lons=jules_lons,
-        obs_fapar_1d=obs_fapar_1d,
-        obs_fuel_build_up_1d=obs_fuel_build_up_1d,
+        obs_fapar_1d=obs_fapar_1d[ti],
+        obs_fuel_build_up_1d=obs_fuel_build_up_1d[ti],
     )
 
     if 0:
@@ -349,3 +292,7 @@ if __name__ == "__main__":
             ),
         )
         plt.show()
+
+
+if __name__ == "__main__":
+    main()
