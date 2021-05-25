@@ -279,43 +279,52 @@ if __name__ == "__main__":
 
     ti = 0
 
+    python_inferno_kwargs = dict(
+        t1p5m_tile=t1p5m_tile[ti, :, 0].data,
+        q1p5m_tile=q1p5m_tile[ti, :, 0].data,
+        pstar=pstar[ti, 0].data,
+        sthu_soilt=sthu_soilt[ti].data,
+        frac=frac[ti, :, 0].data,
+        c_soil_dpm_gb=c_soil_dpm_gb[ti, 0].data,
+        c_soil_rpm_gb=c_soil_rpm_gb[ti, 0].data,
+        canht=canht[ti, :, 0].data,
+        ls_rain=ls_rain[ti, 0].data,
+        con_rain=con_rain[ti, 0].data,
+        # Not used for ignition mode 1.
+        pop_den=np.zeros((land_pts,)) - 1,
+        flash_rate=np.zeros((land_pts,)) - 1,
+        ignition_method=ignition_method,
+        fuel_build_up=fuel_build_up[ti, :, 0].data,
+        fapar_diag_pft=fapar_diag_pft[ti, :, 0].data,
+        fapar_factor=-11,
+        fapar_centre=0.4,
+        fuel_build_up_factor=11,
+        fuel_build_up_centre=0.4,
+        temperature_factor=0.15,
+        temperature_centre=300,
+        jules_lats=jules_lats,
+        jules_lons=jules_lons,
+        obs_fapar_1d=obs_fapar_1d,
+        obs_fuel_build_up_1d=obs_fuel_build_up_1d,
+    )
+
     if 0:
         # Optimisation.
-        fapar_factors = np.linspace(-1, -2, 10)
-        fuel_build_up_factors = np.linspace(1, 2, 10)
+        fapar_factors = np.linspace(-1, -20, 10)
+        fuel_build_up_factors = np.linspace(10, 20, 10)
         results = np.zeros(
             (fapar_factors.shape[0], fuel_build_up_factors.shape[0]), dtype=np.float64
         )
         for i, fapar_factor in enumerate(tqdm(fapar_factors)):
             for j, fuel_build_up_factor in enumerate(fuel_build_up_factors):
-                python_ba_gb = run_inferno(
-                    t1p5m_tile=t1p5m_tile[ti, :, 0].data,
-                    q1p5m_tile=q1p5m_tile[ti, :, 0].data,
-                    pstar=pstar[ti, 0].data,
-                    sthu_soilt=sthu_soilt[ti].data,
-                    frac=frac[ti, :, 0].data,
-                    c_soil_dpm_gb=c_soil_dpm_gb[ti, 0].data,
-                    c_soil_rpm_gb=c_soil_rpm_gb[ti, 0].data,
-                    canht=canht[ti, :, 0].data,
-                    ls_rain=ls_rain[ti, 0].data,
-                    con_rain=con_rain[ti, 0].data,
-                    # Not used for ignition mode 1.
-                    pop_den=np.zeros((land_pts,)) - 1,
-                    flash_rate=np.zeros((land_pts,)) - 1,
-                    ignition_method=ignition_method,
-                    fuel_build_up=fuel_build_up[ti, :, 0].data,
-                    fapar_diag_pft=fapar_diag_pft[ti, :, 0].data,
-                    fapar_factor=fapar_factor,
-                    fapar_centre=0.4,
-                    fuel_build_up_factor=fuel_build_up_factor,
-                    fuel_build_up_centre=0.4,
-                    temperature_factor=0.03,
-                    temperature_centre=300,
-                    jules_lats=jules_lats,
-                    jules_lons=jules_lons,
-                    obs_fapar_1d=obs_fapar_1d,
-                    obs_fuel_build_up_1d=obs_fuel_build_up_1d,
+                mod_python_inferno_kwargs = python_inferno_kwargs.copy()
+                mod_python_inferno_kwargs.update(
+                    dict(
+                        fapar_factor=fapar_factor,
+                        fuel_build_up_factor=fuel_build_up_factor,
+                    )
                 )
+                python_ba_gb = run_inferno(**mod_python_inferno_kwargs)
 
                 if len(np.unique(python_ba_gb["new"].data)) == 1:
                     results[i, j] += 0.25
@@ -328,39 +337,10 @@ if __name__ == "__main__":
         plt.xlabel("FAPAR")
         plt.ylabel("fuel build up")
         plt.colorbar()
-
+        plt.show()
     if 1:
         # Comparison plotting.
-        python_ba_gb = run_inferno(
-            t1p5m_tile=t1p5m_tile[ti, :, 0].data,
-            q1p5m_tile=q1p5m_tile[ti, :, 0].data,
-            pstar=pstar[ti, 0].data,
-            sthu_soilt=sthu_soilt[ti].data,
-            frac=frac[ti, :, 0].data,
-            c_soil_dpm_gb=c_soil_dpm_gb[ti, 0].data,
-            c_soil_rpm_gb=c_soil_rpm_gb[ti, 0].data,
-            canht=canht[ti, :, 0].data,
-            ls_rain=ls_rain[ti, 0].data,
-            con_rain=con_rain[ti, 0].data,
-            # Not used for ignition mode 1.
-            pop_den=np.zeros((land_pts,)) - 1,
-            flash_rate=np.zeros((land_pts,)) - 1,
-            ignition_method=ignition_method,
-            fuel_build_up=fuel_build_up[ti, :, 0].data,
-            fapar_diag_pft=fapar_diag_pft[ti, :, 0].data,
-            fapar_factor=-2,
-            # fapar_factor=-1.0,
-            fapar_centre=0.4,
-            fuel_build_up_factor=1.2,
-            # fuel_build_up_factor=1.0,
-            fuel_build_up_centre=0.4,
-            temperature_factor=0.03,
-            temperature_centre=300,
-            jules_lats=jules_lats,
-            jules_lons=jules_lons,
-            obs_fapar_1d=obs_fapar_1d,
-            obs_fuel_build_up_1d=obs_fuel_build_up_1d,
-        )
+        python_ba_gb = run_inferno(**python_inferno_kwargs)
         plot_comparison(
             jules_ba_gb=cubes.extract_cube("burnt_area_gb")[ti, 0],
             python_ba_gb=python_ba_gb,

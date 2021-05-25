@@ -340,7 +340,7 @@ def fuel_param(x, factor, centre):
     # Takes the value to be transformed, `x`, and applies a simple linear
     # transformation about `centre` with a slope determined by `factor`
     # (+ve or -ve). The result is in [0, 1].
-    return max(min(factor * (x - centre), 0.5), -0.5) + 0.5
+    return 1.0 / (1.0 + np.exp(-factor * (x - centre)))
 
 
 @njit(cache=True)
