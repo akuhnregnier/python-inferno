@@ -64,11 +64,14 @@ def plot_comparison(jules_ba_gb, python_ba_gb, label="BA", title="", mask_cube=N
     ax.set_title("Python BA")
 
     ax = axes[1, 0]
-    cube_plotting(
-        add_mask(cube_1d_to_2d(python_ba_gb["new"])),
-        ax=ax,
-        **common_kwargs,
-    )
+    try:
+        cube_plotting(
+            add_mask(cube_1d_to_2d(python_ba_gb["new"])),
+            ax=ax,
+            **common_kwargs,
+        )
+    except AssertionError:
+        print("Could not plot 'new'.")
     ax.set_title("Python BA with new Flamm.")
 
     ax = axes[1, 1]
@@ -109,6 +112,8 @@ def run_inferno(
     fapar_centre,
     fuel_build_up_factor,
     fuel_build_up_centre,
+    temperature_factor,
+    temperature_centre,
     jules_lats,
     jules_lons,
     obs_fapar_1d,
@@ -135,6 +140,8 @@ def run_inferno(
         fapar_centre=fapar_centre,
         fuel_build_up_factor=fuel_build_up_factor,
         fuel_build_up_centre=fuel_build_up_centre,
+        temperature_factor=temperature_factor,
+        temperature_centre=temperature_centre,
     )
 
     python_ba_gb = {
@@ -302,6 +309,8 @@ if __name__ == "__main__":
                     fapar_centre=0.4,
                     fuel_build_up_factor=fuel_build_up_factor,
                     fuel_build_up_centre=0.4,
+                    temperature_factor=0.03,
+                    temperature_centre=300,
                     jules_lats=jules_lats,
                     jules_lons=jules_lons,
                     obs_fapar_1d=obs_fapar_1d,
@@ -345,6 +354,8 @@ if __name__ == "__main__":
             fuel_build_up_factor=1.2,
             # fuel_build_up_factor=1.0,
             fuel_build_up_centre=0.4,
+            temperature_factor=0.03,
+            temperature_centre=300,
             jules_lats=jules_lats,
             jules_lons=jules_lons,
             obs_fapar_1d=obs_fapar_1d,
@@ -357,3 +368,4 @@ if __name__ == "__main__":
                 mask_obs_fapar_1d[ti], lats=jules_lats, lons=jules_lons
             ),
         )
+        plt.show()

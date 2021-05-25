@@ -31,6 +31,8 @@ def inferno_io(
     fapar_centre,
     fuel_build_up_factor,
     fuel_build_up_centre,
+    temperature_factor,
+    temperature_centre,
 ):
     # Description:
     #   Called every model timestep, this subroutine updates INFERNO's
@@ -218,7 +220,6 @@ def inferno_io(
             # Get the tile relative humidity using saturation routine
             qsat[l] = qsat_wat(inferno_temp[l], pstar[l])
 
-            # XXX: Is this bracket pair correct?
             inferno_rhum[l] = (q1p5m_tile[i, l] / qsat[l]) * 100.0
 
             # Relative Humidity should be constrained to 0-100
@@ -246,6 +247,8 @@ def inferno_io(
                 fapar_centre,
                 fuel_build_up_factor,
                 fuel_build_up_centre,
+                temperature_factor,
+                temperature_centre,
             )
 
             burnt_area_ft[i, l] = calc_burnt_area(
@@ -354,6 +357,8 @@ def calc_flam(
     fapar_centre,
     fuel_build_up_factor,
     fuel_build_up_centre,
+    temperature_factor,
+    temperature_centre,
 ):
     # Description:
     #   Performs the calculation of the flammibility
@@ -439,9 +444,11 @@ def calc_flam(
     elif flammability_method == 2:
         # New calculation, based solely on FAPAR (and derived fuel_build_up).
         # Convert fuel build-up index to flammability factor.
-        return fuel_param(
-            fuel_build_up, fuel_build_up_factor, fuel_build_up_centre
-        ) * fuel_param(fapar, fapar_factor, fapar_centre)
+        return (
+            fuel_param(temp_l, temperature_factor, temperature_centre)
+            * fuel_param(fuel_build_up, fuel_build_up_factor, fuel_build_up_centre)
+            * fuel_param(fapar, fapar_factor, fapar_centre)
+        )
     else:
         return -1.0
 
