@@ -14,7 +14,7 @@ def temporal_nearest_neighbour_interp(data, factor):
             determines the number of output samples.
 
     """
-    data = np.asarray(data)
+    data = np.ma.asarray(data)
     output_samples = data.shape[0] * factor
     closest_indices = np.clip(
         np.rint(
@@ -26,19 +26,8 @@ def temporal_nearest_neighbour_interp(data, factor):
     return data[closest_indices]
 
 
-@njit(parallel=True, nogil=True, cache=True)
-def exponential_average(data, alpha):
-    """Exponential averaging (temporal shifting).
-
-    Args:
-        data (array-like): Data to be averaged.
-        alpha (float): Alpha parameter.
-
-    Returns:
-        array-like: The averaged data.
-
-    """
-    weighted = np.zeros_like(data, dtype=np.float64)
+@njit(nogil=True, cache=True)
+def _exponential_average(data, alpha, weighted):
     N = data.shape[0]
     for i, sample in enumerate(data):
         temp = weighted[(i - 1) % N]
@@ -48,42 +37,36 @@ def exponential_average(data, alpha):
     return weighted
 
 
-@njit(parallel=True, nogil=True, cache=True)
-def pre_seed_exponential_average(data, alpha, weighted):
+def exponential_average(data, alpha, repetitions=1):
     """Exponential averaging (temporal shifting).
 
     Args:
         data (array-like): Data to be averaged.
         alpha (float): Alpha parameter.
-        weighted (array-like): Array with the same shape as `data`. This can be used
-            to seed the averaging.
+        repetitions (int): The number of repetitions. If `repetitions > 1`, this
+            allows for repeated exponential averaging to approach convergence.
 
     Returns:
         array-like: The averaged data.
 
     """
-    N = data.shape[0]
-    for i, sample in enumerate(data):
-        temp = weighted[(i - 1) % N]
-        temp *= 1 - alpha
-        temp += alpha * sample
-        weighted[i] = temp
-    return weighted
+    if not isinstance(data, np.ma.core.MaskedArray):
+        data = np.ma.asarray(data)
 
+    weighted = np.ma.MaskedArray(
+        np.zeros_like(data, dtype=np.float64),
+        mask=np.repeat(np.any(data.mask, axis=0)[None], data.shape[0], axis=0),
+    )
+    if np.all(weighted.mask):
+        # No need to carry out averaging.
+        return np.ma.MaskedArray(data, mask=True)
+    # Only process those elements which are unmasked.
 
-def repeated_exponential_average(data, alpha, repetitions=10):
-    """Repeated exponential averaging.
-
-    Args:
-        data (array-like): Data to be averaged.
-        alpha (float): Alpha parameter.
-        repetitions (int): The number of repetitions.
-
-    Returns:
-        array-like: The averaged data after `repetitions` rounds of averaging.
-
-    """
-    weighted = np.zeros_like(data, dtype=np.float64)
+    output = np.ma.masked_all(data.shape, dtype=np.float64)
+    sel = ~np.ma.getmaskarray(weighted)
+    selected = data.data[sel]
+    weighted = np.zeros_like(selected, dtype=np.float64)
     for i in range(repetitions):
-        weighted = pre_seed_exponential_average(data, alpha, weighted=weighted)
-    return weighted
+        weighted = _exponential_average(selected, alpha, weighted=weighted)
+    output[sel] = weighted
+    return output
