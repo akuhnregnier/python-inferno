@@ -33,6 +33,10 @@ def inferno_io(
     fuel_build_up_centre,
     temperature_factor,
     temperature_centre,
+    dryness_method,
+    dry_days,
+    dry_day_factor,
+    dry_day_centre,
 ):
     # Description:
     #   Called every model timestep, this subroutine updates INFERNO's
@@ -242,13 +246,17 @@ def inferno_io(
                 inferno_rain[l],
                 fuel_build_up[i, l],
                 fapar_diag_pft[i, l],
+                dry_days[l],
                 flammability_method,
+                dryness_method,
                 fapar_factor,
                 fapar_centre,
                 fuel_build_up_factor,
                 fuel_build_up_centre,
                 temperature_factor,
                 temperature_centre,
+                dry_day_factor,
+                dry_day_centre,
             )
 
             burnt_area_ft[i, l] = calc_burnt_area(
@@ -352,13 +360,17 @@ def calc_flam(
     rain_l,
     fuel_build_up,
     fapar,
+    dry_days,
     flammability_method,
+    dryness_method,
     fapar_factor,
     fapar_centre,
     fuel_build_up_factor,
     fuel_build_up_centre,
     temperature_factor,
     temperature_centre,
+    dry_day_factor,
+    dry_day_centre,
 ):
     # Description:
     #   Performs the calculation of the flammibility
@@ -442,15 +454,22 @@ def calc_flam(
         )
 
     elif flammability_method == 2:
-        # New calculation, based solely on FAPAR (and derived fuel_build_up).
+        # New calculation, based on FAPAR (and derived fuel_build_up).
+
+        if dryness_method == 1:
+            dry_factor = fuel_param(dry_days, dry_day_factor, dry_day_centre)
+        else:
+            raise ValueError("Unknown 'dryness_method'.")
+
         # Convert fuel build-up index to flammability factor.
         return (
-            fuel_param(temp_l, temperature_factor, temperature_centre)
+            dry_factor
+            * fuel_param(temp_l, temperature_factor, temperature_centre)
             * fuel_param(fuel_build_up, fuel_build_up_factor, fuel_build_up_centre)
             * fuel_param(fapar, fapar_factor, fapar_centre)
         )
     else:
-        return -1.0
+        raise ValueError("Unknown 'flammability_method'.")
 
 
 @njit(nogil=True, cache=True)
