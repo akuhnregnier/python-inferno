@@ -7,12 +7,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Memory
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
-from numba import njit
+from sklearn.metrics import r2_score
 from wildfires.analysis import cube_plotting
 
-from python_inferno import inferno_io
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
+from python_inferno.multi_timestep_inferno import multi_timestep_inferno
+from python_inferno.precip_dry_day import calculate_inferno_dry_days
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
@@ -84,84 +85,6 @@ def plot_comparison(jules_ba_gb, python_ba_gb, obs_ba, label="BA", title=""):
     fig.subplots_adjust(wspace=0.045, hspace=-0.2)
 
 
-@njit(parallel=True, nogil=True, cache=True)
-def multi_timestep_inferno(
-    *,
-    t1p5m_tile,
-    q1p5m_tile,
-    pstar,
-    sthu_soilt,
-    frac,
-    c_soil_dpm_gb,
-    c_soil_rpm_gb,
-    canht,
-    ls_rain,
-    con_rain,
-    pop_den,
-    flash_rate,
-    ignition_method,
-    fuel_build_up,
-    fapar_diag_pft,
-    fapar_factor,
-    fapar_centre,
-    fuel_build_up_factor,
-    fuel_build_up_centre,
-    temperature_factor,
-    temperature_centre,
-    flammability_method,
-):
-    # Ensure consistency of the time dimension.
-    if not (
-        t1p5m_tile.shape[0]
-        == q1p5m_tile.shape[0]
-        == pstar.shape[0]
-        == sthu_soilt.shape[0]
-        == frac.shape[0]
-        == c_soil_dpm_gb.shape[0]
-        == c_soil_rpm_gb.shape[0]
-        == canht.shape[0]
-        == ls_rain.shape[0]
-        == con_rain.shape[0]
-        == fuel_build_up.shape[0]
-        == fapar_diag_pft.shape[0]
-    ):
-        raise ValueError("All arrays need to have the same time dimension.")
-
-    # Store the output BA (averaged over PFTs).
-    ba = np.zeros_like(pstar)
-
-    land_pts_dummy = np.zeros((land_pts,)) - 1
-
-    for ti in range(fapar_diag_pft.shape[0]):
-        # Retrieve the individual time slices.
-        ba[ti] = inferno_io(
-            t1p5m_tile=t1p5m_tile[ti],
-            q1p5m_tile=q1p5m_tile[ti],
-            pstar=pstar[ti],
-            sthu_soilt=sthu_soilt[ti],
-            frac=frac[ti],
-            c_soil_dpm_gb=c_soil_dpm_gb[ti],
-            c_soil_rpm_gb=c_soil_rpm_gb[ti],
-            canht=canht[ti],
-            ls_rain=ls_rain[ti],
-            con_rain=con_rain[ti],
-            # Not used for ignition mode 1.
-            pop_den=land_pts_dummy,
-            flash_rate=land_pts_dummy,
-            ignition_method=ignition_method,
-            fuel_build_up=fuel_build_up[ti],
-            fapar_diag_pft=fapar_diag_pft[ti],
-            fapar_factor=fapar_factor,
-            fapar_centre=fapar_centre,
-            fuel_build_up_factor=fuel_build_up_factor,
-            fuel_build_up_centre=fuel_build_up_centre,
-            temperature_factor=temperature_factor,
-            temperature_centre=temperature_centre,
-            flammability_method=flammability_method,
-        )[0]
-    return ba
-
-
 def run_inferno(
     *, jules_lats, jules_lons, obs_fapar_1d, obs_fuel_build_up_1d, **inferno_kwargs
 ):
@@ -221,7 +144,7 @@ def main():
         obs_fapar_1d,
         obs_fuel_build_up_1d,
         jules_ba_gb,
-    ) = load_data(N=50)
+    ) = load_data(N=None)
 
     # Define the ignition method (`ignition_method`).
     ignition_method = 1
@@ -243,20 +166,42 @@ def main():
         ignition_method=ignition_method,
         fuel_build_up=fuel_build_up,
         fapar_diag_pft=fapar_diag_pft,
-        fapar_factor=-20,
-        fapar_centre=0.4,
-        fuel_build_up_factor=-2,
-        fuel_build_up_centre=0.4,
-        temperature_factor=0.15,
-        temperature_centre=300,
+        dry_days=calculate_inferno_dry_days(
+            ls_rain, con_rain, threshold=2.83e-5, timestep=3600 * 4
+        ),
+        fapar_factor=-4.83e1,
+        fapar_centre=4.0e-1,
+        fuel_build_up_factor=1.01e1,
+        fuel_build_up_centre=3.76e-1,
+        temperature_factor=8.01e-2,
+        temperature_centre=2.82e2,
+        dry_day_factor=2.0e-2,
+        dry_day_centre=1.73e2,
+        dryness_method=1,
         jules_lats=jules_lats,
         jules_lons=jules_lons,
         obs_fapar_1d=obs_fapar_1d.data,
         obs_fuel_build_up_1d=obs_fuel_build_up_1d.data,
     )
 
+    combined_mask = gfed_ba_1d.mask | obs_fapar_1d.mask | obs_fuel_build_up_1d.mask
+
+    y_true = np.ma.getdata(gfed_ba_1d)[~combined_mask]
+    y_true /= np.mean(y_true)
+
+    def get_r2(data):
+        y_pred = np.ma.getdata(data.data)[~combined_mask]
+        y_pred /= np.mean(y_pred)
+        return r2_score(y_true=y_true, y_pred=y_pred)
+
+    print(f"JULES (python) R2: {get_r2(python_ba_gb['normal']):0.2f}")
+    print(f"New flamm. R2: {get_r2(python_ba_gb['new']):0.2f}")
+    print(
+        f"New flamm. with obs. FAPAR R2: {get_r2(python_ba_gb['new_obs_fapar']):0.2f}"
+    )
+
     def average_cube(cube):
-        cube.data = np.ma.MaskedArray(cube.data, mask=obs_fuel_build_up_1d.mask)
+        cube.data = np.ma.MaskedArray(cube.data, mask=combined_mask)
         return cube[0].copy(data=np.mean(cube.data, axis=0))
 
     # Average the data.
