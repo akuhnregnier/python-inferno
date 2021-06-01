@@ -6,7 +6,6 @@ from .configuration import land_pts
 from .inferno import inferno_io
 
 
-@njit(parallel=True, nogil=True, cache=True)
 def multi_timestep_inferno(
     *,
     t1p5m_tile,
@@ -24,6 +23,7 @@ def multi_timestep_inferno(
     ignition_method,
     fuel_build_up,
     fapar_diag_pft,
+    dry_bal=None,
     dry_days,
     fapar_factor,
     fapar_centre,
@@ -35,6 +35,89 @@ def multi_timestep_inferno(
     dryness_method,
     dry_day_factor,
     dry_day_centre,
+    rain_f,
+    vpd_f,
+    dry_bal_factor,
+    dry_bal_centre,
+    return_dry_bal=False,
+):
+    if dry_bal is None:
+        dry_bal = np.zeros_like(fapar_diag_pft)
+
+    # Call the below using normal, non-numba Python to enable features like
+    # keyword-only arguments with default arguments as above.
+    ba, dry_bal = _multi_timestep_inferno(
+        t1p5m_tile=t1p5m_tile,
+        q1p5m_tile=q1p5m_tile,
+        pstar=pstar,
+        sthu_soilt=sthu_soilt,
+        frac=frac,
+        c_soil_dpm_gb=c_soil_dpm_gb,
+        c_soil_rpm_gb=c_soil_rpm_gb,
+        canht=canht,
+        ls_rain=ls_rain,
+        con_rain=con_rain,
+        pop_den=pop_den,
+        flash_rate=flash_rate,
+        ignition_method=ignition_method,
+        fuel_build_up=fuel_build_up,
+        fapar_diag_pft=fapar_diag_pft,
+        dry_bal=dry_bal,
+        dry_days=dry_days,
+        fapar_factor=fapar_factor,
+        fapar_centre=fapar_centre,
+        fuel_build_up_factor=fuel_build_up_factor,
+        fuel_build_up_centre=fuel_build_up_centre,
+        temperature_factor=temperature_factor,
+        temperature_centre=temperature_centre,
+        flammability_method=flammability_method,
+        dryness_method=dryness_method,
+        dry_day_factor=dry_day_factor,
+        dry_day_centre=dry_day_centre,
+        rain_f=rain_f,
+        vpd_f=vpd_f,
+        dry_bal_factor=dry_bal_factor,
+        dry_bal_centre=dry_bal_centre,
+    )
+    if return_dry_bal:
+        return ba, dry_bal
+    return ba
+
+
+@njit(parallel=True, nogil=True, cache=True)
+def _multi_timestep_inferno(
+    *,
+    t1p5m_tile,
+    q1p5m_tile,
+    pstar,
+    sthu_soilt,
+    frac,
+    c_soil_dpm_gb,
+    c_soil_rpm_gb,
+    canht,
+    ls_rain,
+    con_rain,
+    pop_den,
+    flash_rate,
+    ignition_method,
+    fuel_build_up,
+    fapar_diag_pft,
+    dry_bal,
+    dry_days,
+    fapar_factor,
+    fapar_centre,
+    fuel_build_up_factor,
+    fuel_build_up_centre,
+    temperature_factor,
+    temperature_centre,
+    flammability_method,
+    dryness_method,
+    dry_day_factor,
+    dry_day_centre,
+    rain_f,
+    vpd_f,
+    dry_bal_factor,
+    dry_bal_centre,
 ):
     # Ensure consistency of the time dimension.
     if not (
@@ -60,7 +143,7 @@ def multi_timestep_inferno(
 
     for ti in range(fapar_diag_pft.shape[0]):
         # Retrieve the individual time slices.
-        ba[ti] = inferno_io(
+        ba[ti], dry_bal[ti] = inferno_io(
             t1p5m_tile=t1p5m_tile[ti],
             q1p5m_tile=q1p5m_tile[ti],
             pstar=pstar[ti],
@@ -77,6 +160,7 @@ def multi_timestep_inferno(
             ignition_method=ignition_method,
             fuel_build_up=fuel_build_up[ti],
             fapar_diag_pft=fapar_diag_pft[ti],
+            dry_bal=dry_bal[max(ti - 1, 0)],
             dry_days=dry_days[ti],
             fapar_factor=fapar_factor,
             fapar_centre=fapar_centre,
@@ -88,5 +172,9 @@ def multi_timestep_inferno(
             dryness_method=dryness_method,
             dry_day_factor=dry_day_factor,
             dry_day_centre=dry_day_centre,
-        )[0]
-    return ba
+            rain_f=rain_f,
+            vpd_f=vpd_f,
+            dry_bal_factor=dry_bal_factor,
+            dry_bal_centre=dry_bal_centre,
+        )
+    return ba, dry_bal

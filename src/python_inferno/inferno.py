@@ -26,6 +26,7 @@ def inferno_io(
     ignition_method,
     fuel_build_up,
     fapar_diag_pft,
+    dry_bal,
     flammability_method,
     fapar_factor,
     fapar_centre,
@@ -37,6 +38,10 @@ def inferno_io(
     dry_days,
     dry_day_factor,
     dry_day_centre,
+    rain_f,
+    vpd_f,
+    dry_bal_factor,
+    dry_bal_centre,
 ):
     # Description:
     #   Called every model timestep, this subroutine updates INFERNO's
@@ -238,7 +243,7 @@ def inferno_io(
                 ignition_method,
             )
 
-            flammability_ft[i, l] = calc_flam(
+            flammability_ft[i, l], dry_bal[i, l] = calc_flam(
                 inferno_temp[l],
                 inferno_rhum[l],
                 inferno_fuel[l],
@@ -257,6 +262,11 @@ def inferno_io(
                 temperature_centre,
                 dry_day_factor,
                 dry_day_centre,
+                dry_bal[i, l],
+                rain_f,
+                vpd_f,
+                dry_bal_factor,
+                dry_bal_centre,
             )
 
             burnt_area_ft[i, l] = calc_burnt_area(
@@ -371,6 +381,11 @@ def calc_flam(
     temperature_centre,
     dry_day_factor,
     dry_day_centre,
+    dry_bal,
+    rain_f,
+    vpd_f,
+    dry_bal_factor,
+    dry_bal_centre,
 ):
     # Description:
     #   Performs the calculation of the flammibility
@@ -448,7 +463,7 @@ def calc_flam(
 
     if flammability_method == 1:
         # Old flammability calculation.
-        return max(
+        flammability = max(
             min(10.0 ** Z_l * f_rhum_l * fuel_l * f_sm_l * np.exp(cr * rain_rate), 1.0),
             0.0,
         )
@@ -458,11 +473,20 @@ def calc_flam(
 
         if dryness_method == 1:
             dry_factor = fuel_param(dry_days, dry_day_factor, dry_day_centre)
+        elif dryness_method == 2:
+            # Evolve the `dry_bal` variable.
+            # Clamp to [-1, 1].
+            # TODO Scale depending on timestep.
+            vpd = (10.0 ** Z_l) * f_rhum_l
+            dry_bal += max(
+                min(rain_f * rain_rate - (1 - np.exp(-vpd_f * vpd)), 1.0), -1.0
+            )
+            dry_factor = fuel_param(dry_bal, dry_bal_factor, dry_bal_centre)
         else:
             raise ValueError("Unknown 'dryness_method'.")
 
         # Convert fuel build-up index to flammability factor.
-        return (
+        flammability = (
             dry_factor
             * fuel_param(temp_l, temperature_factor, temperature_centre)
             * fuel_param(fuel_build_up, fuel_build_up_factor, fuel_build_up_centre)
@@ -470,6 +494,8 @@ def calc_flam(
         )
     else:
         raise ValueError("Unknown 'flammability_method'.")
+
+    return flammability, dry_bal
 
 
 @njit(nogil=True, cache=True)

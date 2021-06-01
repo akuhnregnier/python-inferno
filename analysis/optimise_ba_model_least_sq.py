@@ -2,6 +2,7 @@
 import os
 from collections import OrderedDict
 from pathlib import Path
+from pprint import pprint
 
 import numpy as np
 from joblib import Memory
@@ -33,6 +34,7 @@ def optimize_ba(
     obs_fapar_1d_data,
     combined_mask,
     gfed_ba_1d_data,
+    dryness_method=1,
     verbose=2,
 ):
     # Define the parameters to optimise and their respective bounds.
@@ -41,12 +43,28 @@ def optimize_ba(
         fapar_centre=(0.25, 0.7),
         fuel_build_up_factor=(1, 30),
         fuel_build_up_centre=(0.2, 0.6),
-        temperature_factor=(0.05, 0.25),
+        temperature_factor=(0.03, 0.25),
         temperature_centre=(250, 350),
-        dry_day_factor=(0.01, 0.12),
-        dry_day_centre=(100, 400),
-        dry_day_threshold=(1e-6, 1e-4),
     )
+    if dryness_method == 1:
+        opt_bounds.update(
+            OrderedDict(
+                dry_day_factor=(0.01, 0.12),
+                dry_day_centre=(100, 400),
+                dry_day_threshold=(1e-6, 1e-4),
+            )
+        )
+    elif dryness_method == 2:
+        opt_bounds.update(
+            OrderedDict(
+                rain_f=(1e-3, 5e-2),
+                vpd_f=(20, 500),
+                dry_bal_factor=(-10, -1e-2),
+                dry_bal_centre=(-1, 1),
+            )
+        )
+    else:
+        raise ValueError(f"Unsupported `dryness_method` {dryness_method}.")
 
     # Specified initial parameters - optional.
     opt_x0 = dict(
@@ -56,10 +74,25 @@ def optimize_ba(
         fuel_build_up_centre=3.76e-1,
         temperature_factor=8.01e-2,
         temperature_centre=2.82e2,
-        dry_day_factor=2.0e-2,
-        dry_day_centre=1.73e2,
-        dry_day_threshold=2.83e-5,
     )
+
+    if dryness_method == 1:
+        opt_x0.update(
+            dict(
+                dry_day_factor=2.0e-2,
+                dry_day_centre=1.73e2,
+                dry_day_threshold=2.83e-5,
+            )
+        )
+    elif dryness_method == 2:
+        opt_x0.update(
+            dict(
+                dry_bal_centre=-0.98,
+                dry_bal_factor=-1.1,
+                rain_f=0.05,
+                vpd_f=220,
+            )
+        )
 
     # Default values.
     kwargs = dict(
@@ -87,22 +120,26 @@ def optimize_ba(
             ls_rain, con_rain, threshold=4.3e-5, timestep=3600 * 4
         ),
         flammability_method=2,
-        dryness_method=1,
-        fapar_factor=-30.0,
-        fapar_centre=0.3,
-        fuel_build_up_factor=25.0,
-        fuel_build_up_centre=0.4,
-        temperature_factor=0.08,
-        temperature_centre=300.0,
-        dry_day_factor=0.05,
-        dry_day_centre=400.0,
+        dryness_method=dryness_method,
+        fapar_factor=-4.83e1,
+        fapar_centre=4.0e-1,
+        fuel_build_up_factor=1.01e1,
+        fuel_build_up_centre=3.76e-1,
+        temperature_factor=8.01e-2,
+        temperature_centre=2.82e2,
+        dry_day_factor=2.0e-2,
+        dry_day_centre=1.73e2,
+        rain_f=1,
+        vpd_f=5e5,
+        dry_bal_factor=1,
+        dry_bal_centre=0,
     )
 
     def to_optimise(x):
         """Function to optimise."""
         # Insert new parameters into the kwargs.
         for name, value in zip(opt_bounds, x):
-            if name == "dry_day_threshold":
+            if dryness_method == 1 and name == "dry_day_threshold":
                 kwargs["dry_days"] = calculate_inferno_dry_days(
                     ls_rain, con_rain, threshold=value, timestep=3600 * 4
                 )
@@ -129,13 +166,18 @@ def optimize_ba(
         # minimise the return value.
         return -(r2 - 1)
 
-    return least_squares(
-        to_optimise,
-        # Start in the middle of each range.
-        x0=[opt_x0.get(name, np.mean(values)) for name, values in opt_bounds.items()],
-        bounds=tuple(zip(*opt_bounds.values())),
-        verbose=verbose,
-        max_nfev=20,
+    return (
+        least_squares(
+            to_optimise,
+            # Start in the middle of each range.
+            x0=[
+                opt_x0.get(name, np.mean(values)) for name, values in opt_bounds.items()
+            ],
+            bounds=tuple(zip(*opt_bounds.values())),
+            verbose=verbose,
+            max_nfev=20,
+        ),
+        opt_bounds.keys(),
     )
 
 
@@ -178,10 +220,11 @@ def main():
         obs_fapar_1d_data=obs_fapar_1d.data,
         combined_mask=combined_mask,
         gfed_ba_1d_data=gfed_ba_1d.data,
+        dryness_method=2,
     )
     return out
 
 
 if __name__ == "__main__":
-    out = main()
-    print(out.x)
+    out, names = main()
+    pprint({name: val for name, val in zip(names, out.x)})
