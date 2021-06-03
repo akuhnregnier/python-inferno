@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import njit
+from wildfires.utils import parallel_njit
 
 from .configuration import land_pts
 from .inferno import inferno_io
@@ -84,7 +84,7 @@ def multi_timestep_inferno(
     return ba
 
 
-@njit(parallel=True, nogil=True, cache=True)
+@parallel_njit(cache=True)
 def _multi_timestep_inferno(
     *,
     t1p5m_tile,

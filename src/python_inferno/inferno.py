@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import njit
+from wildfires.utils import parallel_njit
 
 from .calc_c_comps_triffid import calc_c_comps_triffid
 from .configuration import avg_ba, land_pts, m2_in_km2, npft, s_in_day, s_in_month
@@ -9,7 +10,7 @@ from .qsat_wat import qsat_wat
 # Indexing convention is time, pft, land
 
 
-@njit(parallel=True, nogil=True, cache=True)
+@parallel_njit(cache=True)
 def inferno_io(
     t1p5m_tile,
     q1p5m_tile,
