@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
-import os
 from pathlib import Path
 
 import dask.array as darray
 import iris
 import numpy as np
-from joblib import Memory
 from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lons
 from jules_output_analysis.utils import convert_longitudes
 from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4
 
-from .utils import exponential_average, temporal_nearest_neighbour_interp
+from .cache import cache, mark_dependency
+from .utils import (
+    exponential_average,
+    make_contiguous,
+    temporal_nearest_neighbour_interp,
+)
 
-memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
-
-@memory.cache
+@cache
+@mark_dependency
 def load_data(
     filename=str(
         Path(
@@ -142,22 +144,22 @@ def load_data(
     return (
         # For most variables, return the arrays without any masks (which should just
         # be `False` for JULES outputs).
-        t1p5m_tile[:N, :, 0].data.data,
-        q1p5m_tile[:N, :, 0].data.data,
-        pstar[:N, 0].data.data,
-        sthu_soilt[:N].data.data,
-        frac[:N, :, 0].data.data,
-        c_soil_dpm_gb[:N, 0].data.data,
-        c_soil_rpm_gb[:N, 0].data.data,
-        canht[:N, :, 0].data.data,
-        ls_rain[:N, 0].data.data,
-        con_rain[:N, 0].data.data,
-        fuel_build_up[:N, :, 0].data.data,
-        fapar_diag_pft[:N, :, 0].data.data,
+        make_contiguous(t1p5m_tile[:N, :, 0].data.data),
+        make_contiguous(q1p5m_tile[:N, :, 0].data.data),
+        make_contiguous(pstar[:N, 0].data.data),
+        make_contiguous(sthu_soilt[:N].data.data),
+        make_contiguous(frac[:N, :, 0].data.data),
+        make_contiguous(c_soil_dpm_gb[:N, 0].data.data),
+        make_contiguous(c_soil_rpm_gb[:N, 0].data.data),
+        make_contiguous(canht[:N, :, 0].data.data),
+        make_contiguous(ls_rain[:N, 0].data.data),
+        make_contiguous(con_rain[:N, 0].data.data),
+        make_contiguous(fuel_build_up[:N, :, 0].data.data),
+        make_contiguous(fapar_diag_pft[:N, :, 0].data.data),
         jules_lats,
         jules_lons,
-        gfed_ba_1d[:N],
-        obs_fapar_1d[:N],
-        obs_fuel_build_up_1d[:N],
-        jules_ba_gb[:N, 0],
+        make_contiguous(gfed_ba_1d[:N]),
+        make_contiguous(obs_fapar_1d[:N]),
+        make_contiguous(obs_fuel_build_up_1d[:N]),
+        make_contiguous(jules_ba_gb[:N, 0]),
     )

@@ -1,6 +1,14 @@
 # -*- coding: utf-8 -*-
+import os
+from functools import reduce, wraps
+
 import numpy as np
 from numba import njit
+
+if "TQDMAUTO" in os.environ:
+    from tqdm.auto import tqdm  # noqa
+else:
+    from tqdm import tqdm  # noqa
 
 
 def temporal_nearest_neighbour_interp(data, factor):
@@ -70,3 +78,58 @@ def exponential_average(data, alpha, repetitions=1):
         weighted = _exponential_average(selected, alpha, weighted=weighted)
     output[sel] = weighted
     return output
+
+
+def combine_masks(*masks):
+    """Combine boolean arrays using `np.logical_or`."""
+    return reduce(np.logical_or, masks)
+
+
+def combine_ma_masks(*masked_arrays):
+    """Combine masks of MaskedArray."""
+    return combine_masks(*(np.ma.getmaskarray(arr) for arr in masked_arrays))
+
+
+def make_contiguous(*arrays):
+    """Return C-contiguous arrays."""
+    out = []
+    for arr in arrays:
+        if np.ma.isMaskedArray(arr):
+            out.append(
+                np.ma.MaskedArray(
+                    np.ascontiguousarray(arr.data),
+                    mask=(
+                        np.ascontiguousarray(arr.mask)
+                        if isinstance(arr.mask, np.ndarray)
+                        else arr.mask
+                    ),
+                )
+            )
+        else:
+            out.append(np.ascontiguousarray(arr))
+    return tuple(out) if len(out) != 1 else out[0]
+
+
+def core_unpack_wrapped(*objs):
+    """Extract the __wrapped__ attribute if it exists."""
+    out = []
+    for obj in objs:
+        if hasattr(obj, "__wrapped__"):
+            out.append(obj.__wrapped__)
+        else:
+            out.append(obj)
+    return tuple(out) if len(out) != 1 else out[0]
+
+
+def unpack_wrapped(func):
+    # NOTE: This decorator does not support nested proxy objects.
+    @wraps(func)
+    def inner(*args, **kwargs):
+        # Call the wrapped function, unpacking any wrapped parameters in the process
+        # (no nesting).
+        return func(
+            *core_unpack_wrapped(*args),
+            **{key: core_unpack_wrapped(val) for key, val in kwargs.items()}
+        )
+
+    return inner

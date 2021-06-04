@@ -1,0 +1,7 @@
+#PBS -N {{ job_name }}
+#PBS -l select=1:ncpus={{ ncpus }}:mem={{ mem }}:ompthreads={{ ncpus }}
+#PBS -l walltime={{ walltime }}
+#PBS -e {{ job_log_dir }}
+#PBS -o {{ job_log_dir }}
+
+exec {{ executable }} {{ python_script }}

@@ -1,0 +1,24 @@
+import os
+import sys
+from pathlib import Path
+
+import cloudpickle
+from wildfires.logging_config import enable_logging
+from wildfires.qstat import get_ncpus
+from empirical_fire_modelling.utils import tqdm
+
+{%- if pythonpath is defined %}
+sys.path = {{pythonpath}}
+{%- endif %}
+
+os.environ['RUNNING_AS_JOB'] = '1'
+
+enable_logging(level="DEBUG")
+
+index = int(os.environ.get("PBS_ARRAY_INDEX", 0))
+
+with Path("{{bound_functions_file}}").open("rb") as f:
+    bound_functions = cloudpickle.load(f)
+
+# Run the function specified by the index.
+bound_functions[index]()
