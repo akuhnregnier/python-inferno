@@ -46,7 +46,7 @@ if __name__ == "__main__":
             ncpus=1,
             mem="5GB",
         ),
-        N=20,
+        N=None,
     )
 
     scores = {}
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     plt.ioff()
     df_data = defaultdict(list)
     for parameter_values, r2 in scores.items():
-        df_data["r2"].append(r2.__wrapped__)
+        df_data["r2"].append(r2)
         for parameter, value in parameter_values:
             df_data[parameter].append(value)
 
