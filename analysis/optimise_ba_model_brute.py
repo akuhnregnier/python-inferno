@@ -42,10 +42,12 @@ if __name__ == "__main__":
         calc_param_r2_wrapper,
         params,
         cx1_kwargs=dict(
-            walltime="10:00:00",
+            walltime="1:00:00",
             ncpus=1,
-            mem="5GB",
+            mem="10GB",
         ),
+        batch_size=5,
+        # Function kwargs.
         N=None,
     )
 
