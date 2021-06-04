@@ -213,7 +213,7 @@ def run_cx1(func, batch_args, kwargs, cx1_kwargs, verbose):
 
     # Store the function with arguments for later retrieval by the job.
     bound_functions = [
-        partial(batched_func_calls, single_batch_args, kwargs)
+        partial(batched_func_calls, func, single_batch_args, kwargs)
         for single_batch_args in batch_args
     ]
 
