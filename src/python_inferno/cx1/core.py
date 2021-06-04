@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Run code on the cx1 cluster."""
+import gc
 import logging
 import os
 import random
@@ -38,6 +39,7 @@ def batched_func_calls(func, batch_args, kwargs):
     out = []
     for single_args in zip(*batch_args):
         out.append(func(*single_args, **kwargs))
+        gc.collect()
     return tuple(out)
 
 
