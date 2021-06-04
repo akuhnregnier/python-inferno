@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
+import sys
 import threading
+from pathlib import Path
+from subprocess import check_call
+from tempfile import TemporaryDirectory
 from time import sleep
 
 from python_inferno.cx1 import run
@@ -115,3 +119,21 @@ def test_batched_alt_call():
         )
         == 1
     )
+
+
+def test_cmd_line_run():
+    script = """
+from python_inferno.cx1 import run
+
+def f(x, **kwargs):
+    return x + 1
+
+assert run(f, [1]) == (2,)
+"""
+    # Write this script to a temporary file and run it.
+
+    with TemporaryDirectory() as tempdir:
+        fpath = Path(tempdir) / "test.py"
+        with fpath.open("w") as f:
+            f.write(script)
+        check_call([sys.executable, str(fpath), "local"])

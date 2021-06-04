@@ -271,7 +271,7 @@ def run(
     get_parsers=get_parsers,
     return_local_args=False,
     batch_size=None,
-    cmd_args,
+    cmd_args=None,
     **kwargs,
 ):
     """Run a function depending on given (including command line) arguments.
