@@ -65,7 +65,7 @@ def get_parsers():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=1,
+        default=-1,
         help="how many iterations per batch",
     )
     parser.add_argument(
@@ -161,8 +161,9 @@ def run_local(func, batch_args, kwargs, backend="threads", n_cores=1, verbose=Fa
     with chosen_executor(max_workers=n_cores) as executor:
         futures = []
         for single_batch_args in batch_args:
-            for single_args in zip(*single_batch_args):
-                futures.append(executor.submit(func, *single_args, **kwargs))
+            futures.append(
+                executor.submit(batched_func_calls, func, single_batch_args, kwargs)
+            )
 
         # Progress bar (out of order).
         for future in tqdm(
@@ -176,7 +177,7 @@ def run_local(func, batch_args, kwargs, backend="threads", n_cores=1, verbose=Fa
 
         # Collect results in order.
         for future in futures:
-            out.append(future.result())
+            out.extend(future.result())
     return tuple(out)
 
 
@@ -269,6 +270,8 @@ def run(
     cx1_kwargs=None,
     get_parsers=get_parsers,
     return_local_args=False,
+    batch_size=None,
+    cmd_args,
     **kwargs,
 ):
     """Run a function depending on given (including command line) arguments.
@@ -301,6 +304,10 @@ def run(
         return_local_args (bool):
             If True, return the arguments and kwargs along with the results (only
             applies for 'local').
+        batch_size (int): How many samples per iteration.
+        cmd_args (object): Namespace-like object which may be given to circumvent
+            using `sys.argv` in combination with the standard parser (i.e. if
+            `cmd_args` is given, `get_parsers` is not used).
         **kwargs: Function keyword arguments. These will be given identically to each
             function call, as opposed to `args`.
 
@@ -312,11 +319,23 @@ def run(
         NoCX1Error: If cx1_kwargs is `False` but running on CX1 was requested.
 
     """
-    cmd_args = get_parsers()["parser"].parse_args()
+    if cmd_args is None:
+        cmd_args = get_parsers()["parser"].parse_args()
     verbose = cmd_args.verbose
     single = cmd_args.single
     nargs = cmd_args.nargs
-    batch_size = cmd_args.batch_size
+    if cmd_args.batch_size != -1 and batch_size is not None:
+        raise ValueError(
+            "Cannot give both '--batch-size' argument and batch_size keyword."
+        )
+
+    if cmd_args.batch_size != -1:
+        # Use the command-line arg if given.
+        batch_size = cmd_args.batch_size
+    elif batch_size is None:
+        # Default value of 1.
+        batch_size = 1
+
     kwargs = {**dict(single=single, nargs=nargs, verbose=verbose), **kwargs}
 
     if len(args) == 0 or len(args[0]) == 0:
