@@ -27,10 +27,10 @@ if __name__ == "__main__":
         # temperature_factor=np.linspace(0.08, 0.18, 3),
         # dry_day_factor=np.linspace(0.02, 0.08, 3),
         # dry_day_centre=np.linspace(100, 400, 3),
-        rain_f=np.linspace(0.1e-2, 5e-2, 3),
-        vpd_f=np.geomspace(0.2e2, 5e2, 3),
-        dry_bal_factor=-np.geomspace(0.5e-1, 0.5e1, 4),
-        dry_bal_centre=np.linspace(-0.9, 0.9, 4),
+        rain_f=np.linspace(5e-4, 1e-1, 10),
+        vpd_f=np.geomspace(1e1, 8e2, 10),
+        dry_bal_factor=-np.geomspace(5e-2, 5e0, 8),
+        dry_bal_centre=np.linspace(-1, 1, 10),
     )
 
     params = [
@@ -42,11 +42,11 @@ if __name__ == "__main__":
         calc_param_r2_wrapper,
         params,
         cx1_kwargs=dict(
-            walltime="1:00:00",
+            walltime="2:00:00",
             ncpus=1,
             mem="10GB",
         ),
-        batch_size=5,
+        batch_size=15,
         # Function kwargs.
         N=None,
     )
