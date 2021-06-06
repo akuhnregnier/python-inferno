@@ -381,16 +381,18 @@ def run(
     batch_args = get_batch_args(args, batch_size)
 
     if cmd_args.dest == "local":
-        out = core_unpack_wrapped(
-            run_local(
-                func=func,
-                batch_args=batch_args,
-                kwargs=kwargs,
-                backend=("processes" if cmd_args.processes else "threads"),
-                n_cores=cmd_args.n_cores,
-                verbose=verbose,
-            )
+        raw_out = run_local(
+            func=func,
+            batch_args=batch_args,
+            kwargs=kwargs,
+            backend=("processes" if cmd_args.processes else "threads"),
+            n_cores=cmd_args.n_cores,
+            verbose=verbose,
         )
+        out = core_unpack_wrapped(*raw_out)
+        if len(raw_out) == 1:
+            out = (out,)
+
         if return_local_args:
             return args, kwargs, out
         return out
