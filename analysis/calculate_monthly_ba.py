@@ -14,6 +14,7 @@ from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
+from python_inferno.utils import unpack_wrapped
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
@@ -90,12 +91,12 @@ def run_inferno(
 ):
     # NOTE this function does not consider masking.
     python_ba_gb = {
-        "normal": multi_timestep_inferno(
+        "normal": unpack_wrapped(multi_timestep_inferno)(
             **inferno_kwargs,
             # 1 - old, 2 - new flammability calculation
             flammability_method=1,
         ),
-        "new": multi_timestep_inferno(
+        "new": unpack_wrapped(multi_timestep_inferno)(
             **inferno_kwargs,
             # 1 - old, 2 - new flammability calculation
             flammability_method=2,
@@ -109,7 +110,7 @@ def run_inferno(
         np.expand_dims(obs_fapar_1d, 1), repeats=13, axis=1
     )
 
-    python_ba_gb["new_obs_fapar"] = multi_timestep_inferno(
+    python_ba_gb["new_obs_fapar"] = unpack_wrapped(multi_timestep_inferno)(
         **inferno_kwargs,
         # 1 - old, 2 - new flammability calculation
         flammability_method=2,
@@ -166,7 +167,7 @@ def main():
         ignition_method=ignition_method,
         fuel_build_up=fuel_build_up,
         fapar_diag_pft=fapar_diag_pft,
-        dry_days=calculate_inferno_dry_days(
+        dry_days=unpack_wrapped(calculate_inferno_dry_days)(
             ls_rain, con_rain, threshold=2.83e-5, timestep=3600 * 4
         ),
         fapar_factor=-4.83e1,
@@ -178,6 +179,10 @@ def main():
         dry_day_factor=2.0e-2,
         dry_day_centre=1.73e2,
         dryness_method=1,
+        rain_f=0,
+        vpd_f=0,
+        dry_bal_centre=0,
+        dry_bal_factor=0,
         jules_lats=jules_lats,
         jules_lons=jules_lons,
         obs_fapar_1d=obs_fapar_1d.data,

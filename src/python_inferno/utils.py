@@ -2,8 +2,11 @@
 import os
 from functools import reduce, wraps
 
+import iris
 import numpy as np
 from numba import njit
+
+from .cache import mark_dependency
 
 if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
@@ -90,6 +93,7 @@ def combine_ma_masks(*masked_arrays):
     return combine_masks(*(np.ma.getmaskarray(arr) for arr in masked_arrays))
 
 
+@mark_dependency
 def make_contiguous(*arrays):
     """Return C-contiguous arrays."""
     out = []
@@ -105,6 +109,9 @@ def make_contiguous(*arrays):
                     ),
                 )
             )
+        elif isinstance(arr, iris.cube.Cube):
+            arr.data = make_contiguous(arr.data)
+            out.append(arr)
         else:
             out.append(np.ascontiguousarray(arr))
     return tuple(out) if len(out) != 1 else out[0]

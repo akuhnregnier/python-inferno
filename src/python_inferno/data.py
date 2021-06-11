@@ -16,7 +16,7 @@ from .utils import (
 )
 
 
-@cache
+@cache(dependencies=[make_contiguous])
 @mark_dependency
 def load_data(
     filename=str(

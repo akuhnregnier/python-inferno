@@ -10,6 +10,7 @@ from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
+from python_inferno.utils import unpack_wrapped
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
@@ -34,12 +35,14 @@ if __name__ == "__main__":
         obs_fapar_1d,
         obs_fuel_build_up_1d,
         jules_ba_gb,
-    ) = load_data(N=50)
+    ) = load_data(N=100)
 
     # Define the ignition method (`ignition_method`).
     ignition_method = 1
 
-    ba, dry_bal = multi_timestep_inferno(
+    timestep = 3600 * 4
+
+    ba, dry_bal = unpack_wrapped(multi_timestep_inferno)(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,
@@ -60,8 +63,8 @@ if __name__ == "__main__":
         fapar_diag_pft=np.repeat(
             np.expand_dims(obs_fapar_1d.data, 1), repeats=13, axis=1
         ),
-        dry_days=calculate_inferno_dry_days(
-            ls_rain, con_rain, threshold=2.83e-5, timestep=3600 * 4
+        dry_days=unpack_wrapped(calculate_inferno_dry_days)(
+            ls_rain, con_rain, threshold=2.83e-5, timestep=timestep
         ),
         flammability_method=2,
         fapar_factor=-4.83e1,
@@ -73,8 +76,8 @@ if __name__ == "__main__":
         dry_day_factor=0.05,
         dry_day_centre=-0.9,
         dryness_method=2,
-        rain_f=0.05,
-        vpd_f=220,
+        rain_f=0.5,
+        vpd_f=2500,
         dry_bal_factor=-1.1,
         dry_bal_centre=-0.98,
         return_dry_bal=True,
@@ -89,6 +92,9 @@ if __name__ == "__main__":
     valid = np.where(~np.any(combined_mask, axis=(0, 1)))[0]
 
     plt.figure()
+    xs = np.arange(0, dry_bal.shape[0]) * timestep / (60 * 60 * 24)  # Convert to days.
     for p in range(dry_bal.shape[1]):
-        plt.plot(dry_bal[:, p, valid[0]], label=p)
+        plt.plot(xs, dry_bal[:, p, valid[0]], label=p)
+    plt.xlabel("days")
     plt.legend()
+    plt.title("'dry_bal' variable (influenced by 'vpd_f' & 'rain_f')")
