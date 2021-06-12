@@ -201,6 +201,7 @@ def main():
         obs_fapar_1d,
         obs_fuel_build_up_1d,
         jules_ba_gb,
+        jules_time_coord,
     ) = load_data(N=None)
 
     combined_mask = gfed_ba_1d.mask | obs_fapar_1d.mask | obs_fuel_build_up_1d.mask

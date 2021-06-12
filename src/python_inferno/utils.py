@@ -4,6 +4,7 @@ from functools import reduce, wraps
 
 import iris
 import numpy as np
+from iris.coord_categorisation import add_month_number, add_year
 from numba import njit
 
 from .cache import mark_dependency
@@ -140,3 +141,17 @@ def unpack_wrapped(func):
         )
 
     return inner
+
+
+def monthly_average_data(data, time_coord=None):
+    if isinstance(data, iris.cube.Cube):
+        return monthly_average_data(data.data, time_coord=data.coord("time"))
+
+    assert time_coord is not None, "time_coord required for non-cubes."
+    dummy_cube = iris.cube.Cube(data, dim_coords_and_dims=[(time_coord, 0)])
+
+    add_year(dummy_cube, "time")
+    add_month_number(dummy_cube, "time")
+
+    avg_cube = dummy_cube.aggregated_by(("year", "month_number"), iris.analysis.MEAN)
+    return avg_cube.data

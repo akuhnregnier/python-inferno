@@ -35,6 +35,7 @@ def calc_param_r2(opt_params, N=None):
         obs_fapar_1d,
         obs_fuel_build_up_1d,
         jules_ba_gb,
+        jules_time_coord,
     ) = load_data(N=N)
 
     combined_mask = combine_ma_masks(gfed_ba_1d, obs_fapar_1d, obs_fuel_build_up_1d)

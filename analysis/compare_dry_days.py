@@ -21,6 +21,7 @@ from wildfires.utils import get_unmasked, match_shape
 
 from python_inferno.data import load_data
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
+from python_inferno.utils import monthly_average_data, unpack_wrapped
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
@@ -76,6 +77,7 @@ if __name__ == "__main__":
         obs_fapar_1d,
         obs_fuel_build_up_1d,
         jules_ba_gb,
+        jules_time_coord,
     ) = load_data(N=None)
 
     # Upon loading of cached data (but not when the original calculation is being
@@ -128,41 +130,28 @@ if __name__ == "__main__":
         mon_era_dd_1d, mask=match_shape(calc_mask, mon_era_dd_1d.shape)
     )
 
-    # mean_era_dd_1d = np.mean(mon_era_dd_1d, axis=0)
-
-    # y_true = np.ma.getdata(mean_era_dd_1d[~calc_mask])
-    # y_true /= np.mean(y_true)
-
-    # scores = {}
-
-    # for threshold in tqdm(np.linspace(1e-6, 1e-3, 10)):
-    #     inferno_dry_days = calculate_inferno_dry_days(ls_rain, con_rain, threshold)
-    #     inferno_dry_days = np.ma.MaskedArray(
-    #         inferno_dry_days, mask=match_shape(calc_mask, inferno_dry_days.shape)
-    #     )
-
-    #     # Compute R2 score after normalising each by their mean.
-    #     y_pred = np.ma.getdata(np.mean(inferno_dry_days, axis=0)[~calc_mask])
-    #     y_pred /= np.mean(y_pred)
-
-    #     r2 = r2_score(y_true=y_true, y_pred=y_pred)
-
-    #     scores[threshold] = r2
-
-    # plt.figure()
-    # plt.plot(scores.keys(), scores.values())
-
     threshold = 4.3e-5
 
-    inferno_dry_days = calculate_inferno_dry_days(ls_rain, con_rain, threshold)
+    inferno_dry_days = unpack_wrapped(calculate_inferno_dry_days)(
+        ls_rain, con_rain, threshold
+    )
     inferno_dry_days = np.ma.MaskedArray(
         inferno_dry_days, mask=match_shape(calc_mask, inferno_dry_days.shape)
     )
 
+    mon_avg_inferno_dry_days = monthly_average_data(
+        inferno_dry_days, time_coord=jules_time_coord
+    )
+
+    if jules_time_coord.cell(-1).point.day == 1 and jules_time_coord.shape[0] > 1:
+        # Ignore the last month if there is only a single day in it.
+        mon_era_dd_1d = mon_era_dd_1d[:-1]
+        mon_avg_inferno_dry_days = mon_avg_inferno_dry_days[:-1]
+
     plt.figure()
     plt.hexbin(
-        get_unmasked(np.mean(mon_era_dd_1d, axis=0)),
-        get_unmasked(np.mean(inferno_dry_days, axis=0)),
+        get_unmasked(mon_era_dd_1d),
+        get_unmasked(mon_avg_inferno_dry_days),
         bins="log",
     )
     plt.xlabel("OBS DD")
@@ -171,8 +160,8 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.plot(
-        get_unmasked(np.mean(mon_era_dd_1d, axis=0)),
-        get_unmasked(np.mean(inferno_dry_days, axis=0)),
+        get_unmasked(mon_era_dd_1d),
+        get_unmasked(mon_avg_inferno_dry_days),
         linestyle="",
         marker="o",
         alpha=0.1,
@@ -180,4 +169,4 @@ if __name__ == "__main__":
     plt.xlabel("OBS DD")
     plt.ylabel("INFERNO DD")
 
-    plot_dry_days_comp(inferno_dry_days, mon_era_dd_1d)
+    plot_dry_days_comp(mon_avg_inferno_dry_days, mon_era_dd_1d)

@@ -145,6 +145,7 @@ def main():
         obs_fapar_1d,
         obs_fuel_build_up_1d,
         jules_ba_gb,
+        jules_time_coord,
     ) = load_data(N=None)
 
     # Define the ignition method (`ignition_method`).

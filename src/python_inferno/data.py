@@ -141,6 +141,8 @@ def load_data(
         ]
     ).realise_data()
 
+    jules_time_coord = ls_rain.coord("time")
+
     return (
         # For most variables, return the arrays without any masks (which should just
         # be `False` for JULES outputs).
@@ -162,4 +164,5 @@ def load_data(
         make_contiguous(obs_fapar_1d[:N]),
         make_contiguous(obs_fuel_build_up_1d[:N]),
         make_contiguous(jules_ba_gb[:N, 0]),
+        jules_time_coord,
     )
