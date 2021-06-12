@@ -141,7 +141,7 @@ def load_data(
         ]
     ).realise_data()
 
-    jules_time_coord = ls_rain.coord("time")
+    jules_time_coord = ls_rain.coord("time")[:N]
 
     return (
         # For most variables, return the arrays without any masks (which should just

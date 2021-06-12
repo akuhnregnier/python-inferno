@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 import cartopy.crs as ccrs
+import iris
 import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Memory
@@ -14,7 +15,7 @@ from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
-from python_inferno.utils import unpack_wrapped
+from python_inferno.utils import monthly_average_data, unpack_wrapped
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
@@ -125,7 +126,7 @@ def run_inferno(
     return python_ba_gb
 
 
-def main():
+if __name__ == "__main__":
     (
         t1p5m_tile,
         q1p5m_tile,
@@ -192,22 +193,54 @@ def main():
 
     combined_mask = gfed_ba_1d.mask | obs_fapar_1d.mask | obs_fuel_build_up_1d.mask
 
-    y_true = np.ma.getdata(gfed_ba_1d)[~combined_mask]
+    gfed_ba_1d.mask |= combined_mask
+
+    # Calculate monthly averages.
+    mon_avg_gfed_ba_1d = monthly_average_data(gfed_ba_1d, time_coord=jules_time_coord)
+    for key, val in python_ba_gb.items():
+        assert isinstance(val, iris.cube.Cube)
+        avg_data = monthly_average_data(val.data, time_coord=jules_time_coord)
+        avg_cube = val[: avg_data.shape[0]].copy(data=avg_data)
+        python_ba_gb[key] = avg_cube
+
+    if jules_time_coord.cell(-1).point.day == 1 and jules_time_coord.shape[0] > 1:
+        # Ignore the last month if there is only a single day in it.
+        mon_avg_gfed_ba_1d = mon_avg_gfed_ba_1d[:-1]
+        for key, val in python_ba_gb.items():
+            python_ba_gb[key] = val[:-1]
+            assert python_ba_gb[key].shape == mon_avg_gfed_ba_1d.shape
+
+    y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
     y_true /= np.mean(y_true)
 
-    def get_r2(data):
-        y_pred = np.ma.getdata(data.data)[~combined_mask]
+    def get_r2(cube, name=None, verbose=True):
+        y_pred = np.ma.getdata(cube.data)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
         y_pred /= np.mean(y_pred)
+
+        assert y_pred.shape == y_true.shape
+
+        if name is not None and verbose:
+
+            max_ba = max(np.max(y_true), np.max(y_pred))
+            bins = np.linspace(0, max_ba, 100)
+
+            plt.figure()
+            plt.hist(y_true, bins=bins, label="true", alpha=0.4)
+            plt.hist(y_pred, bins=bins, label="pred", alpha=0.4)
+            plt.title(name)
+            plt.yscale("log")
+            plt.legend()
         return r2_score(y_true=y_true, y_pred=y_pred)
 
-    print(f"JULES (python) R2: {get_r2(python_ba_gb['normal']):0.2f}")
-    print(f"New flamm. R2: {get_r2(python_ba_gb['new']):0.2f}")
+    print(f"JULES (python) R2: {get_r2(python_ba_gb['normal'], name='normal'):0.2f}")
+    print(f"New flamm. R2: {get_r2(python_ba_gb['new'], name='new'):0.2f}")
     print(
-        f"New flamm. with obs. FAPAR R2: {get_r2(python_ba_gb['new_obs_fapar']):0.2f}"
+        "New flamm. with obs. FAPAR R2: "
+        f"{get_r2(python_ba_gb['new_obs_fapar'], name='new_obs_fapar'):0.2f}"
     )
 
     def average_cube(cube):
-        cube.data = np.ma.MaskedArray(cube.data, mask=combined_mask)
+        cube.data = np.ma.MaskedArray(cube.data, mask=mon_avg_gfed_ba_1d.mask)
         return cube[0].copy(data=np.mean(cube.data, axis=0))
 
     # Average the data.
@@ -222,7 +255,3 @@ def main():
         ),
     )
     plt.show()
-
-
-if __name__ == "__main__":
-    main()
