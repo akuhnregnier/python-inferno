@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+from functools import partial
 from pathlib import Path
 
 import cartopy.crs as ccrs
@@ -13,6 +14,7 @@ from wildfires.analysis import cube_plotting
 
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
+from python_inferno.metrics import mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import monthly_average_data, unpack_wrapped
@@ -213,14 +215,13 @@ if __name__ == "__main__":
     y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
     y_true /= np.mean(y_true)
 
-    def get_r2(cube, name=None, verbose=True):
+    def get_ypred(cube, name=None, verbose=True):
         y_pred = np.ma.getdata(cube.data)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
         y_pred /= np.mean(y_pred)
 
         assert y_pred.shape == y_true.shape
 
         if name is not None and verbose:
-
             max_ba = max(np.max(y_true), np.max(y_pred))
             bins = np.linspace(0, max_ba, 100)
 
@@ -230,14 +231,31 @@ if __name__ == "__main__":
             plt.title(name)
             plt.yscale("log")
             plt.legend()
-        return r2_score(y_true=y_true, y_pred=y_pred)
 
-    print(f"JULES (python) R2: {get_r2(python_ba_gb['normal'], name='normal'):0.2f}")
-    print(f"New flamm. R2: {get_r2(python_ba_gb['new'], name='new'):0.2f}")
-    print(
-        "New flamm. with obs. FAPAR R2: "
-        f"{get_r2(python_ba_gb['new_obs_fapar'], name='new_obs_fapar'):0.2f}"
-    )
+        return y_pred
+
+    def print_metrics(name):
+        print(name)
+
+        # 1D stats
+        y_pred = get_ypred(python_ba_gb[name], name=name)
+        print(f"R2: {r2_score(y_true=y_true, y_pred=y_pred):+0.4f}")
+        print(f"NME: {nme(obs=y_true, pred=y_pred):+0.4f}")
+        print(f"NMSE: {nmse(obs=y_true, pred=y_pred):+0.4f}")
+
+        # Temporal stats.
+        pad_func = partial(
+            np.pad,
+            pad_width=((0, 12 - mon_avg_gfed_ba_1d.shape[0]), (0, 0)),
+            constant_values=0.0,
+        )
+        obs_pad = pad_func(mon_avg_gfed_ba_1d)
+        pred_pad = pad_func(python_ba_gb[name].data)
+        mpd_val, ignored = mpd(obs=obs_pad, pred=pred_pad, return_ignored=True)
+        print(f"MPD: {mpd_val:+0.4f} (skipped: {ignored})")
+
+    for name in ("normal", "new", "new_obs_fapar"):
+        print_metrics(name)
 
     def average_cube(cube):
         cube.data = np.ma.MaskedArray(cube.data, mask=mon_avg_gfed_ba_1d.mask)
