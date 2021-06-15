@@ -4,7 +4,7 @@ from numba import njit
 
 
 @njit(nogil=True, cache=True)
-def calculate_inferno_dry_days(ls_rain, con_rain, threshold, timestep=1):
+def calculate_inferno_dry_days(ls_rain, con_rain, threshold, timestep):
     """INFERNO dry-day period calculation across timesteps for comparison.
 
     This calculation assumes that the first timestep is the first timestep of a day.
