@@ -51,7 +51,7 @@ def optimize_ba(
             OrderedDict(
                 dry_day_factor=(0.01, 0.12),
                 dry_day_centre=(100, 400),
-                dry_day_threshold=(1e-6, 1e-4),
+                dry_day_threshold=(0.5, 1.5),
             )
         )
     elif dryness_method == 2:
@@ -81,7 +81,7 @@ def optimize_ba(
             dict(
                 dry_day_factor=2.0e-2,
                 dry_day_centre=1.73e2,
-                dry_day_threshold=2.83e-5,
+                dry_day_threshold=1.0,
             )
         )
     elif dryness_method == 2:
@@ -117,7 +117,7 @@ def optimize_ba(
             np.expand_dims(obs_fapar_1d_data, 1), repeats=13, axis=1
         ),
         dry_days=calculate_inferno_dry_days(
-            ls_rain, con_rain, threshold=4.3e-5, timestep=3600 * 4
+            ls_rain, con_rain, threshold=1.0, timestep=3600 * 4
         ),
         flammability_method=2,
         dryness_method=dryness_method,

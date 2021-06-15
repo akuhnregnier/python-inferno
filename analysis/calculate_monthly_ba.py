@@ -172,7 +172,7 @@ if __name__ == "__main__":
         fuel_build_up=fuel_build_up,
         fapar_diag_pft=fapar_diag_pft,
         dry_days=unpack_wrapped(calculate_inferno_dry_days)(
-            ls_rain, con_rain, threshold=2.83e-5, timestep=3600 * 4
+            ls_rain, con_rain, threshold=1.0, timestep=3600 * 4
         ),
         fapar_factor=-4.83e1,
         fapar_centre=4.0e-1,

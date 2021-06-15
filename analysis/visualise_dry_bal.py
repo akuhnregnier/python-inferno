@@ -65,7 +65,7 @@ if __name__ == "__main__":
             np.expand_dims(obs_fapar_1d.data, 1), repeats=13, axis=1
         ),
         dry_days=unpack_wrapped(calculate_inferno_dry_days)(
-            ls_rain, con_rain, threshold=2.83e-5, timestep=timestep
+            ls_rain, con_rain, threshold=1.0, timestep=timestep
         ),
         flammability_method=2,
         fapar_factor=-4.83e1,
