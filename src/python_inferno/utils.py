@@ -155,3 +155,19 @@ def monthly_average_data(data, time_coord=None):
 
     avg_cube = dummy_cube.aggregated_by(("year", "month_number"), iris.analysis.MEAN)
     return avg_cube.data
+
+
+@njit(nogil=True, cache=True)
+def moving_sum(data, samples):
+    """Calculates a moving sum over the first axis.
+
+    Including the current sample (at a given index), this takes into account `samples`
+    previous samples.
+
+    """
+    out = np.zeros_like(data)
+
+    for i in range(out.shape[0]):
+        out[i] = np.sum(data[max(i - samples + 1, 0) : i + 1], axis=0)
+
+    return out

@@ -2,7 +2,11 @@
 import numpy as np
 from numpy.testing import assert_allclose
 
-from python_inferno.utils import exponential_average, temporal_nearest_neighbour_interp
+from python_inferno.utils import (
+    exponential_average,
+    moving_sum,
+    temporal_nearest_neighbour_interp,
+)
 
 
 def test_temporal_nearest_neighbour_interp_0d():
@@ -73,3 +77,17 @@ def test_exponential_average_Nd_mask():
     )
 
     assert_allclose(exponential_average(data[:, [0, 2]], 1), data[:, [0, 2]])
+
+
+def test_moving_sum():
+    data = np.arange(3)
+    assert_allclose(moving_sum(data, 1), data)
+    assert_allclose(moving_sum(data, 2), [0, 1, 3])
+    assert_allclose(moving_sum(data, 3), [0, 1, 3])
+
+    data = np.arange(5)
+    assert_allclose(moving_sum(data, 1), data)
+    assert_allclose(moving_sum(data, 2), [0, 1, 3, 5, 7])
+    assert_allclose(moving_sum(data, 3), [0, 1, 3, 6, 9])
+
+    assert_allclose(moving_sum(data[:, None], 3), np.array([0, 1, 3, 6, 9])[:, None])
