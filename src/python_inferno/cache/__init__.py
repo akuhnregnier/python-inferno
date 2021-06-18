@@ -12,7 +12,10 @@ from wildfires.cache import (
 )
 
 memory = ProxyMemory(
-    Path(os.environ["EPHEMERAL"]) / "python_inferno" / "joblib_cache", verbose=0
+    Path(os.environ["EPHEMERAL"]) / "python_inferno" / "joblib_cache",
+    verbose=0,
+    # Prevent caching in FIREDATA.
+    root_dir="",
 )
 cache = memory.cache
 
