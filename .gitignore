@@ -132,3 +132,5 @@ dask-worker-space
 plots/
 
 .benchmarks
+
+logfile.txt
