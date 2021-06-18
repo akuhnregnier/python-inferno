@@ -92,7 +92,7 @@ if __name__ == "__main__":
         mon_era_dd_1d, mask=match_shape(calc_mask, mon_era_dd_1d.shape)
     )
     results = {}
-    for threshold in tqdm(np.linspace(0.5, 2, 30)):
+    for threshold in tqdm(np.linspace(0.4, 2.2, 60)):
         inferno_dry_days = unpack_wrapped(calculate_inferno_dry_days)(
             ls_rain, con_rain, threshold, timestep=4 * 60 * 60
         )
