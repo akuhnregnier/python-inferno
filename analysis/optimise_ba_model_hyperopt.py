@@ -162,7 +162,9 @@ if __name__ == "__main__":
         dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
     )
 
-    trials = MongoTrials("mongo://localhost:1234/ba/jobs", exp_key="exp1")
+    trials = MongoTrials(
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp1"
+    )
 
     out = fmin(
         fn=to_optimise,
