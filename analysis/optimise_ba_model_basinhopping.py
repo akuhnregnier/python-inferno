@@ -129,6 +129,8 @@ def optimize_ba(
         min_p, max_p = sorted(opt_range[name])
         return value * (max_p - min_p) + min_p
 
+    timestep = 4 * 60 * 60
+
     # Default values.
     kwargs = dict(
         t1p5m_tile=t1p5m_tile,
@@ -152,7 +154,7 @@ def optimize_ba(
             np.expand_dims(obs_fapar_1d_data, 1), repeats=13, axis=1
         ),
         dry_days=unpack_wrapped(calculate_inferno_dry_days)(
-            ls_rain, con_rain, threshold=1.0, timestep=3600 * 4
+            ls_rain, con_rain, threshold=1.0, timestep=timestep
         ),
         flammability_method=2,
         dryness_method=dryness_method,
@@ -168,6 +170,7 @@ def optimize_ba(
         vpd_f=5e5,
         dry_bal_factor=1,
         dry_bal_centre=0,
+        timestep=timestep,
     )
 
     if record_dir is not None:

@@ -4,6 +4,7 @@ from wildfires.utils import parallel_njit
 
 from .configuration import land_pts
 from .inferno import inferno_io
+from .precip_dry_day import precip_moving_sum
 
 
 def multi_timestep_inferno(
@@ -39,6 +40,7 @@ def multi_timestep_inferno(
     vpd_f,
     dry_bal_factor,
     dry_bal_centre,
+    timestep,
     return_dry_bal=False,
 ):
     if dry_bal is None:
@@ -78,6 +80,9 @@ def multi_timestep_inferno(
         vpd_f=vpd_f,
         dry_bal_factor=dry_bal_factor,
         dry_bal_centre=dry_bal_centre,
+        cum_rain=precip_moving_sum(
+            ls_rain=ls_rain, con_rain=con_rain, timestep=timestep
+        ),
     )
     if return_dry_bal:
         return ba, dry_bal
@@ -118,6 +123,7 @@ def _multi_timestep_inferno(
     vpd_f,
     dry_bal_factor,
     dry_bal_centre,
+    cum_rain,
 ):
     # Ensure consistency of the time dimension.
     if not (
@@ -133,6 +139,7 @@ def _multi_timestep_inferno(
         == con_rain.shape[0]
         == fuel_build_up.shape[0]
         == fapar_diag_pft.shape[0]
+        == cum_rain.shape[0]
     ):
         raise ValueError("All arrays need to have the same time dimension.")
 
@@ -176,5 +183,6 @@ def _multi_timestep_inferno(
             vpd_f=vpd_f,
             dry_bal_factor=dry_bal_factor,
             dry_bal_centre=dry_bal_centre,
+            cum_rain=cum_rain[ti],
         )
     return ba, dry_bal

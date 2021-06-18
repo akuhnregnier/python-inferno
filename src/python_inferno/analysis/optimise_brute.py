@@ -40,6 +40,8 @@ def calc_param_r2(opt_params, N=None):
 
     combined_mask = combine_ma_masks(gfed_ba_1d, obs_fapar_1d, obs_fuel_build_up_1d)
 
+    timestep = 4 * 60 * 60
+
     kwargs = dict(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
@@ -62,7 +64,7 @@ def calc_param_r2(opt_params, N=None):
             np.expand_dims(obs_fapar_1d.data, 1), repeats=13, axis=1
         ),
         dry_days=unpack_wrapped(calculate_inferno_dry_days)(
-            ls_rain, con_rain, threshold=4.3e-5, timestep=3600 * 4
+            ls_rain, con_rain, threshold=4.3e-5, timestep=timestep
         ),
         flammability_method=2,
         dryness_method=2,
@@ -78,6 +80,7 @@ def calc_param_r2(opt_params, N=None):
         vpd_f=5e5,
         dry_bal_factor=1,
         dry_bal_centre=0,
+        timestep=timestep,
     )
 
     for name, value in opt_params.items():

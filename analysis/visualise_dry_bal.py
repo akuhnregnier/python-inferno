@@ -82,6 +82,7 @@ if __name__ == "__main__":
         dry_bal_factor=-1.1,
         dry_bal_centre=-0.98,
         return_dry_bal=True,
+        timestep=timestep,
     )
 
     combined_mask = gfed_ba_1d.mask | obs_fapar_1d.mask | obs_fuel_build_up_1d.mask

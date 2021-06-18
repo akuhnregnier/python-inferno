@@ -154,6 +154,8 @@ if __name__ == "__main__":
     # Define the ignition method (`ignition_method`).
     ignition_method = 1
 
+    timestep = 4 * 60 * 60
+
     python_ba_gb = run_inferno(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
@@ -172,7 +174,7 @@ if __name__ == "__main__":
         fuel_build_up=fuel_build_up,
         fapar_diag_pft=fapar_diag_pft,
         dry_days=unpack_wrapped(calculate_inferno_dry_days)(
-            ls_rain, con_rain, threshold=1.0, timestep=3600 * 4
+            ls_rain, con_rain, threshold=1.0, timestep=timestep
         ),
         fapar_factor=-4.83e1,
         fapar_centre=4.0e-1,
@@ -191,6 +193,7 @@ if __name__ == "__main__":
         jules_lons=jules_lons,
         obs_fapar_1d=obs_fapar_1d.data,
         obs_fuel_build_up_1d=obs_fuel_build_up_1d.data,
+        timestep=timestep,
     )
 
     combined_mask = gfed_ba_1d.mask | obs_fapar_1d.mask | obs_fuel_build_up_1d.mask

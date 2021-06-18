@@ -43,6 +43,7 @@ def inferno_io(
     vpd_f,
     dry_bal_factor,
     dry_bal_centre,
+    cum_rain,
 ):
     # Description:
     #   Called every model timestep, this subroutine updates INFERNO's
@@ -245,29 +246,30 @@ def inferno_io(
             )
 
             flammability_ft[i, l], dry_bal[i, l] = calc_flam(
-                inferno_temp[l],
-                inferno_rhum[l],
-                inferno_fuel[l],
-                inferno_sm[l],
-                inferno_rain[l],
-                fuel_build_up[i, l],
-                fapar_diag_pft[i, l],
-                dry_days[l],
-                flammability_method,
-                dryness_method,
-                fapar_factor,
-                fapar_centre,
-                fuel_build_up_factor,
-                fuel_build_up_centre,
-                temperature_factor,
-                temperature_centre,
-                dry_day_factor,
-                dry_day_centre,
-                dry_bal[i, l],
-                rain_f,
-                vpd_f,
-                dry_bal_factor,
-                dry_bal_centre,
+                temp_l=inferno_temp[l],
+                rhum_l=inferno_rhum[l],
+                fuel_l=inferno_fuel[l],
+                sm_l=inferno_sm[l],
+                rain_l=inferno_rain[l],
+                cum_rain_l=cum_rain[l],
+                fuel_build_up=fuel_build_up[i, l],
+                fapar=fapar_diag_pft[i, l],
+                dry_days=dry_days[l],
+                flammability_method=flammability_method,
+                dryness_method=dryness_method,
+                fapar_factor=fapar_factor,
+                fapar_centre=fapar_centre,
+                fuel_build_up_factor=fuel_build_up_factor,
+                fuel_build_up_centre=fuel_build_up_centre,
+                temperature_factor=temperature_factor,
+                temperature_centre=temperature_centre,
+                dry_day_factor=dry_day_factor,
+                dry_day_centre=dry_day_centre,
+                dry_bal=dry_bal[i, l],
+                rain_f=rain_f,
+                vpd_f=vpd_f,
+                dry_bal_factor=dry_bal_factor,
+                dry_bal_centre=dry_bal_centre,
             )
 
             burnt_area_ft[i, l] = calc_burnt_area(
@@ -369,6 +371,7 @@ def calc_flam(
     fuel_l,
     sm_l,
     rain_l,
+    cum_rain_l,
     fuel_build_up,
     fapar,
     dry_days,
@@ -468,7 +471,6 @@ def calc_flam(
             min(10.0 ** Z_l * f_rhum_l * fuel_l * f_sm_l * np.exp(cr * rain_rate), 1.0),
             0.0,
         )
-
     elif flammability_method == 2:
         # New calculation, based on FAPAR (and derived fuel_build_up).
 
@@ -480,7 +482,7 @@ def calc_flam(
             # TODO Scale depending on timestep.
             vpd = (10.0 ** Z_l) * f_rhum_l
             dry_bal += max(
-                min(rain_f * rain_rate - (1 - np.exp(-vpd_f * vpd)), 1.0), -1.0
+                min(rain_f * cum_rain_l - (1 - np.exp(-vpd_f * vpd)), 1.0), -1.0
             )
             dry_factor = fuel_param(dry_bal, dry_bal_factor, dry_bal_centre)
         else:

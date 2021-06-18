@@ -94,6 +94,8 @@ def optimize_ba(
             )
         )
 
+    timestep = 3600 * 4
+
     # Default values.
     kwargs = dict(
         t1p5m_tile=t1p5m_tile,
@@ -133,6 +135,7 @@ def optimize_ba(
         vpd_f=5e5,
         dry_bal_factor=1,
         dry_bal_centre=0,
+        timestep=timestep,
     )
 
     def to_optimise(x):
@@ -141,7 +144,10 @@ def optimize_ba(
         for name, value in zip(opt_bounds, x):
             if dryness_method == 1 and name == "dry_day_threshold":
                 kwargs["dry_days"] = calculate_inferno_dry_days(
-                    ls_rain, con_rain, threshold=value, timestep=3600 * 4
+                    ls_rain,
+                    con_rain,
+                    threshold=value,
+                    timestep=timestep,
                 )
             else:
                 kwargs[name] = value

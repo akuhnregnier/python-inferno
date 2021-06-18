@@ -20,6 +20,7 @@ from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4
 
 from python_inferno import inferno_io
 from python_inferno.configuration import land_pts
+from python_inferno.precip_dry_day import precip_moving_sum
 from python_inferno.utils import (
     repeated_exponential_average,
     temporal_nearest_neighbour_interp,
@@ -222,6 +223,8 @@ def main():
 
     ti = 0
 
+    timestep = 4 * 60 * 60
+
     python_inferno_kwargs = dict(
         t1p5m_tile=t1p5m_tile[ti, :, 0].data,
         q1p5m_tile=q1p5m_tile[ti, :, 0].data,
@@ -249,6 +252,9 @@ def main():
         jules_lons=jules_lons,
         obs_fapar_1d=obs_fapar_1d[ti],
         obs_fuel_build_up_1d=obs_fuel_build_up_1d[ti],
+        cum_rain=precip_moving_sum(
+            ls_rain=ls_rain, con_rain=con_rain, timestep=timestep
+        )[ti],
     )
 
     if 0:
