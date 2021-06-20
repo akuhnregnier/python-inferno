@@ -84,19 +84,19 @@ def to_optimise(opt_kwargs):
         ),
         timestep=timestep,
         flammability_method=2,
-        dryness_method=2,
+        dryness_method=1,
         # fapar_factor=-4.83e1,
         # fapar_centre=4.0e-1,
         # fuel_build_up_factor=1.01e1,
         # fuel_build_up_centre=3.76e-1,
         # temperature_factor=8.01e-2,
         # temperature_centre=2.82e2,
-        dry_day_factor=2.0e-2,
-        dry_day_centre=1.73e2,
-        # rain_f=0.5,
-        # vpd_f=2500,
-        # dry_bal_factor=1,
-        # dry_bal_centre=0,
+        # dry_day_factor=2.0e-2,
+        # dry_day_centre=1.73e2,
+        rain_f=0.5,
+        vpd_f=2500,
+        dry_bal_factor=1,
+        dry_bal_centre=0,
     )
 
     model_ba = unpack_wrapped(multi_timestep_inferno)(**{**kwargs, **opt_kwargs})
@@ -148,22 +148,22 @@ if __name__ == "__main__":
     space = dict(
         # flammability_method=2,
         # dryness_method=2,
-        fapar_factor=hp.uniform("fapar_factor", -60, -0.1),
-        fapar_centre=hp.uniform("fapar_centre", -3, 3),
-        fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 0.1, 30),
-        fuel_build_up_centre=hp.uniform("fuel_build_up_centre", -2, 2),
-        temperature_factor=hp.uniform("temperature_factor", 0.01, 0.15),
-        temperature_centre=hp.uniform("temperature_centre", 250, 310),
-        # dry_day_factor=2.0e-2,
-        # dry_day_centre=1.73e2,
-        rain_f=hp.uniform("rain_f", 0.1, 1.5),
-        vpd_f=hp.uniform("vpd_f", 500, 4000),
-        dry_bal_factor=hp.uniform("dry_bal_factor", -50, -0.1),
-        dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
+        fapar_factor=hp.uniform("fapar_factor", -10, -1),
+        fapar_centre=hp.uniform("fapar_centre", 0.5, 0.7),
+        fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 19, 28),
+        fuel_build_up_centre=hp.uniform("fuel_build_up_centre", 0.3, 0.5),
+        temperature_factor=hp.uniform("temperature_factor", 0.1, 0.18),
+        temperature_centre=hp.uniform("temperature_centre", 270, 290),
+        dry_day_factor=hp.uniform("dry_day_factor", 0.001, 0.2),
+        dry_day_centre=hp.uniform("dry_day_centre", 150, 200),
+        # rain_f=hp.uniform("rain_f", 0.1, 1.5),
+        # vpd_f=hp.uniform("vpd_f", 500, 4000),
+        # dry_bal_factor=hp.uniform("dry_bal_factor", -50, -0.1),
+        # dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
     )
 
     trials = MongoTrials(
-        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp1"
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp2"
     )
 
     out = fmin(
