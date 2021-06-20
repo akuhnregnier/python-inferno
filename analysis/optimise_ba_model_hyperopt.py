@@ -171,6 +171,6 @@ if __name__ == "__main__":
         space=space,
         algo=tpe.suggest,
         trials=trials,
-        max_evals=50,
+        max_evals=10000,
         rstate=np.random.RandomState(0),
     )
