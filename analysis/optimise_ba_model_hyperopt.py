@@ -13,7 +13,7 @@ from python_inferno.data import load_data
 from python_inferno.metrics import mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
-from python_inferno.utils import monthly_average_data, unpack_wrapped
+from python_inferno.utils import calculate_factor, monthly_average_data, unpack_wrapped
 
 timestep = 4 * 60 * 60
 
@@ -55,7 +55,6 @@ def to_optimise(opt_kwargs):
         mon_avg_gfed_ba_1d = mon_avg_gfed_ba_1d[:-1]
 
     y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-    y_true /= np.mean(y_true)
 
     # Model kwargs.
     kwargs = dict(
@@ -84,19 +83,19 @@ def to_optimise(opt_kwargs):
         ),
         timestep=timestep,
         flammability_method=2,
-        dryness_method=1,
+        dryness_method=2,
         # fapar_factor=-4.83e1,
         # fapar_centre=4.0e-1,
         # fuel_build_up_factor=1.01e1,
         # fuel_build_up_centre=3.76e-1,
         # temperature_factor=8.01e-2,
         # temperature_centre=2.82e2,
-        # dry_day_factor=2.0e-2,
-        # dry_day_centre=1.73e2,
-        rain_f=0.5,
-        vpd_f=2500,
-        dry_bal_factor=1,
-        dry_bal_centre=0,
+        dry_day_factor=2.0e-2,
+        dry_day_centre=1.73e2,
+        # rain_f=0.5,
+        # vpd_f=2500,
+        # dry_bal_factor=1,
+        # dry_bal_centre=0,
     )
 
     model_ba = unpack_wrapped(multi_timestep_inferno)(**{**kwargs, **opt_kwargs})
@@ -112,7 +111,11 @@ def to_optimise(opt_kwargs):
 
     # Get ypred.
     y_pred = np.ma.getdata(avg_ba)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-    y_pred /= np.mean(y_pred)
+
+    # Estimate the adjustment factor by minimising the NME.
+    adj_factor = calculate_factor(y_true=y_true, y_pred=y_pred)
+
+    y_pred *= adj_factor
 
     assert y_pred.shape == y_true.shape
 
@@ -122,8 +125,13 @@ def to_optimise(opt_kwargs):
         constant_values=0.0,
     )
     obs_pad = pad_func(mon_avg_gfed_ba_1d)
-    pred_pad = pad_func(avg_ba)
+    # Apply adjustment factor similarly to y_pred.
+    pred_pad = adj_factor * pad_func(avg_ba)
     mpd_val, ignored = mpd(obs=obs_pad, pred=pred_pad, return_ignored=True)
+
+    if ignored > 5600:
+        # Ensure that not too many samples are ignored.
+        return {"loss": 10000.0, "status": hyperopt.STATUS_FAIL}
 
     scores = dict(
         # 1D stats
@@ -148,22 +156,22 @@ if __name__ == "__main__":
     space = dict(
         # flammability_method=2,
         # dryness_method=2,
-        fapar_factor=hp.uniform("fapar_factor", -10, -1),
-        fapar_centre=hp.uniform("fapar_centre", 0.5, 0.7),
-        fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 19, 28),
-        fuel_build_up_centre=hp.uniform("fuel_build_up_centre", 0.3, 0.5),
-        temperature_factor=hp.uniform("temperature_factor", 0.1, 0.18),
+        fapar_factor=hp.uniform("fapar_factor", -50, -3),
+        fapar_centre=hp.uniform("fapar_centre", 0.4, 0.75),
+        fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 19, 30),
+        fuel_build_up_centre=hp.uniform("fuel_build_up_centre", 0.3, 0.45),
+        temperature_factor=hp.uniform("temperature_factor", 0.11, 0.17),
         temperature_centre=hp.uniform("temperature_centre", 270, 290),
-        dry_day_factor=hp.uniform("dry_day_factor", 0.001, 0.2),
-        dry_day_centre=hp.uniform("dry_day_centre", 150, 200),
-        # rain_f=hp.uniform("rain_f", 0.1, 1.5),
-        # vpd_f=hp.uniform("vpd_f", 500, 4000),
-        # dry_bal_factor=hp.uniform("dry_bal_factor", -50, -0.1),
-        # dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
+        # dry_day_factor=hp.uniform("dry_day_factor", 0.001, 0.2),
+        # dry_day_centre=hp.uniform("dry_day_centre", 150, 200),
+        rain_f=hp.uniform("rain_f", 0.8, 2.0),
+        vpd_f=hp.uniform("vpd_f", 500, 2000),
+        dry_bal_factor=hp.uniform("dry_bal_factor", -60, -20),
+        dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
     )
 
     trials = MongoTrials(
-        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp2"
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp3"
     )
 
     out = fmin(
