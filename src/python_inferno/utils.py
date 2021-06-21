@@ -6,8 +6,10 @@ import iris
 import numpy as np
 from iris.coord_categorisation import add_month_number, add_year
 from numba import njit
+from scipy.optimize import minimize
 
 from .cache import mark_dependency
+from .metrics import nme
 
 if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
@@ -137,7 +139,7 @@ def unpack_wrapped(func):
         # (no nesting).
         return func(
             *core_unpack_wrapped(*args),
-            **{key: core_unpack_wrapped(val) for key, val in kwargs.items()}
+            **{key: core_unpack_wrapped(val) for key, val in kwargs.items()},
         )
 
     return inner
@@ -171,3 +173,22 @@ def moving_sum(data, samples):
         out[i] = np.sum(data[max(i - samples + 1, 0) : i + 1], axis=0)
 
     return out
+
+
+def calculate_factor(*, y_true, y_pred):
+    """Calculate adjustment factor to convert `y_pred` to `y_true`.
+
+    This is done by minimising the NME.
+
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    def f(factor):
+        return nme(obs=y_true, pred=factor * y_pred)
+
+    # Minimize `f`, with the initial guess being the ratio of the means.
+    guess = np.mean(y_true) / np.mean(y_pred)
+    factor = minimize(f, guess).x[0]
+    print(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
+    return factor
