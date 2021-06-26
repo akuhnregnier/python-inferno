@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+from functools import partial
+
 import numpy as np
 from numpy.testing import assert_allclose
 
-from python_inferno.metrics import mpd, nme, nmse
+from python_inferno.metrics import loghist, mpd, nme, nmse
 
 
 def test_mse():
@@ -80,3 +82,29 @@ def test_mpd_zeros():
 
     pred[:, 2] = 0.0
     assert mpd(obs=obs, pred=pred, return_ignored=True)[1] == 2
+
+
+def test_loghist():
+    obs = np.random.default_rng(0).normal(0.5, 0.2, (1000,))
+
+    bndhist = partial(loghist, edges=np.linspace(0, 1, 10))
+
+    assert_allclose(bndhist(obs=obs, pred=obs), 0)
+
+    pred = np.random.default_rng(1).random(obs.shape)
+    err1 = bndhist(obs=obs, pred=pred)
+    assert err1 > 0
+
+    err2 = bndhist(
+        obs=obs,
+        pred=np.concatenate(
+            (
+                # Get elements from both arrays.
+                obs[: obs.size // 2],
+                pred[: obs.size // 2],
+            )
+        ),
+    )
+    assert err2 < err1
+
+    assert_allclose(bndhist(obs=obs, pred=obs), 0)

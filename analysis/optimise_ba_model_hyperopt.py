@@ -10,7 +10,7 @@ from sklearn.metrics import r2_score
 
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
-from python_inferno.metrics import mpd, nme, nmse
+from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import calculate_factor, monthly_average_data, unpack_wrapped
@@ -138,6 +138,7 @@ def to_optimise(opt_kwargs):
         r2=r2_score(y_true=y_true, y_pred=y_pred),
         nme=nme(obs=y_true, pred=y_pred),
         nmse=nmse(obs=y_true, pred=y_pred),
+        loghist=loghist(obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)),
         # Temporal stats.
         mpd=mpd_val,
     )
@@ -147,7 +148,7 @@ def to_optimise(opt_kwargs):
 
     # Aim to minimise the combined score.
     return {
-        "loss": scores["nme"] + scores["nmse"] + scores["mpd"],
+        "loss": scores["nme"] + scores["nmse"] + scores["mpd"] + 4 * scores["loghist"],
         "status": hyperopt.STATUS_OK,
     }
 
@@ -171,7 +172,7 @@ if __name__ == "__main__":
     )
 
     trials = MongoTrials(
-        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp3"
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp4"
     )
 
     out = fmin(

@@ -78,3 +78,29 @@ def mpd(*, obs, pred, return_ignored=False):
     if return_ignored:
         return mpd_val, np.sum(np.all(ignore_mask, axis=0))
     return mpd_val
+
+
+def loghist(*, obs, pred, edges):
+    """Logarithmic histogram metric.
+
+    TODO: Implement weighting, e.g. by bin widths.
+
+    Args:
+        obs (array-like): Observations.
+        pred (array-like): Predictions.
+        edges (array-like): Bin edges used for binning.
+
+    """
+
+    def bin_func(x):
+        binned = np.histogram(x, bins=edges)[0]
+        sel = binned > 0
+        binned[sel] = np.log10(binned[sel])
+        # Replace 0s with -1.
+        binned[~sel] = -1
+        return binned
+
+    binned_obs = bin_func(obs)
+    binned_pred = bin_func(pred)
+
+    return np.linalg.norm(binned_obs - binned_pred) / np.linalg.norm(binned_obs)
