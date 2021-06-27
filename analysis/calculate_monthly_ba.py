@@ -14,7 +14,7 @@ from wildfires.analysis import cube_plotting
 
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
-from python_inferno.metrics import mpd, nme, nmse
+from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import calculate_factor, monthly_average_data, unpack_wrapped
@@ -178,16 +178,16 @@ if __name__ == "__main__":
         ),
         dry_day_centre=150.00510288982784,
         dry_day_factor=0.021688204169591885,
-        dry_bal_centre=-0.9779010845656665,
-        dry_bal_factor=-59.17322076688619,
-        fapar_centre=0.737871300105012,
-        fapar_factor=-12.408836200357614,
-        fuel_build_up_centre=0.3158407150237622,
-        fuel_build_up_factor=24.731279424730566,
-        rain_f=1.6956186292007316,
-        temperature_centre=286.3630645479963,
-        temperature_factor=0.15671988683218163,
-        vpd_f=823.8710509245902,
+        dry_bal_centre=-1.013530705313104,
+        dry_bal_factor=-57.97689469051766,
+        fapar_centre=0.40973084195426407,
+        fapar_factor=-38.80318279656624,
+        fuel_build_up_centre=0.4498554332474769,
+        fuel_build_up_factor=28.381174640464906,
+        rain_f=1.9149158937693906,
+        temperature_centre=289.84017434489806,
+        temperature_factor=0.13959610930019273,
+        vpd_f=562.2045619507006,
         dryness_method=2,
         jules_lats=jules_lats,
         jules_lons=jules_lons,
@@ -248,6 +248,8 @@ if __name__ == "__main__":
         print(f"R2: {r2_score(y_true=y_true, y_pred=y_pred):+0.4f}")
         print(f"NME: {nme(obs=y_true, pred=y_pred):+0.4f}")
         print(f"NMSE: {nmse(obs=y_true, pred=y_pred):+0.4f}")
+        loghist_val = loghist(obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20))
+        print(f"loghist: {loghist_val:+0.4f}")
 
         # Temporal stats.
         pad_func = partial(
