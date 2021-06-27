@@ -148,7 +148,7 @@ def to_optimise(opt_kwargs):
 
     # Aim to minimise the combined score.
     return {
-        "loss": scores["nme"] + scores["nmse"] + scores["mpd"] + 4 * scores["loghist"],
+        "loss": scores["loghist"],
         "status": hyperopt.STATUS_OK,
     }
 
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     )
 
     trials = MongoTrials(
-        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp4"
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp5"
     )
 
     out = fmin(
