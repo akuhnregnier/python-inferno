@@ -2,7 +2,7 @@
 import numpy as np
 from wildfires.utils import parallel_njit
 
-from .configuration import land_pts
+from .configuration import land_pts, npft
 from .inferno import inferno_io
 from .precip_dry_day import precip_moving_sum
 
@@ -46,6 +46,30 @@ def multi_timestep_inferno(
     if dry_bal is None:
         dry_bal = np.zeros_like(fapar_diag_pft)
 
+    param_vars = dict(
+        fapar_factor=fapar_factor,
+        fapar_centre=fapar_centre,
+        fuel_build_up_factor=fuel_build_up_factor,
+        fuel_build_up_centre=fuel_build_up_centre,
+        temperature_factor=temperature_factor,
+        temperature_centre=temperature_centre,
+        dry_day_factor=dry_day_factor,
+        dry_day_centre=dry_day_centre,
+        rain_f=rain_f,
+        vpd_f=vpd_f,
+        dry_bal_factor=dry_bal_factor,
+        dry_bal_centre=dry_bal_centre,
+    )
+
+    # Ensure the parameters are given as arrays with 'npft' elements.
+    transformed_param_vars = dict()
+    for name, val in param_vars.items():
+        if not hasattr(val, "__iter__"):
+            print(f"Duplicating: {name}")
+            val = [val] * npft
+        transformed_param_vars[name] = np.asarray(val, dtype=np.float64)
+        assert transformed_param_vars[name].shape == (npft,)
+
     # Call the below using normal, non-numba Python to enable features like
     # keyword-only arguments with default arguments as above.
     ba, dry_bal = _multi_timestep_inferno(
@@ -66,23 +90,12 @@ def multi_timestep_inferno(
         fapar_diag_pft=fapar_diag_pft,
         dry_bal=dry_bal,
         dry_days=dry_days,
-        fapar_factor=fapar_factor,
-        fapar_centre=fapar_centre,
-        fuel_build_up_factor=fuel_build_up_factor,
-        fuel_build_up_centre=fuel_build_up_centre,
-        temperature_factor=temperature_factor,
-        temperature_centre=temperature_centre,
         flammability_method=flammability_method,
         dryness_method=dryness_method,
-        dry_day_factor=dry_day_factor,
-        dry_day_centre=dry_day_centre,
-        rain_f=rain_f,
-        vpd_f=vpd_f,
-        dry_bal_factor=dry_bal_factor,
-        dry_bal_centre=dry_bal_centre,
         cum_rain=precip_moving_sum(
             ls_rain=ls_rain, con_rain=con_rain, timestep=timestep
         ),
+        **transformed_param_vars,
     )
     if return_dry_bal:
         return ba, dry_bal
