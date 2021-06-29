@@ -178,16 +178,22 @@ if __name__ == "__main__":
         ),
         dry_day_centre=150.00510288982784,
         dry_day_factor=0.021688204169591885,
-        dry_bal_centre=-1.1459783842381446,
-        dry_bal_factor=-55.784955290759626,
-        fapar_centre=0.4426709842152708,
-        fapar_factor=-11.56354828102021,
-        fuel_build_up_centre=0.437313364876579,
-        fuel_build_up_factor=27.875723776001067,
-        rain_f=0.8923618081762822,
-        temperature_centre=284.2747100226813,
-        temperature_factor=0.14673598240417998,
-        vpd_f=517.857209253917,
+        dry_bal_centre=np.array([-1.0818941891799707] * 5 + [-2.3923563866498463] * 8),
+        dry_bal_factor=np.array([-59.9502028328297] * 5 + [-39.76142212438635] * 8),
+        fapar_centre=np.array([0.42035755852177364] * 5 + [0.5947182780216114] * 8),
+        fapar_factor=np.array([-17.781932260788434] * 5 + [-7.933666814687352] * 8),
+        fuel_build_up_centre=np.array(
+            [0.4342478389149905] * 5 + [0.3755053873876129] * 8
+        ),
+        fuel_build_up_factor=np.array(
+            [21.693205480872535] * 5 + [20.926469287148375] * 8
+        ),
+        rain_f=np.array([1.9989812750575975] * 5 + [1.3609121777450914] * 8),
+        temperature_centre=np.array([270.57886576006445] * 5 + [286.9226839210086] * 8),
+        temperature_factor=np.array(
+            [0.16455586742721365] * 5 + [0.14286637384805756] * 8
+        ),
+        vpd_f=np.array([646.4174044990665] * 5 + [1347.5357613580497] * 8),
         dryness_method=2,
         jules_lats=jules_lats,
         jules_lons=jules_lons,
