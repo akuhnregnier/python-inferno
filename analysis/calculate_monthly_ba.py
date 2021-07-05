@@ -1,36 +1,47 @@
 # -*- coding: utf-8 -*-
 import os
+from collections import defaultdict
 from functools import partial
 from pathlib import Path
+from pprint import pprint
 
 import cartopy.crs as ccrs
 import iris
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from alepython import ale_plot
+from alepython.multi_ale_plot_1d import multi_ale_plot_1d
 from joblib import Memory
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score
+from tqdm import tqdm
 from wildfires.analysis import cube_plotting
 
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
 from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
-from python_inferno.precip_dry_day import calculate_inferno_dry_days
+from python_inferno.precip_dry_day import calculate_inferno_dry_days, filter_rain
 from python_inferno.utils import calculate_factor, monthly_average_data, unpack_wrapped
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
+mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+
+dryness_method = 1
+
+figure_dir = Path(f"~/tmp/python_inferno-dryness-{dryness_method}").expanduser()
+figure_dir.mkdir(parents=False, exist_ok=True)
 
 
 def plot_comparison(jules_ba_gb, python_ba_gb, obs_ba, label="BA", title=""):
+    def normalise_cube(cube):
+        return cube / (np.mean(cube.data) * 18)
+
     # Compare to the values calculated within JULES.
     jules_ba_2d = cube_1d_to_2d(jules_ba_gb)
-
-    # Set up the plots.
-    fig, axes = plt.subplots(
-        2, 3, subplot_kw=dict(projection=ccrs.Robinson()), figsize=(13.4, 6.9)
-    )
-    axes[1, 2].axis("off")
 
     common_kwargs = dict(
         # colorbar_kwargs=dict(label=label),
@@ -38,55 +49,84 @@ def plot_comparison(jules_ba_gb, python_ba_gb, obs_ba, label="BA", title=""):
         title=title,
         log=True,
         nbins=6,
+        boundaries=list(np.array([1.0, 2.0, 4.0, 8.0, 13.0, 18.0]) / 18.0),
+        extend="both",
+        cmap="inferno_r",
     )
 
-    def normalise_cube(cube):
-        return cube / np.max(cube.data)
+    def plot_cube(cube, ax, title, kwargs=None):
+        if kwargs is None:
+            kwargs = dict()
+        try:
+            cube_plotting(
+                normalise_cube(cube),
+                ax=ax,
+                **{**common_kwargs, **kwargs},
+            )
+            ax.set_title(title)
+        except:
+            print(f"Could not plot '{title}'.")
 
-    ax = axes[0, 0]
-    cube_plotting(
-        normalise_cube(jules_ba_2d),
-        ax=ax,
-        **common_kwargs,
+    # Set up the plots.
+    fig, axes = plt.subplots(
+        2, 3, subplot_kw=dict(projection=ccrs.Robinson()), figsize=(13.4, 6.9)
     )
-    ax.set_title("JULES BA")
-
-    ax = axes[0, 1]
-    cube_plotting(
-        normalise_cube(cube_1d_to_2d(python_ba_gb["normal"])),
-        ax=ax,
-        **common_kwargs,
+    axes[1, 2].axis("off")
+    plot_cube(jules_ba_2d, axes[0, 0], "JULES BA")
+    plot_cube(cube_1d_to_2d(python_ba_gb["normal"]), axes[0, 1], "Python BA")
+    plot_cube(
+        cube_1d_to_2d(python_ba_gb["new"]), axes[0, 2], "Python BA with new Flamm."
     )
-    ax.set_title("Python BA")
-
-    ax = axes[0, 2]
-    try:
-        cube_plotting(
-            normalise_cube(cube_1d_to_2d(python_ba_gb["new"])),
-            ax=ax,
+    plot_cube(
+        cube_1d_to_2d(python_ba_gb["new_obs_fapar"]),
+        axes[1, 0],
+        "Python BA with new Flamm. & Obs FAPAR",
+    )
+    plot_cube(
+        cube_1d_to_2d(obs_ba),
+        axes[1, 1],
+        "Obs BA",
+        {
             **common_kwargs,
-        )
-    except:
-        print("Could not plot 'new'.")
-    ax.set_title("Python BA with new Flamm.")
-
-    ax = axes[1, 0]
-    cube_plotting(
-        normalise_cube(cube_1d_to_2d(python_ba_gb["new_obs_fapar"])),
-        ax=ax,
-        **common_kwargs,
+            "colorbar_kwargs": dict(
+                orientation="horizontal",
+                ax=axes,
+                cax=fig.add_axes([0.35, 0.15, 0.3, 0.015]),
+                format="%0.2f",
+                label="Scaled BA",
+            ),
+        },
     )
-    ax.set_title("Python BA with new Flamm. & Obs FAPAR")
-
-    ax = axes[1, 1]
-    cube_plotting(
-        normalise_cube(cube_1d_to_2d(obs_ba)),
-        ax=ax,
-        **common_kwargs,
-    )
-    ax.set_title("Obs BA")
-
     fig.subplots_adjust(wspace=0.045, hspace=-0.2)
+    fig.savefig(figure_dir / "mean_ba_all.png")
+
+    # Set up the plots.
+    fig, axes = plt.subplots(
+        1, 3, subplot_kw=dict(projection=ccrs.Robinson()), figsize=(13.4, 3.5)
+    )
+    plot_cube(jules_ba_2d, axes[0], "JULES")
+    plot_cube(
+        cube_1d_to_2d(python_ba_gb["new_obs_fapar"]),
+        axes[1],
+        "New Parametrisation (Obs FAPAR)",
+    )
+    plot_cube(
+        cube_1d_to_2d(obs_ba),
+        axes[2],
+        "Observed (GFED4 BA)",
+        {
+            **common_kwargs,
+            "colorbar_kwargs": dict(
+                orientation="horizontal",
+                ax=axes,
+                cax=fig.add_axes([0.35, 0.15, 0.3, 0.015]),
+                format="%0.2f",
+                label="Scaled BA",
+            ),
+        },
+    )
+    fig.subplots_adjust(wspace=0.045, hspace=-0.2)
+    fig.savefig(figure_dir / "mean_ba.png")
 
 
 def run_inferno(
@@ -156,6 +196,10 @@ if __name__ == "__main__":
 
     timestep = 4 * 60 * 60
 
+    dry_days = unpack_wrapped(calculate_inferno_dry_days)(
+        ls_rain, con_rain, threshold=1.0, timestep=timestep
+    )
+
     python_ba_gb = run_inferno(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
@@ -173,28 +217,33 @@ if __name__ == "__main__":
         ignition_method=ignition_method,
         fuel_build_up=fuel_build_up,
         fapar_diag_pft=fapar_diag_pft,
-        dry_days=unpack_wrapped(calculate_inferno_dry_days)(
-            ls_rain, con_rain, threshold=1.0, timestep=timestep
-        ),
+        dry_days=dry_days,
         dry_day_centre=150.00510288982784,
         dry_day_factor=0.021688204169591885,
-        dry_bal_centre=np.array([-1.0818941891799707] * 5 + [-2.3923563866498463] * 8),
-        dry_bal_factor=np.array([-59.9502028328297] * 5 + [-39.76142212438635] * 8),
-        fapar_centre=np.array([0.42035755852177364] * 5 + [0.5947182780216114] * 8),
-        fapar_factor=np.array([-17.781932260788434] * 5 + [-7.933666814687352] * 8),
-        fuel_build_up_centre=np.array(
-            [0.4342478389149905] * 5 + [0.3755053873876129] * 8
-        ),
-        fuel_build_up_factor=np.array(
-            [21.693205480872535] * 5 + [20.926469287148375] * 8
-        ),
-        rain_f=np.array([1.9989812750575975] * 5 + [1.3609121777450914] * 8),
-        temperature_centre=np.array([270.57886576006445] * 5 + [286.9226839210086] * 8),
-        temperature_factor=np.array(
-            [0.16455586742721365] * 5 + [0.14286637384805756] * 8
-        ),
-        vpd_f=np.array([646.4174044990665] * 5 + [1347.5357613580497] * 8),
-        dryness_method=2,
+        fapar_centre=0.511507816157793,
+        fapar_factor=-9.998892695052076,
+        fuel_build_up_centre=0.35177320396443457,
+        fuel_build_up_factor=27.997267588827928,
+        temperature_centre=279.4948294244702,
+        temperature_factor=0.17853260102934965,
+        rain_f=0.0,
+        vpd_f=0.0,
+        dry_bal_centre=0.0,
+        dry_bal_factor=0.0,
+        dryness_method=dryness_method,
+        # dry_day_centre=150.00510288982784,
+        # dry_day_factor=0.021688204169591885,
+        # dry_bal_centre=-1.1459783842381446,
+        # dry_bal_factor=-55.784955290759626,
+        # fapar_centre=0.4426709842152708,
+        # fapar_factor=-11.56354828102021,
+        # fuel_build_up_centre=0.437313364876579,
+        # fuel_build_up_factor=27.875723776001067,
+        # rain_f=0.8923618081762822,
+        # temperature_centre=284.2747100226813,
+        # temperature_factor=0.14673598240417998,
+        # vpd_f=517.857209253917,
+        # dryness_method=2,
         jules_lats=jules_lats,
         jules_lons=jules_lons,
         obs_fapar_1d=obs_fapar_1d.data,
@@ -206,20 +255,26 @@ if __name__ == "__main__":
 
     gfed_ba_1d.mask |= combined_mask
 
+    # Ignore the last month if there is only a single day in it.
+    ignore_last_month = (
+        jules_time_coord.cell(-1).point.day == 1 and jules_time_coord.shape[0] > 1
+    )
+
+    def new_monthly_average_data(*args, **kwargs):
+        averaged = monthly_average_data(*args, **kwargs)
+        if ignore_last_month:
+            return averaged[:-1]
+        return averaged
+
     # Calculate monthly averages.
-    mon_avg_gfed_ba_1d = monthly_average_data(gfed_ba_1d, time_coord=jules_time_coord)
+    mon_avg_gfed_ba_1d = new_monthly_average_data(
+        gfed_ba_1d, time_coord=jules_time_coord
+    )
     for key, val in python_ba_gb.items():
         assert isinstance(val, iris.cube.Cube)
-        avg_data = monthly_average_data(val.data, time_coord=jules_time_coord)
+        avg_data = new_monthly_average_data(val.data, time_coord=jules_time_coord)
         avg_cube = val[: avg_data.shape[0]].copy(data=avg_data)
         python_ba_gb[key] = avg_cube
-
-    if jules_time_coord.cell(-1).point.day == 1 and jules_time_coord.shape[0] > 1:
-        # Ignore the last month if there is only a single day in it.
-        mon_avg_gfed_ba_1d = mon_avg_gfed_ba_1d[:-1]
-        for key, val in python_ba_gb.items():
-            python_ba_gb[key] = val[:-1]
-            assert python_ba_gb[key].shape == mon_avg_gfed_ba_1d.shape
 
     y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
 
@@ -237,12 +292,13 @@ if __name__ == "__main__":
             max_ba = max(np.max(y_true), np.max(y_pred))
             bins = np.linspace(0, max_ba, 100)
 
-            plt.figure()
+            fig = plt.figure()
             plt.hist(y_true, bins=bins, label="true", alpha=0.4)
             plt.hist(y_pred, bins=bins, label="pred", alpha=0.4)
             plt.title(name)
             plt.yscale("log")
             plt.legend()
+            fig.savefig(figure_dir / f"{name}_hist.png")
 
         return y_pred, adj_factor
 
@@ -287,4 +343,193 @@ if __name__ == "__main__":
             np.mean(gfed_ba_1d, axis=0), lats=jules_lats, lons=jules_lons
         ),
     )
+
+    assert False
+
+    def frac_weighted_mean(data):
+        assert len(data.shape) == 3, "Need time, PFT, and space coords."
+        assert data.shape[1] in (13, 17)
+        assert frac.shape[1] == 17
+
+        return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
+            frac[:, : data.shape[1]], axis=1
+        )
+
+    variables = dict(
+        temperature=new_monthly_average_data(
+            frac_weighted_mean(t1p5m_tile), time_coord=jules_time_coord
+        ),
+        dpm=new_monthly_average_data(c_soil_dpm_gb, time_coord=jules_time_coord),
+        rpm=new_monthly_average_data(c_soil_rpm_gb, time_coord=jules_time_coord),
+        rain=new_monthly_average_data(
+            unpack_wrapped(filter_rain)(ls_rain, con_rain), time_coord=jules_time_coord
+        ),
+        dry_days=new_monthly_average_data(dry_days, time_coord=jules_time_coord),
+        fuel=new_monthly_average_data(
+            frac_weighted_mean(fuel_build_up), time_coord=jules_time_coord
+        ),
+        fapar=new_monthly_average_data(
+            frac_weighted_mean(fapar_diag_pft), time_coord=jules_time_coord
+        ),
+        obs_fapar=new_monthly_average_data(obs_fapar_1d, time_coord=jules_time_coord),
+        obs_fuel=new_monthly_average_data(
+            obs_fuel_build_up_1d, time_coord=jules_time_coord
+        ),
+    )
+
+    # Include 1-month antecedent FAPAR and dry-days.
+
+    main_mask = mon_avg_gfed_ba_1d.mask[1:] | mon_avg_gfed_ba_1d.mask[:-1]
+
+    antec_fapar = variables["fapar"][:-1]
+    antec_obs_fapar = variables["obs_fapar"][:-1]
+    antec_dry_days = variables["dry_days"][:-1]
+
+    new_variables = dict()
+    for name, data in variables.items():
+        new_variables[name] = data[1:]
+
+    new_variables["antec_fapar"] = antec_fapar
+    new_variables["antec_obs_fapar"] = antec_obs_fapar
+    new_variables["antec_dry_days"] = antec_dry_days
+
+    variables = new_variables
+    del new_variables
+
+    def get_valid_data(data):
+        return np.ma.getdata(data)[~main_mask]
+
+    jules_target = get_valid_data(
+        new_monthly_average_data(jules_ba_gb, time_coord=jules_time_coord)[1:]
+    )
+    obs_target = get_valid_data(mon_avg_gfed_ba_1d[1:])
+    jules_target *= np.mean(obs_target) / np.mean(jules_target)
+
+    new_target = get_valid_data(python_ba_gb["new_obs_fapar"].data[1:])
+    new_target *= np.mean(obs_target) / np.mean(new_target)
+
+    jules_X = pd.DataFrame(
+        {
+            name: get_valid_data(data)
+            for name, data in variables.items()
+            if name
+            in (
+                "temperature",
+                "dpm",
+                "rpm",
+                "dry_days",
+                "antec_dry_days",
+                "fapar",
+                "antec_fapar",
+            )
+        }
+    )
+
+    obs_X = pd.DataFrame(
+        {
+            name: get_valid_data(data)
+            for name, data in variables.items()
+            if name
+            in (
+                "temperature",
+                "dpm",
+                "rpm",
+                "dry_days",
+                "antec_dry_days",
+                "obs_fapar",
+                "antec_obs_fapar",
+            )
+        }
+    )
+
+    models = defaultdict(dict)
+
+    for train_name, train_X in zip(("jules-train", "obs-train"), (jules_X, obs_X)):
+        for target_name, target_y in zip(
+            ("jules-target", "obs-target", "new-target"),
+            (jules_target, obs_target, new_target),
+        ):
+            rf = RandomForestRegressor(
+                n_estimators=500,
+                max_depth=15,
+                random_state=0,
+                oob_score=True,
+                n_jobs=11,
+            )
+            rf.fit(train_X, target_y)
+
+            models[(train_name, target_name)]["model"] = rf
+            models[(train_name, target_name)]["score"] = rf.score(train_X, target_y)
+            models[(train_name, target_name)]["oob_score"] = rf.oob_score_
+
+    pprint(models)
+
+    # ALE plots.
+
+    for (train_name, train_X) in tqdm(
+        (("jules-train", jules_X), ("obs-train", obs_X)), desc="ALE plotting train"
+    ):
+
+        for (target_name, target_y) in tqdm(
+            (
+                ("jules-target", jules_target),
+                ("obs-target", obs_target),
+                ("new-target", new_target),
+            ),
+            desc="ALE plotting target",
+        ):
+            save_dir = figure_dir / f"ale_{train_name}_{target_name}"
+            save_dir.mkdir(parents=False, exist_ok=True)
+
+            for feature in train_X.columns:
+                fig, ax = plt.subplots()
+                ale_plot(
+                    model=models[(train_name, target_name)]["model"],
+                    train_set=train_X,
+                    train_response=target_y,
+                    features=feature,
+                    monte_carlo=False,
+                    # monte_carlo_rep=3,
+                    verbose=True,
+                    # show_full=True,
+                    fig=fig,
+                    ax=ax,
+                )
+                ax.grid()
+                fig.savefig(save_dir / f"{feature}.png")
+
+    for combination, title in (
+        (("obs-train", "new-target"), "New Parametrisation (with obs)"),
+        (("obs-train", "obs-target"), "Observations"),
+        (("jules-train", "jules-target"), "INFERNO"),
+    ):
+        train_set = obs_X
+        if combination[0] == "obs-train":
+            print("Using obs_X")
+            train_set = obs_X
+        elif combination[0] == "jules-train":
+            print("Using jules_X")
+            train_set = jules_X
+        else:
+            raise ValueError("Unknown train name")
+
+        for feature, label in (("fapar", "FAPAR"), ("dry_days", "Dry Days")):
+            if combination[0] == "obs-train" and feature == "fapar":
+                feature = f"obs_{feature}"
+            fig, ax = plt.subplots(figsize=(4.5, 3.1))
+            multi_ale_plot_1d(
+                model=models[combination]["model"],
+                train_set=train_set,
+                features=[f"antec_{feature}", feature],
+                fig=fig,
+                ax=ax,
+                title=title,
+                ylabel="BA",
+                xlabel=label,
+            )
+            ax.grid()
+            fig.savefig(
+                figure_dir / f"{combination[0]}_{combination[1]}_{feature}_ales.png"
+            )
+
     plt.show()
