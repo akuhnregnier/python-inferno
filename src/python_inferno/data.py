@@ -4,6 +4,7 @@ from pathlib import Path
 import dask.array as darray
 import iris
 import numpy as np
+from iris.time import PartialDateTime
 from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lons
 from jules_output_analysis.utils import convert_longitudes
 from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4
@@ -23,10 +24,12 @@ def load_data(
         Path(
             # "~/tmp/new-with-antec3/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUP0.Monthly.2000.nc"
             # "~/tmp/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUP0.Monthly.2009.nc"
-            "~/tmp/new-with-antec4/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUP0.Instant.2001.nc"
+            # "~/tmp/new-with-antec4/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUP0.Instant.2001.nc"
+            "~/tmp/climatology5_c.nc"
         ).expanduser()
     ),
     N=None,
+    obs_dates=(PartialDateTime(2000, 1), PartialDateTime(2016, 12)),
 ):
     cubes = iris.load(filename)
 
@@ -64,9 +67,12 @@ def load_data(
         n96e_lons,
     )
 
+    if obs_dates is None:
+        obs_dates = (data_time_coord.cell(0).point, data_time_coord.cell(-1).point)
+
     # Load observed monthly BA.
     gfed = GFEDv4()
-    gfed.limit_months(data_time_coord.cell(0).point, data_time_coord.cell(-1).point)
+    gfed.limit_months(*obs_dates)
     gfed.regrid(new_latitudes=n96e_lats, new_longitudes=n96e_lons, area_weighted=True)
     gfed_ba = gfed.cube
 
@@ -93,7 +99,7 @@ def load_data(
 
     # Load observed monthly FAPAR.
     fapar = Ext_MOD15A2H_fPAR()
-    fapar.limit_months(data_time_coord.cell(0).point, data_time_coord.cell(-1).point)
+    fapar.limit_months(*obs_dates)
     fapar.regrid(new_latitudes=n96e_lats, new_longitudes=n96e_lons, area_weighted=True)
     mon_obs_fapar = fapar.cube
 
