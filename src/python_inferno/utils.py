@@ -145,12 +145,27 @@ def unpack_wrapped(func):
     return inner
 
 
-def monthly_average_data(data, time_coord=None):
+def monthly_average_data(data, time_coord=None, trim_single=True):
+    """Calculate monthly average of data.
+
+    If `trim_single` is True, a single day e.g. (01/01/2000) at the end of the input
+    data will be discarded to avoid generating an 'average' month from a single sample
+    only.
+
+    """
     if isinstance(data, iris.cube.Cube):
         return monthly_average_data(data.data, time_coord=data.coord("time"))
 
     assert time_coord is not None, "time_coord required for non-cubes."
     dummy_cube = iris.cube.Cube(data, dim_coords_and_dims=[(time_coord, 0)])
+
+    if (
+        time_coord.cell(-1).point.month == 1
+        and time_coord.cell(-1).point.day == 1
+        and time_coord.cell(-2).point.month == 12
+    ):
+        # Trim the last point.
+        dummy_cube = dummy_cube[:-1]
 
     add_year(dummy_cube, "time")
     add_month_number(dummy_cube, "time")
@@ -192,3 +207,21 @@ def calculate_factor(*, y_true, y_pred):
     factor = minimize(f, guess).x[0]
     print(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
     return factor
+
+
+def expand_pft_params(
+    params, pft_groups=((0, 1, 2, 3, 4), (5, 6, 7, 8, 9, 10), (11, 12))
+):
+    """Given N values in `params`, repeat these according to `pft_groups`."""
+    if len(params) != len(pft_groups):
+        raise ValueError("There should be as many 'params' as 'pft_groups'.")
+
+    if len(set(e for elements in pft_groups for e in elements)) != 13:
+        raise ValueError("All 13 PFTs should have a unique entry in 'pft_groups'.")
+
+    out = np.zeros(13, dtype=np.float64)
+    for param, pft_group in zip(params, pft_groups):
+        for e in pft_group:
+            out[e] = param
+
+    return out

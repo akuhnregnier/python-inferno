@@ -3,6 +3,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 
 from python_inferno.utils import (
+    expand_pft_params,
     exponential_average,
     moving_sum,
     temporal_nearest_neighbour_interp,
@@ -91,3 +92,21 @@ def test_moving_sum():
     assert_allclose(moving_sum(data, 3), [0, 1, 3, 6, 9])
 
     assert_allclose(moving_sum(data[:, None], 3), np.array([0, 1, 3, 6, 9])[:, None])
+
+
+def test_expand_pft_params():
+    assert tuple(expand_pft_params([1, 2, 3])) == (
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        3,
+        3,
+    )

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from collections import defaultdict
 from functools import partial
 
 import hyperopt
 import numpy as np
 from hyperopt import fmin, hp, tpe
-from hyperopt.mongoexp import MongoTrials
 from sklearn.metrics import r2_score
 
 from python_inferno.configuration import land_pts
@@ -13,7 +13,12 @@ from python_inferno.data import load_data
 from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
-from python_inferno.utils import calculate_factor, monthly_average_data, unpack_wrapped
+from python_inferno.utils import (
+    calculate_factor,
+    expand_pft_params,
+    monthly_average_data,
+    unpack_wrapped,
+)
 
 timestep = 4 * 60 * 60
 
@@ -41,13 +46,23 @@ def to_optimise(opt_kwargs):
         jules_time_coord,
     ) = load_data(N=None)
 
-    expanded_opt_kwargs = dict()
+    expanded_opt_tmp = defaultdict(list)
     for name, val in opt_kwargs.items():
-        if name[-1] != "2":
-            expanded_opt_kwargs[name] = np.array([val] * 5 + [0] * 8, dtype=np.float64)
-        else:
-            assert name[:-1] in expanded_opt_kwargs
-            expanded_opt_kwargs[name[:-1]][-8:] = val
+        if name[-1] not in ("2", "3"):
+            expanded_opt_tmp[name].append(val)
+        elif name[-1] == "2":
+            assert name[:-1] in expanded_opt_tmp
+            assert len(expanded_opt_tmp[name[:-1]]) == 1
+            expanded_opt_tmp[name[:-1]].append(val)
+        elif name[-1] == "3":
+            assert name[:-1] in expanded_opt_tmp
+            assert len(expanded_opt_tmp[name[:-1]]) == 2
+            expanded_opt_tmp[name[:-1]].append(val)
+
+    expanded_opt_kwargs = dict()
+    for name, vals in expanded_opt_tmp.items():
+        if len(vals) == 3:
+            expanded_opt_kwargs[name] = expand_pft_params(vals)
 
     print("Opt param arrays")
     for name, vals in expanded_opt_kwargs.items():
@@ -102,8 +117,8 @@ def to_optimise(opt_kwargs):
         # fuel_build_up_centre=3.76e-1,
         # temperature_factor=8.01e-2,
         # temperature_centre=2.82e2,
-        dry_day_factor=2.0e-2,
-        dry_day_centre=1.73e2,
+        dry_day_factor=0.0,
+        dry_day_centre=0.0,
         # rain_f=0.5,
         # vpd_f=2500,
         # dry_bal_factor=1,
@@ -173,37 +188,47 @@ if __name__ == "__main__":
         # dryness_method=2,
         fapar_factor=hp.uniform("fapar_factor", -50, -3),
         fapar_factor2=hp.uniform("fapar_factor2", -50, -3),
+        fapar_factor3=hp.uniform("fapar_factor3", -50, -3),
         fapar_centre=hp.uniform("fapar_centre", 0.4, 0.75),
         fapar_centre2=hp.uniform("fapar_centre2", 0.4, 0.75),
+        fapar_centre3=hp.uniform("fapar_centre3", 0.4, 0.75),
         fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 19, 30),
         fuel_build_up_factor2=hp.uniform("fuel_build_up_factor2", 19, 30),
+        fuel_build_up_factor3=hp.uniform("fuel_build_up_factor3", 19, 30),
         fuel_build_up_centre=hp.uniform("fuel_build_up_centre", 0.3, 0.45),
         fuel_build_up_centre2=hp.uniform("fuel_build_up_centre2", 0.3, 0.45),
+        fuel_build_up_centre3=hp.uniform("fuel_build_up_centre3", 0.3, 0.45),
         temperature_factor=hp.uniform("temperature_factor", 0.11, 0.17),
         temperature_factor2=hp.uniform("temperature_factor2", 0.11, 0.17),
+        temperature_factor3=hp.uniform("temperature_factor3", 0.11, 0.17),
         temperature_centre=hp.uniform("temperature_centre", 270, 290),
         temperature_centre2=hp.uniform("temperature_centre2", 270, 290),
+        temperature_centre3=hp.uniform("temperature_centre3", 270, 290),
         # dry_day_factor=hp.uniform("dry_day_factor", 0.001, 0.2),
         # dry_day_centre=hp.uniform("dry_day_centre", 150, 200),
         rain_f=hp.uniform("rain_f", 0.8, 2.0),
         rain_f2=hp.uniform("rain_f2", 0.8, 2.0),
+        rain_f3=hp.uniform("rain_f3", 0.8, 2.0),
         vpd_f=hp.uniform("vpd_f", 500, 2000),
         vpd_f2=hp.uniform("vpd_f2", 500, 2000),
+        vpd_f3=hp.uniform("vpd_f3", 500, 2000),
         dry_bal_factor=hp.uniform("dry_bal_factor", -60, -20),
         dry_bal_factor2=hp.uniform("dry_bal_factor2", -60, -20),
+        dry_bal_factor3=hp.uniform("dry_bal_factor3", -60, -20),
         dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
         dry_bal_centre2=hp.uniform("dry_bal_centre2", -3, 3),
+        dry_bal_centre3=hp.uniform("dry_bal_centre3", -3, 3),
     )
 
-    trials = MongoTrials(
-        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp6"
-    )
+    # trials = MongoTrials(
+    #     "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp7"
+    # )
 
     out = fmin(
         fn=to_optimise,
         space=space,
         algo=tpe.suggest,
-        trials=trials,
+        # trials=trials,
         max_evals=10000,
         rstate=np.random.RandomState(0),
     )
