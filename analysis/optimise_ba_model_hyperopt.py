@@ -6,6 +6,7 @@ from functools import partial
 import hyperopt
 import numpy as np
 from hyperopt import fmin, hp, tpe
+from hyperopt.mongoexp import MongoTrials
 from sklearn.metrics import r2_score
 
 from python_inferno.configuration import land_pts
@@ -16,7 +17,9 @@ from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import (
     calculate_factor,
     expand_pft_params,
+    exponential_average,
     monthly_average_data,
+    temporal_nearest_neighbour_interp,
     unpack_wrapped,
 )
 
@@ -41,7 +44,8 @@ def to_optimise(opt_kwargs):
         jules_lons,
         gfed_ba_1d,
         obs_fapar_1d,
-        obs_fuel_build_up_1d,
+        # Discard this pre-calculated version here and do our own processing.
+        _,  # obs_fuel_build_up_1d,
         jules_ba_gb,
         jules_time_coord,
     ) = load_data(N=None)
@@ -68,7 +72,25 @@ def to_optimise(opt_kwargs):
     for name, vals in expanded_opt_kwargs.items():
         print(name, vals)
 
-    combined_mask = gfed_ba_1d.mask | obs_fapar_1d.mask | obs_fuel_build_up_1d.mask
+    assert "fuel_build_up_alpha" in expanded_opt_kwargs
+    alphas = expanded_opt_kwargs.pop("fuel_build_up_alpha")
+    assert "fuel_build_up_alpha" not in expanded_opt_kwargs
+
+    obs_fuel_build_up_1d = np.ma.stack(
+        list(
+            exponential_average(
+                temporal_nearest_neighbour_interp(obs_fapar_1d.__wrapped__, 4),
+                alpha,
+                repetitions=10,
+            )[::4]
+            for alpha in alphas
+        ),
+        axis=1,
+    )
+
+    combined_mask = (
+        gfed_ba_1d.mask | obs_fapar_1d.mask | np.any(obs_fuel_build_up_1d.mask, axis=1)
+    )
 
     gfed_ba_1d.mask |= combined_mask
 
@@ -99,9 +121,7 @@ def to_optimise(opt_kwargs):
         pop_den=np.zeros((land_pts,)) - 1,
         flash_rate=np.zeros((land_pts,)) - 1,
         ignition_method=1,
-        fuel_build_up=np.repeat(
-            np.expand_dims(obs_fuel_build_up_1d.data, 1), repeats=13, axis=1
-        ),
+        fuel_build_up=obs_fuel_build_up_1d,
         fapar_diag_pft=np.repeat(
             np.expand_dims(obs_fapar_1d.data, 1), repeats=13, axis=1
         ),
@@ -177,7 +197,8 @@ def to_optimise(opt_kwargs):
 
     # Aim to minimise the combined score.
     return {
-        "loss": scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"],
+        # "loss": scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"],
+        "loss": scores["nme"] + scores["mpd"],
         "status": hyperopt.STATUS_OK,
     }
 
@@ -192,6 +213,9 @@ if __name__ == "__main__":
         fapar_centre=hp.uniform("fapar_centre", 0.4, 0.75),
         fapar_centre2=hp.uniform("fapar_centre2", 0.4, 0.75),
         fapar_centre3=hp.uniform("fapar_centre3", 0.4, 0.75),
+        fuel_build_up_alpha=hp.uniform("fuel_build_up_alpha", 5e-5, 1e-3),
+        fuel_build_up_alpha2=hp.uniform("fuel_build_up_alpha2", 5e-5, 1e-3),
+        fuel_build_up_alpha3=hp.uniform("fuel_build_up_alpha3", 5e-5, 1e-3),
         fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 19, 30),
         fuel_build_up_factor2=hp.uniform("fuel_build_up_factor2", 19, 30),
         fuel_build_up_factor3=hp.uniform("fuel_build_up_factor3", 19, 30),
@@ -220,15 +244,13 @@ if __name__ == "__main__":
         dry_bal_centre3=hp.uniform("dry_bal_centre3", -3, 3),
     )
 
-    # trials = MongoTrials(
-    #     "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp7"
-    # )
+    trials = MongoTrials("mongo://localhost:1234/ba/jobs", exp_key="exp8")
 
     out = fmin(
         fn=to_optimise,
         space=space,
         algo=tpe.suggest,
-        # trials=trials,
+        trials=trials,
         max_evals=10000,
         rstate=np.random.RandomState(0),
     )
