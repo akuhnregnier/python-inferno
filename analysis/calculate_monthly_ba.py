@@ -27,7 +27,12 @@ from python_inferno.data import load_data
 from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days, filter_rain
-from python_inferno.utils import calculate_factor, monthly_average_data, unpack_wrapped
+from python_inferno.utils import (
+    calculate_factor,
+    expand_pft_params,
+    monthly_average_data,
+    unpack_wrapped,
+)
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
@@ -228,18 +233,49 @@ if __name__ == "__main__":
         ),
         # dryness-method 2 parameters.
         2: dict(
-            dry_day_centre=150.00510288982784,
-            dry_day_factor=0.021688204169591885,
-            dry_bal_centre=-1.1459783842381446,
-            dry_bal_factor=-55.784955290759626,
-            fapar_centre=0.4426709842152708,
-            fapar_factor=-11.56354828102021,
-            fuel_build_up_centre=0.437313364876579,
-            fuel_build_up_factor=27.875723776001067,
-            rain_f=0.8923618081762822,
-            temperature_centre=284.2747100226813,
-            temperature_factor=0.14673598240417998,
-            vpd_f=517.857209253917,
+            dry_day_centre=0.0,
+            dry_day_factor=0.0,
+            dry_bal_centre=expand_pft_params(
+                [1.3896404841601884, 2.730452647897936, -1.4585709112247074]
+            ),
+            dry_bal_factor=expand_pft_params(
+                [-56.70565653352422, -36.04503042119403, -32.21199794731028]
+            ),
+            fapar_centre=expand_pft_params(
+                [0.7464078027799277, 0.49018626762738304, 0.5770189464352058]
+            ),
+            fapar_factor=expand_pft_params(
+                [-41.69145102416477, -13.195697076993625, -6.796962597913847]
+            ),
+            fuel_build_up_alpha=expand_pft_params(
+                [0.00020685916150977676, 0.0009672063072438808, 0.0003893920236009512]
+            ),
+            fuel_build_up_centre=expand_pft_params(
+                [0.39888656999303357, 0.4300687227645251, 0.3117490070594974]
+            ),
+            fuel_build_up_factor=expand_pft_params(
+                [20.562727110713677, 22.262456060648425, 19.46010114847667]
+            ),
+            rain_f=expand_pft_params(
+                [1.4210025942564055, 1.8303541497619247, 1.7560511543039836]
+            ),
+            temperature_centre=expand_pft_params(
+                [
+                    286.92619091266226,
+                    284.02937270164404,
+                    273.6096059477991,
+                ]
+            ),
+            temperature_factor=expand_pft_params(
+                [
+                    0.1688349306259583,
+                    0.14500470040901745,
+                    0.12173578460973336,
+                ]
+            ),
+            vpd_f=expand_pft_params(
+                [1978.3640759923983, 1528.5684762665337, 1229.0709845323256]
+            ),
         ),
     }
 
