@@ -67,6 +67,8 @@ def exponential_average(data, alpha, repetitions=1):
     if not isinstance(data, np.ma.core.MaskedArray):
         data = np.ma.asarray(data)
 
+    data.mask = np.ma.getmaskarray(data)
+
     weighted = np.ma.MaskedArray(
         np.zeros_like(data, dtype=np.float64),
         mask=np.repeat(np.any(data.mask, axis=0)[None], data.shape[0], axis=0),

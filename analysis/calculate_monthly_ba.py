@@ -29,6 +29,7 @@ from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days, filter_rain
 from python_inferno.utils import (
     calculate_factor,
+    core_unpack_wrapped,
     expand_pft_params,
     exponential_average,
     monthly_average_data,
@@ -172,7 +173,7 @@ def run_inferno(*, jules_lats, jules_lons, obs_fapar_1d, jules_fapar, **inferno_
     inferno_kwargs["fuel_build_up"] = np.ma.stack(
         list(
             exponential_average(
-                temporal_nearest_neighbour_interp(obs_fapar_1d.__wrapped__, 4),
+                temporal_nearest_neighbour_interp(core_unpack_wrapped(obs_fapar_1d), 4),
                 alpha,
                 repetitions=10,
             )[::4]
@@ -395,10 +396,19 @@ if __name__ == "__main__":
 
         # 1D stats
         y_pred, adj_factor = get_ypred(python_ba_gb[name], name=name)
-        print(f"R2: {r2_score(y_true=y_true, y_pred=y_pred):+0.4f}")
-        print(f"NME: {nme(obs=y_true, pred=y_pred):+0.4f}")
-        print(f"NMSE: {nmse(obs=y_true, pred=y_pred):+0.4f}")
-        loghist_val = loghist(obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20))
+        if np.all(np.isnan(y_pred)):
+            print("All NaN!")
+            return
+
+        selection = ~np.isnan(y_pred)
+        y_pred = y_pred[selection]
+
+        print(f"R2: {r2_score(y_true=y_true[selection], y_pred=y_pred):+0.4f}")
+        print(f"NME: {nme(obs=y_true[selection], pred=y_pred):+0.4f}")
+        print(f"NMSE: {nmse(obs=y_true[selection], pred=y_pred):+0.4f}")
+        loghist_val = loghist(
+            obs=y_true[selection], pred=y_pred, edges=np.linspace(0, 0.4, 20)
+        )
         print(f"loghist: {loghist_val:+0.4f}")
 
         # Temporal stats.
