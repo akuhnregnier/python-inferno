@@ -30,7 +30,9 @@ from python_inferno.precip_dry_day import calculate_inferno_dry_days, filter_rai
 from python_inferno.utils import (
     calculate_factor,
     expand_pft_params,
+    exponential_average,
     monthly_average_data,
+    temporal_nearest_neighbour_interp,
     unpack_wrapped,
 )
 
@@ -136,9 +138,23 @@ def plot_comparison(jules_ba_gb, python_ba_gb, obs_ba, label="BA", title=""):
     fig.savefig(figure_dir / "mean_ba.png")
 
 
-def run_inferno(
-    *, jules_lats, jules_lons, obs_fapar_1d, obs_fuel_build_up_1d, **inferno_kwargs
-):
+def run_inferno(*, jules_lats, jules_lons, obs_fapar_1d, jules_fapar, **inferno_kwargs):
+    assert "fuel_build_up_alpha" in inferno_kwargs
+    alphas = inferno_kwargs.pop("fuel_build_up_alpha")
+    assert "fuel_build_up_alpha" not in inferno_kwargs
+
+    inferno_kwargs["fuel_build_up"] = np.ma.stack(
+        list(
+            exponential_average(
+                temporal_nearest_neighbour_interp(jules_fapar, 4),
+                alpha,
+                repetitions=10,
+            )[::4]
+            for alpha in alphas
+        ),
+        axis=1,
+    )
+
     # NOTE this function does not consider masking.
     python_ba_gb = {
         "normal": unpack_wrapped(multi_timestep_inferno)(
@@ -153,8 +169,16 @@ def run_inferno(
         ),
     }
 
-    inferno_kwargs["fuel_build_up"] = np.repeat(
-        np.expand_dims(obs_fuel_build_up_1d, 1), repeats=13, axis=1
+    inferno_kwargs["fuel_build_up"] = np.ma.stack(
+        list(
+            exponential_average(
+                temporal_nearest_neighbour_interp(obs_fapar_1d.__wrapped__, 4),
+                alpha,
+                repetitions=10,
+            )[::4]
+            for alpha in alphas
+        ),
+        axis=1,
     )
     inferno_kwargs["fapar_diag_pft"] = np.repeat(
         np.expand_dims(obs_fapar_1d, 1), repeats=13, axis=1
@@ -214,6 +238,15 @@ if __name__ == "__main__":
     dry_days = unpack_wrapped(calculate_inferno_dry_days)(
         ls_rain, con_rain, threshold=1.0, timestep=timestep
     )
+
+    def frac_weighted_mean(data):
+        assert len(data.shape) == 3, "Need time, PFT, and space coords."
+        assert data.shape[1] in (13, 17)
+        assert frac.shape[1] == 17
+
+        return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
+            frac[:, : data.shape[1]], axis=1
+        )
 
     dryness_method_params = {
         # dryness-method 1 parameters.
@@ -301,8 +334,8 @@ if __name__ == "__main__":
         jules_lats=jules_lats,
         jules_lons=jules_lons,
         obs_fapar_1d=obs_fapar_1d.data,
-        obs_fuel_build_up_1d=obs_fuel_build_up_1d.data,
         timestep=timestep,
+        jules_fapar=frac_weighted_mean(fapar_diag_pft),
         **dryness_method_params[dryness_method],
     )
 
@@ -400,16 +433,6 @@ if __name__ == "__main__":
     )
 
     if args.rf:
-
-        def frac_weighted_mean(data):
-            assert len(data.shape) == 3, "Need time, PFT, and space coords."
-            assert data.shape[1] in (13, 17)
-            assert frac.shape[1] == 17
-
-            return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
-                frac[:, : data.shape[1]], axis=1
-            )
-
         variables = dict(
             temperature=new_monthly_average_data(
                 frac_weighted_mean(t1p5m_tile), time_coord=jules_time_coord
