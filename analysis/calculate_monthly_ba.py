@@ -226,9 +226,10 @@ if __name__ == "__main__":
         jules_lons,
         gfed_ba_1d,
         obs_fapar_1d,
-        obs_fuel_build_up_1d,
         jules_ba_gb,
         jules_time_coord,
+        npp_pft,
+        npp_gb,
     ) = load_data(N=None)
 
     # Define the ignition method (`ignition_method`).
@@ -463,9 +464,9 @@ if __name__ == "__main__":
             obs_fapar=new_monthly_average_data(
                 obs_fapar_1d, time_coord=jules_time_coord
             ),
-            obs_fuel=new_monthly_average_data(
-                obs_fuel_build_up_1d, time_coord=jules_time_coord
-            ),
+            # obs_fuel=new_monthly_average_data(
+            #     obs_fuel_build_up_1d, time_coord=jules_time_coord
+            # ),
         )
 
         # Include 1-month antecedent FAPAR and dry-days.

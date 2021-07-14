@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-
-
 from python_inferno.data import load_data
 
 if __name__ == "__main__":
@@ -21,9 +19,10 @@ if __name__ == "__main__":
         jules_lons,
         gfed_ba_1d,
         obs_fapar_1d,
-        obs_fuel_build_up_1d,
         jules_ba_gb,
         jules_time_coord,
+        npp_pft,
+        npp_gb,
     ) = load_data(N=None)
 
     # Define the ignition method (`ignition_method`).

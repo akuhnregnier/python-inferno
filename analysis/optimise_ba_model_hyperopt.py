@@ -44,10 +44,10 @@ def to_optimise(opt_kwargs):
         jules_lons,
         gfed_ba_1d,
         obs_fapar_1d,
-        # Discard this pre-calculated version here and do our own processing.
-        _,  # obs_fuel_build_up_1d,
         jules_ba_gb,
         jules_time_coord,
+        npp_pft,
+        npp_gb,
     ) = load_data(N=None)
 
     expanded_opt_tmp = defaultdict(list)
