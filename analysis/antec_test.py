@@ -32,7 +32,7 @@ if __name__ == "__main__":
     plt.plot(
         exponential_average(
             temporal_nearest_neighbour_interp(
-                fapar_diag_pft[:, 0, 0, land_index].data, 4
+                fapar_diag_pft[:, 0, 0, land_index].data, 4, "start"
             ),
             4.6283007e-04,
         )[::4],

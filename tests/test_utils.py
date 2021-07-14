@@ -10,27 +10,41 @@ from python_inferno.utils import (
 )
 
 
-def test_temporal_nearest_neighbour_interp_0d():
-    initial = np.array([0, 1, 2])
-    interpolated = temporal_nearest_neighbour_interp(initial, 3)
+def test_temporal_nearest_neighbour_interp_0d_centre():
+    initial = np.array([10, 11, 12])
+    interpolated = temporal_nearest_neighbour_interp(initial, 3, "centre")
     assert_allclose(
-        np.array([0, 0, 1, 1, 1, 2, 2, 2, 2]),
+        np.array([10, 10, 11, 11, 11, 12, 12, 12, 12]),
         interpolated.data,
     )
     assert interpolated.mask == False
 
+
+def test_temporal_nearest_neighbour_interp_0d_start():
     initial = np.array([10, 11, 12])
+    interpolated = temporal_nearest_neighbour_interp(initial, 3, "start")
     assert_allclose(
-        np.array([10, 10, 11, 11, 11, 12, 12, 12, 12]),
-        temporal_nearest_neighbour_interp(initial, 3).data,
+        np.array([10, 10, 10, 11, 11, 11, 12, 12, 12]),
+        interpolated.data,
     )
+    assert interpolated.mask == False
+
+
+def test_temporal_nearest_neighbour_interp_0d_end():
+    initial = np.array([10, 11, 12])
+    interpolated = temporal_nearest_neighbour_interp(initial, 3, "end")
+    assert_allclose(
+        np.array([10, 11, 11, 11, 12, 12, 12, 12, 12]),
+        interpolated.data,
+    )
+    assert interpolated.mask == False
 
 
 def test_temporal_nearest_neighbour_interp_Nd():
     initial = np.array([10, 11, 12]).reshape(3, 1)
     assert_allclose(
         np.array([10, 10, 11, 11, 11, 12, 12, 12, 12]).reshape(9, 1),
-        temporal_nearest_neighbour_interp(initial, 3).data,
+        temporal_nearest_neighbour_interp(initial, 3, "centre").data,
     )
 
 
@@ -38,7 +52,7 @@ def test_temporal_nearest_neighbour_interp_Nd_mask():
     initial = np.ma.MaskedArray(
         np.array([10, 11, 12]).reshape(3, 1), mask=np.array([0, 1, 0], dtype=np.bool_)
     )
-    interpolated = temporal_nearest_neighbour_interp(initial, 3)
+    interpolated = temporal_nearest_neighbour_interp(initial, 3, "centre")
     assert_allclose(
         np.array([10, 10, 11, 11, 11, 12, 12, 12, 12]).reshape(9, 1),
         interpolated.data,

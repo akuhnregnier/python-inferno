@@ -147,7 +147,7 @@ def run_inferno(*, jules_lats, jules_lons, obs_fapar_1d, jules_fapar, **inferno_
     inferno_kwargs["fuel_build_up"] = np.ma.stack(
         list(
             exponential_average(
-                temporal_nearest_neighbour_interp(jules_fapar, 4),
+                temporal_nearest_neighbour_interp(jules_fapar, 4, "start"),
                 alpha,
                 repetitions=10,
             )[::4]

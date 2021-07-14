@@ -16,6 +16,7 @@ from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import (
     calculate_factor,
+    core_unpack_wrapped,
     expand_pft_params,
     exponential_average,
     monthly_average_data,
@@ -79,7 +80,9 @@ def to_optimise(opt_kwargs):
     obs_fuel_build_up_1d = np.ma.stack(
         list(
             exponential_average(
-                temporal_nearest_neighbour_interp(obs_fapar_1d.__wrapped__, 4),
+                temporal_nearest_neighbour_interp(
+                    core_unpack_wrapped(obs_fapar_1d), 4, "start"
+                ),
                 alpha,
                 repetitions=10,
             )[::4]

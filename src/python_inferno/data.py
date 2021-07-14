@@ -12,7 +12,7 @@ from .cache import cache, mark_dependency
 from .utils import make_contiguous, temporal_nearest_neighbour_interp
 
 
-@cache(dependencies=[make_contiguous])
+@cache(dependencies=[make_contiguous, temporal_nearest_neighbour_interp])
 @mark_dependency
 def load_data(
     filenames=(
@@ -91,6 +91,7 @@ def load_data(
         data_1d = temporal_nearest_neighbour_interp(
             mon_data_1d,
             int(np.ceil(jules_time_coord.shape[0] / mon_data_1d.shape[0])),
+            "start",
         )[: jules_time_coord.shape[0]]
         return data_1d
 

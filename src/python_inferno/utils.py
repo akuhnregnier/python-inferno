@@ -17,7 +17,8 @@ else:
     from tqdm import tqdm  # noqa
 
 
-def temporal_nearest_neighbour_interp(data, factor):
+@mark_dependency
+def temporal_nearest_neighbour_interp(data, factor, mode):
     """Temporal nearest-neighbour interpolation along axis 0.
 
     Interpolation starts at the first sample.
@@ -26,17 +27,24 @@ def temporal_nearest_neighbour_interp(data, factor):
         data (array-like): Data to interpolate.
         factor (int): Multiple of the number of input samples (along axis=0) which
             determines the number of output samples.
+        mode ({'start', 'end', 'centre'}): Position of the source sample relative to
+            the interpolated samples. For 'start', samples will be taken like [0, 0,
+            0, 1, 1, 1, 2, ...]. For 'end', samples will be taken like [0, 1, 1, 1, 2,
+            2, ...]. For 'centre', samples will be taken like [0, 0, 1, 1, 1, 2, ...].
 
     """
     data = np.ma.asarray(data)
-    output_samples = data.shape[0] * factor
     closest_indices = np.clip(
-        np.rint(
-            np.linspace(0, data.shape[0], output_samples, endpoint=False),
-        ).astype(np.int64),
+        np.repeat(np.arange(data.shape[0] + 1), factor)[
+            {
+                "start": slice(None, -factor),
+                "end": slice(factor - 1, None),
+                "centre": slice(factor // 2, None),
+            }[mode]
+        ],
         0,
         data.shape[0] - 1,
-    )
+    )[: data.shape[0] * factor]
     return data[closest_indices]
 
 
