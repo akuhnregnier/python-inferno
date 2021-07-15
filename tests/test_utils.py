@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
+import iris
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from python_inferno.utils import (
@@ -7,6 +9,7 @@ from python_inferno.utils import (
     exponential_average,
     moving_sum,
     temporal_nearest_neighbour_interp,
+    temporal_processing,
 )
 
 
@@ -124,3 +127,50 @@ def test_expand_pft_params():
         3,
         3,
     )
+
+
+def test_temporal_processing_no_agg():
+    data_dict = {
+        "a": np.arange(10 * 13 * 10).reshape(10, 13, 10),
+        "b": np.arange(10 * 10).reshape(10, 10),
+    }
+    shifts = expand_pft_params([1, 2, 3]).astype("int64")
+    antecedent_shifts_dict = {"a": shifts}
+    out = temporal_processing(
+        data_dict=data_dict.copy(),
+        antecedent_shifts_dict=antecedent_shifts_dict,
+        average_samples=0,
+    )
+    assert np.allclose(out["a"][:, :5], data_dict["a"][2:-1, :5])
+    assert np.allclose(out["a"][:, 5:11], data_dict["a"][1:-2, 5:11])
+    assert np.allclose(out["a"][:, 11:13], data_dict["a"][:-3, 11:13])
+    assert np.allclose(out["b"], data_dict["b"][3:])
+
+
+@pytest.mark.parametrize(
+    "aggregator, agg_method",
+    [
+        (iris.analysis.MEAN, np.mean),
+        (iris.analysis.MIN, np.min),
+        (iris.analysis.MAX, np.max),
+    ],
+)
+def test_temporal_processing_agg(aggregator, agg_method):
+    data_dict = {
+        "a": np.arange(10 * 13 * 10).reshape(10, 13, 10),
+        "b": np.arange(10 * 10).reshape(10, 10),
+    }
+    shifts = expand_pft_params([1, 2, 3]).astype("int64")
+    antecedent_shifts_dict = {"a": shifts}
+    out = temporal_processing(
+        data_dict=data_dict.copy(),
+        antecedent_shifts_dict=antecedent_shifts_dict,
+        average_samples=2,
+        aggregator=aggregator,
+    )
+    assert np.allclose(out["a"][0, :5], agg_method(data_dict["a"][2:4, :5], axis=0))
+    assert np.allclose(out["a"][0, 5:11], agg_method(data_dict["a"][1:3, 5:11], axis=0))
+    assert np.allclose(
+        out["a"][0, 11:13], agg_method(data_dict["a"][:2, 11:13], axis=0)
+    )
+    assert np.allclose(out["b"][0], agg_method(data_dict["b"][3:5], axis=0))

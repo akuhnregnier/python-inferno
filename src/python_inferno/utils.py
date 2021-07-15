@@ -235,3 +235,99 @@ def expand_pft_params(
             out[e] = param
 
     return out
+
+
+def temporal_processing(
+    data_dict,
+    antecedent_shifts_dict,
+    average_samples,
+    aggregator=iris.analysis.MEAN,
+):
+    # First carry out the antecedent shifting.
+
+    # Determine the maximum shift.
+    max_shift = 0
+    for shifts in antecedent_shifts_dict.values():
+        if np.max(shifts) > max_shift:
+            max_shift = np.max(shifts)
+
+    # Shift the required variables.
+    for variable, shifts in antecedent_shifts_dict.items():
+        if len(shifts) != 13:
+            raise ValueError(
+                f"'{len(shifts)}' shifts specified for variable '{variable}'. "
+                "Expected 13."
+            )
+        if variable not in data_dict:
+            raise ValueError(f"Variable '{variable}' was not found in the data.")
+        # Shift the variable.
+
+        # Shape is (time, [pft,] space).
+        if len(data_dict[variable].shape) == 2:
+            # Add a PFT dimensions by replicating the data.
+            data_dict[variable] = np.repeat(
+                np.expand_dims(data_dict[variable], 1), repeats=len(shifts), axis=1
+            )
+
+        if len(data_dict[variable].shape) != 3:
+            raise ValueError(
+                f"Variable '{variable}' had unexpected shape "
+                f"'{data_dict[variable].shape}'."
+            )
+        # Remove 'shift' from the end to shift the samples forward in time.
+        # Also remove samples from the beginning to ensure all arrays are the same
+        # length.
+        data_dict[variable] = np.stack(
+            [
+                data_dict[variable][max_shift - shift : -shift, pft_i]
+                for pft_i, shift in enumerate(shifts)
+            ],
+            axis=1,
+        )
+
+    # For all other variables, simply trim off `max_shift` number of elements from the
+    # front.
+    for variable in set(data_dict) - set(antecedent_shifts_dict):
+        data_dict[variable] = data_dict[variable][max_shift:]
+
+    # Ensure all time coordinates are the same.
+    assert len(set(data.shape[0] for data in data_dict.values())) == 1
+
+    if not average_samples or average_samples == 1:
+        # If no averaging has been requested, simply return at this point.
+        return data_dict
+
+    if average_samples < 0:
+        raise ValueError(
+            f"Expected a positive number of `average_samples`. Got '{average_samples}'."
+        )
+
+    # Carry out temporal averaging.
+    for variable in data_dict:
+        data = data_dict[variable]
+        cube = iris.cube.Cube(
+            data,
+            aux_coords_and_dims=[
+                (
+                    iris.coords.AuxCoord(
+                        np.floor(
+                            np.linspace(
+                                0,
+                                data.shape[0] / average_samples,
+                                data.shape[0],
+                                endpoint=False,
+                            )
+                        ),
+                        long_name="average_i",
+                    ),
+                    0,
+                )
+            ],
+        )
+        agg_cube = cube.aggregated_by("average_i", aggregator)
+        assert np.all(
+            agg_cube.coord("average_i").points
+            == np.sort(agg_cube.coord("average_i").points)
+        )
+        data_dict[variable] = agg_cube.data
+    return data_dict
