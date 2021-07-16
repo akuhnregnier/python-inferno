@@ -120,6 +120,7 @@ def load_data(
         make_contiguous(obs_fapar_1d[:N]),
         make_contiguous(jules_ba_gb[:N, 0]),
         jules_time_coord[:N],
-        make_contiguous(npp_pft[:N, :, 0].data.data),
-        make_contiguous(npp_gb[:N, 0].data.data),
+        # Make magnitudes more similar to e.g. FAPAR, i.e. ~[0, 1].
+        make_contiguous(npp_pft[:N, :, 0].data.data) / 1e-7,
+        make_contiguous(npp_gb[:N, 0].data.data) / 1e-7,
     )

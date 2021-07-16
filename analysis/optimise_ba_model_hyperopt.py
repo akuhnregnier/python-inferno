@@ -4,6 +4,7 @@ from collections import defaultdict
 from functools import partial
 
 import hyperopt
+import iris
 import numpy as np
 from hyperopt import fmin, hp, tpe
 from hyperopt.mongoexp import MongoTrials
@@ -16,11 +17,9 @@ from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import (
     calculate_factor,
-    core_unpack_wrapped,
     expand_pft_params,
-    exponential_average,
     monthly_average_data,
-    temporal_nearest_neighbour_interp,
+    temporal_processing,
     unpack_wrapped,
 )
 
@@ -73,43 +72,11 @@ def to_optimise(opt_kwargs):
     for name, vals in expanded_opt_kwargs.items():
         print(name, vals)
 
-    assert "fuel_build_up_alpha" in expanded_opt_kwargs
-    alphas = expanded_opt_kwargs.pop("fuel_build_up_alpha")
-    assert "fuel_build_up_alpha" not in expanded_opt_kwargs
+    assert "fuel_build_up_n_samples" in expanded_opt_kwargs
+    n_samples_pft = expanded_opt_kwargs.pop("fuel_build_up_n_samples").astype("int64")
+    assert "fuel_build_up_n_samples" not in expanded_opt_kwargs
 
-    obs_fuel_build_up_1d = np.ma.stack(
-        list(
-            exponential_average(
-                temporal_nearest_neighbour_interp(
-                    core_unpack_wrapped(obs_fapar_1d), 4, "start"
-                ),
-                alpha,
-                repetitions=10,
-            )[::4]
-            for alpha in alphas
-        ),
-        axis=1,
-    )
-
-    combined_mask = (
-        gfed_ba_1d.mask | obs_fapar_1d.mask | np.any(obs_fuel_build_up_1d.mask, axis=1)
-    )
-
-    gfed_ba_1d.mask |= combined_mask
-
-    # Calculate monthly averages.
-    mon_avg_gfed_ba_1d = monthly_average_data(gfed_ba_1d, time_coord=jules_time_coord)
-
-    assert mon_avg_gfed_ba_1d.shape[0] <= 12
-
-    if jules_time_coord.cell(-1).point.day == 1 and jules_time_coord.shape[0] > 1:
-        # Ignore the last month if there is only a single day in it.
-        mon_avg_gfed_ba_1d = mon_avg_gfed_ba_1d[:-1]
-
-    y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-
-    # Model kwargs.
-    kwargs = dict(
+    data_dict = dict(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,
@@ -120,17 +87,59 @@ def to_optimise(opt_kwargs):
         canht=canht,
         ls_rain=ls_rain,
         con_rain=con_rain,
-        # Not used for ignition mode 1.
-        pop_den=np.zeros((land_pts,)) - 1,
-        flash_rate=np.zeros((land_pts,)) - 1,
-        ignition_method=1,
-        fuel_build_up=obs_fuel_build_up_1d,
-        fapar_diag_pft=np.repeat(
-            np.expand_dims(obs_fapar_1d.data, 1), repeats=13, axis=1
-        ),
+        # NOTE NPP is used here now, NOT FAPAR!
+        fuel_build_up=npp_pft,
+        fapar_diag_pft=npp_pft,
         dry_days=unpack_wrapped(calculate_inferno_dry_days)(
             ls_rain, con_rain, threshold=1.0, timestep=timestep
         ),
+        # NOTE The target BA is only included here to ease processing. It will be
+        # removed prior to the modelling function.
+        gfed_ba_1d=gfed_ba_1d,
+    )
+
+    data_dict, jules_time_coord = temporal_processing(
+        data_dict=data_dict,
+        antecedent_shifts_dict={"fuel_build_up": n_samples_pft},
+        average_samples=opt_kwargs["average_samples"],
+        aggregator=iris.analysis.MEAN,
+        time_coord=jules_time_coord,
+    )
+
+    assert jules_time_coord.cell(-1).point.month == 12
+    last_year = jules_time_coord.cell(-1).point.year
+    for start_i in range(jules_time_coord.shape[0]):
+        if jules_time_coord.cell(start_i).point.year == last_year:
+            break
+    else:
+        raise ValueError("Target year not encountered.")
+
+    # Trim the data and temporal coord such that the data spans a single year.
+    jules_time_coord = jules_time_coord[start_i:]
+    for data_name in data_dict:
+        data_dict[data_name] = data_dict[data_name][start_i:]
+
+    # Remove the target BA.
+    gfed_ba_1d = data_dict.pop("gfed_ba_1d")
+
+    # NOTE The mask array on `gfed_ba_1d` determines which samples are selected for
+    # comparison later on.
+
+    # Calculate monthly averages.
+    mon_avg_gfed_ba_1d = monthly_average_data(gfed_ba_1d, time_coord=jules_time_coord)
+
+    # Ensure the data spans a single year.
+    assert mon_avg_gfed_ba_1d.shape[0] == 12
+    assert (
+        jules_time_coord.cell(0).point.year == jules_time_coord.cell(-1).point.year
+        and jules_time_coord.cell(0).point.month == 1
+        and jules_time_coord.cell(-1).point.month == 12
+        and jules_time_coord.shape[0] >= 12
+    )
+
+    # Model kwargs.
+    kwargs = dict(
+        ignition_method=1,
         timestep=timestep,
         flammability_method=2,
         dryness_method=2,
@@ -146,10 +155,14 @@ def to_optimise(opt_kwargs):
         # vpd_f=2500,
         # dry_bal_factor=1,
         # dry_bal_centre=0,
+        # These are not used for ignition mode 1, nor do they contain a temporal
+        # coordinate.
+        pop_den=np.zeros((land_pts,)) - 1,
+        flash_rate=np.zeros((land_pts,)) - 1,
     )
 
     model_ba = unpack_wrapped(multi_timestep_inferno)(
-        **{**kwargs, **expanded_opt_kwargs}
+        **{**kwargs, **expanded_opt_kwargs, **data_dict}
     )
 
     if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
@@ -157,12 +170,12 @@ def to_optimise(opt_kwargs):
 
     # Calculate monthly averages.
     avg_ba = monthly_average_data(model_ba, time_coord=jules_time_coord)
-    # Limit data if needed.
-    avg_ba = avg_ba[: mon_avg_gfed_ba_1d.shape[0]]
     assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
 
     # Get ypred.
     y_pred = np.ma.getdata(avg_ba)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
+
+    y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
 
     # Estimate the adjustment factor by minimising the NME.
     adj_factor = calculate_factor(y_true=y_true, y_pred=y_pred)
@@ -216,15 +229,19 @@ if __name__ == "__main__":
         fapar_centre=hp.uniform("fapar_centre", 0.4, 0.75),
         fapar_centre2=hp.uniform("fapar_centre2", 0.4, 0.75),
         fapar_centre3=hp.uniform("fapar_centre3", 0.4, 0.75),
-        fuel_build_up_alpha=hp.uniform("fuel_build_up_alpha", 5e-5, 1e-3),
-        fuel_build_up_alpha2=hp.uniform("fuel_build_up_alpha2", 5e-5, 1e-3),
-        fuel_build_up_alpha3=hp.uniform("fuel_build_up_alpha3", 5e-5, 1e-3),
-        fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 19, 30),
-        fuel_build_up_factor2=hp.uniform("fuel_build_up_factor2", 19, 30),
-        fuel_build_up_factor3=hp.uniform("fuel_build_up_factor3", 19, 30),
-        fuel_build_up_centre=hp.uniform("fuel_build_up_centre", 0.3, 0.45),
-        fuel_build_up_centre2=hp.uniform("fuel_build_up_centre2", 0.3, 0.45),
-        fuel_build_up_centre3=hp.uniform("fuel_build_up_centre3", 0.3, 0.45),
+        fuel_build_up_n_samples=hp.quniform("fuel_build_up_n_samples", 100, 1200, 100),
+        fuel_build_up_n_samples2=hp.quniform(
+            "fuel_build_up_n_samples2", 100, 1200, 100
+        ),
+        fuel_build_up_n_samples3=hp.quniform(
+            "fuel_build_up_n_samples3", 100, 1200, 100
+        ),
+        fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 1, 30),
+        fuel_build_up_factor2=hp.uniform("fuel_build_up_factor2", 1, 30),
+        fuel_build_up_factor3=hp.uniform("fuel_build_up_factor3", 1, 30),
+        fuel_build_up_centre=hp.uniform("fuel_build_up_centre", 0.25, 0.6),
+        fuel_build_up_centre2=hp.uniform("fuel_build_up_centre2", 0.25, 0.6),
+        fuel_build_up_centre3=hp.uniform("fuel_build_up_centre3", 0.25, 0.6),
         temperature_factor=hp.uniform("temperature_factor", 0.11, 0.17),
         temperature_factor2=hp.uniform("temperature_factor2", 0.11, 0.17),
         temperature_factor3=hp.uniform("temperature_factor3", 0.11, 0.17),
@@ -245,9 +262,10 @@ if __name__ == "__main__":
         dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
         dry_bal_centre2=hp.uniform("dry_bal_centre2", -3, 3),
         dry_bal_centre3=hp.uniform("dry_bal_centre3", -3, 3),
+        average_samples=hp.quniform("average_samples", 1, 160, 10),
     )
 
-    trials = MongoTrials("mongo://localhost:1234/ba/jobs", exp_key="exp8")
+    trials = MongoTrials("mongo://146.0.189.20:1234/ba/jobs", exp_key="exp9")
 
     out = fmin(
         fn=to_optimise,

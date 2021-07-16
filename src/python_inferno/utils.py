@@ -238,10 +238,12 @@ def expand_pft_params(
 
 
 def temporal_processing(
+    *,
     data_dict,
     antecedent_shifts_dict,
     average_samples,
     aggregator=iris.analysis.MEAN,
+    time_coord,
 ):
     # First carry out the antecedent shifting.
 
@@ -290,16 +292,33 @@ def temporal_processing(
     for variable in set(data_dict) - set(antecedent_shifts_dict):
         data_dict[variable] = data_dict[variable][max_shift:]
 
+    # Ditto for the temporal coord.
+    assert time_coord.shape[0] >= max_shift
+    time_coord = time_coord[max_shift:]
+
     # Ensure all time coordinates are the same.
     assert len(set(data.shape[0] for data in data_dict.values())) == 1
 
     if not average_samples or average_samples == 1:
         # If no averaging has been requested, simply return at this point.
-        return data_dict
+        return data_dict, time_coord
 
     if average_samples < 0:
         raise ValueError(
             f"Expected a positive number of `average_samples`. Got '{average_samples}'."
+        )
+
+    def get_average_i():
+        return iris.coords.AuxCoord(
+            np.floor(
+                np.linspace(
+                    0,
+                    data.shape[0] / average_samples,
+                    data.shape[0],
+                    endpoint=False,
+                )
+            ),
+            long_name="average_i",
         )
 
     # Carry out temporal averaging.
@@ -309,17 +328,7 @@ def temporal_processing(
             data,
             aux_coords_and_dims=[
                 (
-                    iris.coords.AuxCoord(
-                        np.floor(
-                            np.linspace(
-                                0,
-                                data.shape[0] / average_samples,
-                                data.shape[0],
-                                endpoint=False,
-                            )
-                        ),
-                        long_name="average_i",
-                    ),
+                    get_average_i(),
                     0,
                 )
             ],
@@ -330,4 +339,22 @@ def temporal_processing(
             == np.sort(agg_cube.coord("average_i").points)
         )
         data_dict[variable] = agg_cube.data
-    return data_dict
+
+    def time_points_agg(aggregator):
+        return (
+            iris.cube.Cube(
+                time_coord.points, aux_coords_and_dims=[(get_average_i(), 0)]
+            )
+            .aggregated_by("average_i", aggregator)
+            .data
+        )
+
+    time_coord = time_coord.copy(
+        points=time_points_agg(iris.analysis.MEAN),
+        bounds=np.stack(
+            (time_points_agg(iris.analysis.MIN), time_points_agg(iris.analysis.MAX)),
+            axis=1,
+        ),
+    )
+
+    return data_dict, time_coord
