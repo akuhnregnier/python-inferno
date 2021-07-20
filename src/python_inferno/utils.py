@@ -322,6 +322,11 @@ def temporal_processing(
         )
 
     # Carry out temporal averaging.
+
+    if not isinstance(aggregator, dict):
+        # Use the same aggregator for each variable.
+        aggregator = {name: aggregator for name in data_dict}
+
     for variable in data_dict:
         data = data_dict[variable]
         cube = iris.cube.Cube(
@@ -333,7 +338,7 @@ def temporal_processing(
                 )
             ],
         )
-        agg_cube = cube.aggregated_by("average_i", aggregator)
+        agg_cube = cube.aggregated_by("average_i", aggregator[variable])
         assert np.all(
             agg_cube.coord("average_i").points
             == np.sort(agg_cube.coord("average_i").points)

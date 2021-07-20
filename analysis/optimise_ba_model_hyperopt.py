@@ -102,7 +102,12 @@ def to_optimise(opt_kwargs):
         data_dict=data_dict,
         antecedent_shifts_dict={"fuel_build_up": n_samples_pft},
         average_samples=opt_kwargs["average_samples"],
-        aggregator=iris.analysis.MEAN,
+        aggregator={
+            name: {"dry_days": iris.analysis.MAX, "t1p5m_tile": iris.analysis.MAX}.get(
+                name, iris.analysis.MEAN
+            )
+            for name in data_dict
+        },
         time_coord=jules_time_coord,
     )
 
@@ -220,58 +225,42 @@ def to_optimise(opt_kwargs):
 
 
 if __name__ == "__main__":
-    space = dict(
-        # flammability_method=2,
-        # dryness_method=2,
-        fapar_factor=hp.uniform("fapar_factor", -50, -3),
-        fapar_factor2=hp.uniform("fapar_factor2", -50, -3),
-        fapar_factor3=hp.uniform("fapar_factor3", -50, -3),
-        fapar_centre=hp.uniform("fapar_centre", 0.4, 0.75),
-        fapar_centre2=hp.uniform("fapar_centre2", 0.4, 0.75),
-        fapar_centre3=hp.uniform("fapar_centre3", 0.4, 0.75),
-        fuel_build_up_n_samples=hp.quniform("fuel_build_up_n_samples", 100, 1200, 100),
-        fuel_build_up_n_samples2=hp.quniform(
-            "fuel_build_up_n_samples2", 100, 1200, 100
-        ),
-        fuel_build_up_n_samples3=hp.quniform(
-            "fuel_build_up_n_samples3", 100, 1200, 100
-        ),
-        fuel_build_up_factor=hp.uniform("fuel_build_up_factor", 1, 30),
-        fuel_build_up_factor2=hp.uniform("fuel_build_up_factor2", 1, 30),
-        fuel_build_up_factor3=hp.uniform("fuel_build_up_factor3", 1, 30),
-        fuel_build_up_centre=hp.uniform("fuel_build_up_centre", 0.25, 0.6),
-        fuel_build_up_centre2=hp.uniform("fuel_build_up_centre2", 0.25, 0.6),
-        fuel_build_up_centre3=hp.uniform("fuel_build_up_centre3", 0.25, 0.6),
-        temperature_factor=hp.uniform("temperature_factor", 0.11, 0.17),
-        temperature_factor2=hp.uniform("temperature_factor2", 0.11, 0.17),
-        temperature_factor3=hp.uniform("temperature_factor3", 0.11, 0.17),
-        temperature_centre=hp.uniform("temperature_centre", 270, 290),
-        temperature_centre2=hp.uniform("temperature_centre2", 270, 290),
-        temperature_centre3=hp.uniform("temperature_centre3", 270, 290),
-        # dry_day_factor=hp.uniform("dry_day_factor", 0.001, 0.2),
-        # dry_day_centre=hp.uniform("dry_day_centre", 150, 200),
-        rain_f=hp.uniform("rain_f", 0.8, 2.0),
-        rain_f2=hp.uniform("rain_f2", 0.8, 2.0),
-        rain_f3=hp.uniform("rain_f3", 0.8, 2.0),
-        vpd_f=hp.uniform("vpd_f", 500, 2000),
-        vpd_f2=hp.uniform("vpd_f2", 500, 2000),
-        vpd_f3=hp.uniform("vpd_f3", 500, 2000),
-        dry_bal_factor=hp.uniform("dry_bal_factor", -60, -20),
-        dry_bal_factor2=hp.uniform("dry_bal_factor2", -60, -20),
-        dry_bal_factor3=hp.uniform("dry_bal_factor3", -60, -20),
-        dry_bal_centre=hp.uniform("dry_bal_centre", -3, 3),
-        dry_bal_centre2=hp.uniform("dry_bal_centre2", -3, 3),
-        dry_bal_centre3=hp.uniform("dry_bal_centre3", -3, 3),
-        average_samples=hp.quniform("average_samples", 1, 160, 10),
+    space_template = dict(
+        fapar_factor=(3, [(-50, -1)], hp.uniform),
+        fapar_centre=(3, [(-0.1, 1.1)], hp.uniform),
+        fuel_build_up_n_samples=(3, [(100, 1200, 100)], hp.quniform),
+        fuel_build_up_factor=(3, [(0.5, 30)], hp.uniform),
+        fuel_build_up_centre=(3, [(0.0, 0.5)], hp.uniform),
+        temperature_factor=(3, [(0.07, 0.2)], hp.uniform),
+        temperature_centre=(3, [(260, 295)], hp.uniform),
+        rain_f=(3, [(0.8, 2.0)], hp.uniform),
+        vpd_f=(3, [(400, 2200)], hp.uniform),
+        dry_bal_factor=(3, [(-100, -1)], hp.uniform),
+        dry_bal_centre=(3, [(-3, 3)], hp.uniform),
+        average_samples=(1, [(1, 160, 10)], hp.quniform),
     )
+    # Generate the actual `space` from the template.
+    space = dict()
+    for name, template in space_template.items():
+        bounds = template[1]
+        if len(bounds) == 1:
+            # Use the same bounds for all PFTs if only one are given.
+            bounds *= template[0]
+        for i, bound in zip(range(1, template[0] + 1), bounds):
+            if i == 1:
+                arg_name = name
+            else:
+                arg_name = name + str(i)
 
-    trials = MongoTrials("mongo://146.0.189.20:1234/ba/jobs", exp_key="exp9")
+            space[arg_name] = template[2](arg_name, *bound)
+
+    trials = MongoTrials("mongo://89.1.162.91:1234/ba/jobs", exp_key="exp10")
 
     out = fmin(
         fn=to_optimise,
         space=space,
         algo=tpe.suggest,
         trials=trials,
-        max_evals=10000,
+        max_evals=50000,
         rstate=np.random.RandomState(0),
     )

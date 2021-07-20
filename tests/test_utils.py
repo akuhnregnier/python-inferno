@@ -198,3 +198,28 @@ def test_temporal_processing_agg(aggregator, agg_method):
     assert_allclose(time_coord.points[-1], 9)
     assert time_coord.cell(0).bound == (datetime(1970, 1, 4), datetime(1970, 1, 5))
     assert time_coord.cell(-1).bound == (datetime(1970, 1, 10), datetime(1970, 1, 10))
+
+
+def test_temporal_processing_multi_agg():
+    data_dict = {
+        "a": np.arange(10 * 13 * 10).reshape(10, 13, 10),
+        "b": np.arange(10 * 10).reshape(10, 10),
+    }
+    shifts = expand_pft_params([1, 2, 3]).astype("int64")
+    antecedent_shifts_dict = {"a": shifts}
+    out, time_coord = temporal_processing(
+        data_dict=data_dict.copy(),
+        antecedent_shifts_dict=antecedent_shifts_dict,
+        average_samples=2,
+        aggregator={"a": iris.analysis.MIN, "b": iris.analysis.MAX},
+        time_coord=get_daily_time_coord(10),
+    )
+    assert np.allclose(out["a"][0, :5], np.min(data_dict["a"][2:4, :5], axis=0))
+    assert np.allclose(out["a"][0, 5:11], np.min(data_dict["a"][1:3, 5:11], axis=0))
+    assert np.allclose(out["a"][0, 11:13], np.min(data_dict["a"][:2, 11:13], axis=0))
+    assert np.allclose(out["b"][0], np.max(data_dict["b"][3:5], axis=0))
+
+    assert_allclose(time_coord.points[0], 3.5)
+    assert_allclose(time_coord.points[-1], 9)
+    assert time_coord.cell(0).bound == (datetime(1970, 1, 4), datetime(1970, 1, 5))
+    assert time_coord.cell(-1).bound == (datetime(1970, 1, 10), datetime(1970, 1, 10))
