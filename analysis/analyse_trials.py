@@ -8,11 +8,11 @@ import numpy as np
 from hyperopt.mongoexp import MongoTrials
 
 if __name__ == "__main__":
-    exp_key = "exp9"
+    exp_key = "exp10"
     fig_dir = Path(f"~/tmp/trials_{exp_key}").expanduser()
     fig_dir.mkdir(exist_ok=True, parents=False)
 
-    trials = MongoTrials("mongo://3.65.42.126:1234/ba/jobs", exp_key=exp_key)
+    trials = MongoTrials("mongo://localhost:1234/ba/jobs", exp_key=exp_key)
 
     losses = np.array(trials.losses())
 
