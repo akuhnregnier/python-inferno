@@ -5,4 +5,4 @@
 #PBS -e /rds/general/user/ahk114/ephemeral
 #PBS -o /rds/general/user/ahk114/ephemeral
 
-/rds/general/user/ahk114/home/.pyenv/versions/miniconda3-latest/envs/wildfires/bin/hyperopt-mongo-worker --mongo=89.1.162.91:1234/ba --poll-interval=10
+/rds/general/user/ahk114/home/.pyenv/versions/miniconda3-latest/envs/wildfires/bin/hyperopt-mongo-worker --mongo=maritimus.webredirect.org:1234/ba --poll-interval=10
