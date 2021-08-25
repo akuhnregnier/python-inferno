@@ -254,7 +254,9 @@ if __name__ == "__main__":
 
             space[arg_name] = template[2](arg_name, *bound)
 
-    trials = MongoTrials("mongo://89.1.162.91:1234/ba/jobs", exp_key="exp10")
+    trials = MongoTrials(
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp10"
+    )
 
     out = fmin(
         fn=to_optimise,
