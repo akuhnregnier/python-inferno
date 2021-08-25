@@ -3,6 +3,7 @@ from pathlib import Path
 
 import iris
 import numpy as np
+from iris.time import PartialDateTime
 from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lons
 from jules_output_analysis.utils import convert_longitudes
 from tqdm import tqdm
@@ -18,14 +19,14 @@ def load_data(
     filenames=(
         [
             str(Path(s).expanduser())
-            for s in (
-                "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
-                "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
-            )
+            for s in [
+                "~/tmp/climatology5_c.nc",
+            ]
         ]
     ),
     N=None,
     output_timesteps=4,
+    climatology_dates=(PartialDateTime(2000, 1), PartialDateTime(2016, 12)),
 ):
     assert output_timesteps == 4
 
@@ -34,7 +35,11 @@ def load_data(
         raw_cubes.extend(iris.load_raw(f))
 
     # Ensure cubes can be concatenated.
-    cubes = homogenise_time_coordinate(raw_cubes).concatenate()
+    cubes = homogenise_time_coordinate(
+        iris.cube.CubeList(
+            [cube for cube in raw_cubes if cube.name() not in ("latitude", "longitude")]
+        )
+    ).concatenate()
     # Ensure all cubes have the same number of temporal samples after concatenation.
     assert len(set(cube.shape[0] for cube in cubes)) == 1
 
@@ -71,6 +76,14 @@ def load_data(
     else:
         obs_dates = (jules_time_coord.cell(0).point, jules_time_coord.cell(-1).point)
 
+    if climatology_dates is not None:
+        # Verify we are dealing with 1 year of data.
+        assert obs_dates[0].year == obs_dates[1].year
+        assert obs_dates[0].month == 1
+        assert obs_dates[1].month == 12
+
+        obs_dates = climatology_dates
+
     indices_1d_to_2d = get_1d_to_2d_indices(
         jules_lats.points[0],
         convert_longitudes(jules_lons.points[0]),
@@ -84,6 +97,12 @@ def load_data(
         dataset.regrid(
             new_latitudes=n96e_lats, new_longitudes=n96e_lons, area_weighted=True
         )
+        # If the JULES data is climatological, compute the climatology here too
+        if climatology_dates is not None:
+            dataset = dataset.get_climatology_dataset(
+                dataset.min_time, dataset.max_time
+            )
+
         mon_data_1d = np.ma.vstack(
             [data[indices_1d_to_2d][np.newaxis] for data in dataset.cube.data]
         )
@@ -123,4 +142,6 @@ def load_data(
         # Make magnitudes more similar to e.g. FAPAR, i.e. ~[0, 1].
         make_contiguous(npp_pft[:N, :, 0].data.data) / 1e-7,
         make_contiguous(npp_gb[:N, 0].data.data) / 1e-7,
+        # Whether or not the data is climatological.
+        climatology_dates is not None,
     )

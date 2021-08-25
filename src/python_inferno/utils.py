@@ -237,16 +237,50 @@ def expand_pft_params(
     return out
 
 
-def temporal_processing(
-    *,
-    data_dict,
-    antecedent_shifts_dict,
-    average_samples,
-    aggregator=iris.analysis.MEAN,
-    time_coord,
-):
-    # First carry out the antecedent shifting.
+def shift_climatology_data(*, antecedent_shifts_dict, data_dict, time_coord):
+    """Carry out antecedent shifting of climatological data."""
+    # Shift the required variables.
+    for variable, shifts in antecedent_shifts_dict.items():
+        if len(shifts) != 13:
+            raise ValueError(
+                f"'{len(shifts)}' shifts specified for variable '{variable}'. "
+                "Expected 13."
+            )
+        if variable not in data_dict:
+            raise ValueError(f"Variable '{variable}' was not found in the data.")
 
+        # Shift the variable.
+
+        # Shape is (time, [pft,] space).
+        if len(data_dict[variable].shape) == 2:
+            # Add a PFT dimensions by replicating the data.
+            data_dict[variable] = np.repeat(
+                np.expand_dims(data_dict[variable], 1), repeats=len(shifts), axis=1
+            )
+
+        if len(data_dict[variable].shape) != 3:
+            raise ValueError(
+                f"Variable '{variable}' had unexpected shape "
+                f"'{data_dict[variable].shape}'."
+            )
+        # Since we are dealing with climatological data, simply roll the data to shift
+        # the samples forward in time.
+        data_dict[variable] = np.stack(
+            [
+                np.roll(data_dict[variable][:, pft_i], shift, axis=0)
+                for pft_i, shift in enumerate(shifts)
+            ],
+            axis=1,
+        )
+
+    # Ensure all time coordinates are the same.
+    assert len(set(data.shape[0] for data in data_dict.values())) == 1
+
+    return data_dict, time_coord
+
+
+def shift_data(*, antecedent_shifts_dict, data_dict, time_coord):
+    """Carry out antecedent shifting of data."""
     # Determine the maximum shift.
     max_shift = 0
     for shifts in antecedent_shifts_dict.values():
@@ -262,6 +296,7 @@ def temporal_processing(
             )
         if variable not in data_dict:
             raise ValueError(f"Variable '{variable}' was not found in the data.")
+
         # Shift the variable.
 
         # Shape is (time, [pft,] space).
@@ -298,6 +333,33 @@ def temporal_processing(
 
     # Ensure all time coordinates are the same.
     assert len(set(data.shape[0] for data in data_dict.values())) == 1
+
+    return data_dict, time_coord
+
+
+def temporal_processing(
+    *,
+    data_dict,
+    antecedent_shifts_dict,
+    average_samples,
+    aggregator=iris.analysis.MEAN,
+    time_coord,
+    climatology_input=False,
+):
+    # First carry out the antecedent shifting.
+
+    if not climatology_input:
+        data_dict, time_coord = shift_data(
+            antecedent_shifts_dict=antecedent_shifts_dict,
+            data_dict=data_dict,
+            time_coord=time_coord,
+        )
+    else:
+        data_dict, time_coord = shift_climatology_data(
+            antecedent_shifts_dict=antecedent_shifts_dict,
+            data_dict=data_dict,
+            time_coord=time_coord,
+        )
 
     if not average_samples or average_samples == 1:
         # If no averaging has been requested, simply return at this point.

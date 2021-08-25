@@ -48,6 +48,7 @@ def to_optimise(opt_kwargs):
         jules_time_coord,
         npp_pft,
         npp_gb,
+        climatology_output,
     ) = load_data(N=None)
 
     expanded_opt_tmp = defaultdict(list)
@@ -90,6 +91,7 @@ def to_optimise(opt_kwargs):
         # NOTE NPP is used here now, NOT FAPAR!
         fuel_build_up=npp_pft,
         fapar_diag_pft=npp_pft,
+        # TODO: How is dry-day calculation affected by climatological input data?
         dry_days=unpack_wrapped(calculate_inferno_dry_days)(
             ls_rain, con_rain, threshold=1.0, timestep=timestep
         ),
@@ -109,6 +111,7 @@ def to_optimise(opt_kwargs):
             for name in data_dict
         },
         time_coord=jules_time_coord,
+        climatology_input=climatology_output,
     )
 
     assert jules_time_coord.cell(-1).point.month == 12
@@ -237,7 +240,8 @@ if __name__ == "__main__":
         vpd_f=(3, [(400, 2200)], hp.uniform),
         dry_bal_factor=(3, [(-100, -1)], hp.uniform),
         dry_bal_centre=(3, [(-3, 3)], hp.uniform),
-        average_samples=(1, [(1, 160, 10)], hp.quniform),
+        # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
+        average_samples=(1, [(40, 161, 60)], hp.quniform),
     )
     # Generate the actual `space` from the template.
     space = dict()
@@ -255,7 +259,7 @@ if __name__ == "__main__":
             space[arg_name] = template[2](arg_name, *bound)
 
     trials = MongoTrials(
-        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp10"
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp20"
     )
 
     out = fmin(
