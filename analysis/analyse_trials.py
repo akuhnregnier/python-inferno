@@ -8,11 +8,13 @@ import numpy as np
 from hyperopt.mongoexp import MongoTrials
 
 if __name__ == "__main__":
-    exp_key = "exp10"
+    exp_key = "exp20"
     fig_dir = Path(f"~/tmp/trials_{exp_key}").expanduser()
     fig_dir.mkdir(exist_ok=True, parents=False)
 
-    trials = MongoTrials("mongo://localhost:1234/ba/jobs", exp_key=exp_key)
+    trials = MongoTrials(
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key=exp_key
+    )
 
     losses = np.array(trials.losses())
 
@@ -53,6 +55,24 @@ if __name__ == "__main__":
         new_dir = fig_dir / "raw"
         new_dir.mkdir(exist_ok=True)
         plt.savefig(new_dir / f"{name}.png")
+
+    # Calculate and plot the minimum loss up to and including the current iteration.
+    min_losses = []
+    for loss in trials.losses():
+        if not min_losses and loss is not None:
+            # First valid loss.
+            min_losses.append(loss)
+        else:
+            if loss is None or loss > min_losses[-1]:
+                min_losses.append(min_losses[-1])
+            else:
+                min_losses.append(loss)
+
+    plt.figure()
+    plt.plot(min_losses)
+    plt.ylabel("Minimum loss")
+    plt.xlabel("Iteration")
+    plt.savefig(fig_dir / "min_loss_evolution.png")
 
     with (fig_dir / "argmin.json").open("w") as f:
         json.dump(trials.argmin, f, indent=4)
