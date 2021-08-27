@@ -43,11 +43,18 @@ class Space:
                     )
                     new_values = orig_values[selection]
 
-                    start = new_values[0]
-                    end = new_values[-1] + 1
-                    step = 1 if len(new_values) == 1 else new_values[1] - new_values[0]
+                    if not np.any(selection):
+                        # No valid samples in new range.
+                        # Pick the given best value instead.
+                        new[name] = (arg_type, best_vals[name], best_vals[name] + 1, 1)
+                    else:
+                        start = new_values[0]
+                        end = new_values[-1] + 1
+                        step = (
+                            1 if len(new_values) == 1 else new_values[1] - new_values[0]
+                        )
 
-                    new[name] = (arg_type, start, end, step)
+                        new[name] = (arg_type, start, end, step)
             else:
                 raise ValueError(f"Unsupported `arg_type`: {arg_type}.")
 
