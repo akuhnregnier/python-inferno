@@ -12,6 +12,7 @@ from sklearn.metrics import r2_score
 
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data
+from python_inferno.hyperopt import Space
 from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
@@ -244,7 +245,7 @@ if __name__ == "__main__":
         average_samples=(1, [(40, 161, 60)], hp.quniform),
     )
     # Generate the actual `space` from the template.
-    space = dict()
+    spec = dict()
     for name, template in space_template.items():
         bounds = template[1]
         if len(bounds) == 1:
@@ -256,17 +257,23 @@ if __name__ == "__main__":
             else:
                 arg_name = name + str(i)
 
-            space[arg_name] = template[2](arg_name, *bound)
+            spec[arg_name] = (template[2], *bound)
+
+    space = Space(spec)
 
     trials = MongoTrials(
-        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp20"
+        "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp20_shrink"
     )
 
-    out = fmin(
+    part_fmin = partial(
+        fmin,
         fn=to_optimise,
-        space=space,
         algo=tpe.suggest,
         trials=trials,
-        max_evals=50000,
         rstate=np.random.RandomState(0),
     )
+
+    out1 = part_fmin(space=space.render(), max_evals=2000)
+
+    shrink_space = space.shrink(out1, factor=0.2)
+    out2 = part_fmin(space=shrink_space.render(), max_evals=4000)
