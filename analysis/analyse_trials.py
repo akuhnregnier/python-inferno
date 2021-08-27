@@ -8,7 +8,7 @@ import numpy as np
 from hyperopt.mongoexp import MongoTrials
 
 if __name__ == "__main__":
-    exp_key = "exp20"
+    exp_key = "exp20_shrink"
     fig_dir = Path(f"~/tmp/trials_{exp_key}").expanduser()
     fig_dir.mkdir(exist_ok=True, parents=False)
 
