@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import gc
 from collections import defaultdict
 from functools import partial
 
@@ -228,6 +229,8 @@ def to_optimise(opt_kwargs):
 
 
 def objective(trial):
+    gc.collect()
+
     space_template = dict(
         fapar_factor=(3, [(-50, -1)], "suggest_float"),
         fapar_centre=(3, [(-0.1, 1.1)], "suggest_float"),
@@ -260,7 +263,11 @@ def objective(trial):
 
     suggested_params = OptunaSpace(spec).suggest(trial)
 
-    return to_optimise(suggested_params)["loss"]
+    loss = to_optimise(suggested_params)["loss"]
+
+    gc.collect()
+
+    return loss
 
 
 if __name__ == "__main__":
