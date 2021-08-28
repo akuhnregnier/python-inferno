@@ -4,7 +4,6 @@ import gc
 from collections import defaultdict
 from functools import partial
 
-import hyperopt
 import iris
 import numpy as np
 import optuna
@@ -28,6 +27,10 @@ timestep = 4 * 60 * 60
 
 
 def to_optimise(opt_kwargs):
+    if not hasattr(to_optimise, "loaded_data"):
+        # Cache the data for future function calls.
+        to_optimise.loaded_data = load_data(N=None)
+
     (
         t1p5m_tile,
         q1p5m_tile,
@@ -50,7 +53,7 @@ def to_optimise(opt_kwargs):
         npp_pft,
         npp_gb,
         climatology_output,
-    ) = load_data(N=None)
+    ) = to_optimise.loaded_data
 
     expanded_opt_tmp = defaultdict(list)
     for name, val in opt_kwargs.items():
@@ -175,7 +178,7 @@ def to_optimise(opt_kwargs):
     )
 
     if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
-        return {"loss": 10000.0, "status": hyperopt.STATUS_FAIL}
+        raise optuna.exceptions.TrialPruned
 
     # Calculate monthly averages.
     avg_ba = monthly_average_data(model_ba, time_coord=jules_time_coord)
@@ -205,7 +208,7 @@ def to_optimise(opt_kwargs):
 
     if ignored > 5600:
         # Ensure that not too many samples are ignored.
-        return {"loss": 10000.0, "status": hyperopt.STATUS_FAIL}
+        raise optuna.exceptions.TrialPruned
 
     scores = dict(
         # 1D stats
@@ -218,14 +221,14 @@ def to_optimise(opt_kwargs):
     )
 
     if any(np.ma.is_masked(val) for val in scores.values()):
-        return {"loss": 10000.0, "status": hyperopt.STATUS_FAIL}
+        raise optuna.exceptions.TrialPruned
 
     # Aim to minimise the combined score.
-    return {
-        # "loss": scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"],
-        "loss": scores["nme"] + scores["mpd"],
-        "status": hyperopt.STATUS_OK,
-    }
+    return (
+        # scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
+        scores["nme"]
+        + scores["mpd"]
+    )
 
 
 def objective(trial):
@@ -263,7 +266,7 @@ def objective(trial):
 
     suggested_params = OptunaSpace(spec).suggest(trial)
 
-    loss = to_optimise(suggested_params)["loss"]
+    loss = to_optimise(suggested_params)
 
     gc.collect()
 
