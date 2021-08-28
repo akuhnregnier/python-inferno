@@ -17,7 +17,11 @@ if __name__ == "__main__":
     df = study.trials_dataframe()
 
     fig_dir = Path(f"~/tmp/trials_{exp_key}").expanduser()
-    fig_dir.mkdir(exist_ok=True, parents=False)
+    if fig_dir.parent.exists():
+        fig_dir.mkdir(exist_ok=True, parents=False)
+        save = True
+    else:
+        save = False
 
     losses = np.array(df["value"][df["value"] < 2])
 
@@ -37,7 +41,8 @@ if __name__ == "__main__":
     plt.plot(min_losses)
     plt.ylabel("Minimum loss")
     plt.xlabel("Iteration")
-    plt.savefig(fig_dir / "min_loss_evolution.png")
+    if save:
+        plt.savefig(fig_dir / "min_loss_evolution.png")
 
-    with (fig_dir / "argmin.json").open("w") as f:
-        json.dump(study.best_params, f, indent=4)
+        with (fig_dir / "argmin.json").open("w") as f:
+            json.dump(study.best_params, f, indent=4)
