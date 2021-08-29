@@ -274,9 +274,10 @@ def objective(trial):
 
 
 if __name__ == "__main__":
+    study_name = "optuna2"
     study = optuna.load_study(
         sampler=optuna.samplers.CmaEsSampler(),
-        study_name="optuna1",
-        storage="mysql://alex@maritimus.webredirect.org/optuna1",
+        study_name=f"{study_name}",
+        storage=f"mysql://alex@maritimus.webredirect.org/{study_name}",
     )
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, n_trials=5000)

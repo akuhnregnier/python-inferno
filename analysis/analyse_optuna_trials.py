@@ -8,7 +8,7 @@ import numpy as np
 import optuna
 
 if __name__ == "__main__":
-    exp_key = "optuna1"
+    exp_key = "optuna2"
     study = optuna.load_study(
         sampler=optuna.samplers.CmaEsSampler(),
         study_name=f"{exp_key}",
