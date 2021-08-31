@@ -8,7 +8,7 @@ import numpy as np
 import optuna
 
 if __name__ == "__main__":
-    exp_key = "optuna2"
+    exp_key = "optuna3"
     study = optuna.load_study(
         sampler=optuna.samplers.CmaEsSampler(),
         study_name=f"{exp_key}",
@@ -24,6 +24,11 @@ if __name__ == "__main__":
         save = False
 
     losses = np.array(df["value"][df["value"] < 2])
+
+    plt.figure()
+    plt.plot(losses)
+    plt.ylabel("Loss")
+    plt.xlabel("Iteration")
 
     # Calculate and plot the minimum loss up to and including the current iteration.
     min_losses = []

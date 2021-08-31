@@ -264,7 +264,8 @@ def objective(trial):
 
             spec[arg_name] = (template[2], *bound)
 
-    suggested_params = OptunaSpace(spec).suggest(trial)
+    space = OptunaSpace(spec, remap_float_to_0_1=True)
+    suggested_params = space.suggest(trial)
 
     loss = to_optimise(suggested_params)
 
@@ -274,9 +275,9 @@ def objective(trial):
 
 
 if __name__ == "__main__":
-    study_name = "optuna2"
+    study_name = "optuna3"
     study = optuna.load_study(
-        sampler=optuna.samplers.CmaEsSampler(),
+        sampler=optuna.samplers.CmaEsSampler(restart_strategy="ipop"),
         study_name=f"{study_name}",
         storage=f"mysql://alex@maritimus.webredirect.org/{study_name}",
     )
