@@ -26,6 +26,39 @@ from python_inferno.utils import (
 timestep = 4 * 60 * 60
 
 
+space_template = dict(
+    fapar_factor=(3, [(-50, -1)], "suggest_float"),
+    fapar_centre=(3, [(-0.1, 1.1)], "suggest_float"),
+    fuel_build_up_n_samples=(3, [(100, 1200, 100)], "suggest_int"),
+    fuel_build_up_factor=(3, [(0.5, 30)], "suggest_float"),
+    fuel_build_up_centre=(3, [(0.0, 0.5)], "suggest_float"),
+    temperature_factor=(3, [(0.07, 0.2)], "suggest_float"),
+    temperature_centre=(3, [(260, 295)], "suggest_float"),
+    rain_f=(3, [(0.8, 2.0)], "suggest_float"),
+    vpd_f=(3, [(400, 2200)], "suggest_float"),
+    dry_bal_factor=(3, [(-100, -1)], "suggest_float"),
+    dry_bal_centre=(3, [(-3, 3)], "suggest_float"),
+    # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
+    average_samples=(1, [(40, 160, 60)], "suggest_int"),
+)
+# Generate the actual `space` from the template.
+spec = dict()
+for name, template in space_template.items():
+    bounds = template[1]
+    if len(bounds) == 1:
+        # Use the same bounds for all PFTs if only one are given.
+        bounds *= template[0]
+    for i, bound in zip(range(1, template[0] + 1), bounds):
+        if i == 1:
+            arg_name = name
+        else:
+            arg_name = name + str(i)
+
+        spec[arg_name] = (template[2], *bound)
+
+space = OptunaSpace(spec, remap_float_to_0_1=True, replicate_pft_groups=True)
+
+
 def to_optimise(opt_kwargs):
     if not hasattr(to_optimise, "loaded_data"):
         # Cache the data for future function calls.
@@ -234,43 +267,10 @@ def to_optimise(opt_kwargs):
 def objective(trial):
     gc.collect()
 
-    space_template = dict(
-        fapar_factor=(3, [(-50, -1)], "suggest_float"),
-        fapar_centre=(3, [(-0.1, 1.1)], "suggest_float"),
-        fuel_build_up_n_samples=(3, [(100, 1200, 100)], "suggest_int"),
-        fuel_build_up_factor=(3, [(0.5, 30)], "suggest_float"),
-        fuel_build_up_centre=(3, [(0.0, 0.5)], "suggest_float"),
-        temperature_factor=(3, [(0.07, 0.2)], "suggest_float"),
-        temperature_centre=(3, [(260, 295)], "suggest_float"),
-        rain_f=(3, [(0.8, 2.0)], "suggest_float"),
-        vpd_f=(3, [(400, 2200)], "suggest_float"),
-        dry_bal_factor=(3, [(-100, -1)], "suggest_float"),
-        dry_bal_centre=(3, [(-3, 3)], "suggest_float"),
-        # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
-        average_samples=(1, [(40, 160, 60)], "suggest_int"),
-    )
-    # Generate the actual `space` from the template.
-    spec = dict()
-    for name, template in space_template.items():
-        bounds = template[1]
-        if len(bounds) == 1:
-            # Use the same bounds for all PFTs if only one are given.
-            bounds *= template[0]
-        for i, bound in zip(range(1, template[0] + 1), bounds):
-            if i == 1:
-                arg_name = name
-            else:
-                arg_name = name + str(i)
-
-            spec[arg_name] = (template[2], *bound)
-
-    space = OptunaSpace(spec, remap_float_to_0_1=True, replicate_pft_groups=True)
     suggested_params = space.suggest(trial)
-
     loss = to_optimise(suggested_params)
 
     gc.collect()
-
     return loss
 
 

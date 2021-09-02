@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 import json
 from pathlib import Path
+from pprint import pprint
 
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
+from optimise_ba_model_optuna import space
 
 if __name__ == "__main__":
     exp_key = "optuna4"
@@ -46,8 +48,38 @@ if __name__ == "__main__":
     plt.plot(min_losses)
     plt.ylabel("Minimum loss")
     plt.xlabel("Iteration")
+
+    pprint(space.remap_if_needed(study.best_params))
+
     if save:
         plt.savefig(fig_dir / "min_loss_evolution.png")
 
         with (fig_dir / "argmin.json").open("w") as f:
-            json.dump(study.best_params, f, indent=4)
+            json.dump(space.remap_if_needed(study.best_params), f, indent=4)
+
+
+max_loss = 0.87
+values = df["value"]
+selection = values <= max_loss
+sel_values = values[selection]
+
+for col in [col for col in df.columns if col.startswith("params_")]:
+    name = col.replace("params_", "")
+    plt.figure()
+    params = np.array(
+        [space.remap_if_needed({name: val})[name] for val in df[col].values]
+    )
+
+    plt.plot(
+        params[selection],
+        sel_values,
+        linestyle="",
+        marker="x",
+    )
+    plt.xlabel(name)
+    plt.ylabel("value")
+    plt.title(name)
+    plt.show()
+
+    if save:
+        plt.savefig(fig_dir / f"{name}_values.png")

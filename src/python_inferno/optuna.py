@@ -30,8 +30,7 @@ class OptunaSpace:
             if arg_type == "suggest_float" and self.remap_float_to_0_1:
                 remap = True
                 assert len(args) == 2
-                minb = args[0]
-                maxb = args[1]
+                minb, maxb = args
                 args = (0, 1)
             else:
                 remap = False
@@ -51,3 +50,23 @@ class OptunaSpace:
 
     def __str__(self):
         return str(self.spec)
+
+    def remap(self, params):
+        if not self.remap_float_to_0_1:
+            raise ValueError("Remapping needs to be selected.")
+
+        remapped = {}
+        for name, value in params.items():
+            arg_type, *args = self.spec[name]
+            if arg_type == "suggest_float":
+                minb, maxb = args
+                remapped[name] = (value * (maxb - minb)) + minb
+            else:
+                remapped[name] = value
+
+        return remapped
+
+    def remap_if_needed(self, params):
+        if self.remap_float_to_0_1:
+            return self.remap(params)
+        return params
