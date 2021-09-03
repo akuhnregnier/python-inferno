@@ -36,8 +36,6 @@ if __name__ == "__main__":
     # Define the ignition method (`ignition_method`).
     ignition_method = 1
 
-    timestep = 4 * 60 * 60
-
     print(jules_time_coord.cell(-1).point)
     print(jules_time_coord.cell(0).point)
     cube = iris.cube.Cube(gfed_ba_1d, dim_coords_and_dims=[(jules_time_coord, 0)])

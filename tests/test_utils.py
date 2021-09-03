@@ -168,9 +168,9 @@ def test_temporal_processing_no_agg():
 @pytest.mark.parametrize(
     "aggregator, agg_method",
     [
-        (iris.analysis.MEAN, np.mean),
-        (iris.analysis.MIN, np.min),
-        (iris.analysis.MAX, np.max),
+        ("MEAN", np.mean),
+        ("MIN", np.min),
+        ("MAX", np.max),
     ],
 )
 def test_temporal_processing_agg(aggregator, agg_method):
@@ -211,7 +211,7 @@ def test_temporal_processing_multi_agg():
         data_dict=data_dict.copy(),
         antecedent_shifts_dict=antecedent_shifts_dict,
         average_samples=2,
-        aggregator={"a": iris.analysis.MIN, "b": iris.analysis.MAX},
+        aggregator={"a": "MIN", "b": "MAX"},
         time_coord=get_daily_time_coord(10),
     )
     assert np.allclose(out["a"][0, :5], np.min(data_dict["a"][2:4, :5], axis=0))

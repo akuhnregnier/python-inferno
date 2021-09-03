@@ -10,7 +10,7 @@ from scipy.optimize import least_squares
 from sklearn.metrics import r2_score
 
 from python_inferno.configuration import land_pts
-from python_inferno.data import load_data
+from python_inferno.data import load_data, timestep
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 
@@ -94,8 +94,6 @@ def optimize_ba(
             )
         )
 
-    timestep = 3600 * 4
-
     # Default values.
     kwargs = dict(
         t1p5m_tile=t1p5m_tile,
@@ -119,7 +117,7 @@ def optimize_ba(
             np.expand_dims(obs_fapar_1d_data, 1), repeats=13, axis=1
         ),
         dry_days=calculate_inferno_dry_days(
-            ls_rain, con_rain, threshold=1.0, timestep=3600 * 4
+            ls_rain, con_rain, threshold=1.0, timestep=timestep
         ),
         flammability_method=2,
         dryness_method=dryness_method,

@@ -279,7 +279,7 @@ def inferno_io(
         # We add pft-specific variables to the gridbox totals
         burnt_area = burnt_area + frac[i, :] * burnt_area_ft[i, :]
 
-    return burnt_area, burnt_area_ft
+    return burnt_area, dry_bal
 
 
 # Note: calc_ignitions, calc_flam and calc_burnt_area) are

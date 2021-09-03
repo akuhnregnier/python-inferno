@@ -14,7 +14,7 @@ from wildfires.dask_cx1.dask_rf import safe_write
 
 from python_inferno.configuration import land_pts
 from python_inferno.cx1 import run
-from python_inferno.data import load_data
+from python_inferno.data import load_data, timestep
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import unpack_wrapped
@@ -129,8 +129,6 @@ def optimize_ba(
         min_p, max_p = sorted(opt_range[name])
         return value * (max_p - min_p) + min_p
 
-    timestep = 4 * 60 * 60
-
     # Default values.
     kwargs = dict(
         t1p5m_tile=t1p5m_tile,
@@ -200,7 +198,7 @@ def optimize_ba(
 
             if dryness_method == 1 and name == "dry_day_threshold":
                 kwargs["dry_days"] = calculate_inferno_dry_days(
-                    ls_rain, con_rain, threshold=value, timestep=3600 * 4
+                    ls_rain, con_rain, threshold=value, timestep=timestep
                 )
             else:
                 kwargs[name] = value

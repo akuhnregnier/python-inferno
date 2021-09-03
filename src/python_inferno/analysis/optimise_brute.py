@@ -5,7 +5,7 @@ from sklearn.metrics import r2_score
 
 from ..cache import cache
 from ..configuration import land_pts
-from ..data import load_data
+from ..data import load_data, timestep
 from ..multi_timestep_inferno import multi_timestep_inferno
 from ..precip_dry_day import calculate_inferno_dry_days
 from ..utils import combine_ma_masks, unpack_wrapped
@@ -39,8 +39,6 @@ def calc_param_r2(opt_params, N=None):
     ) = load_data(N=N)
 
     combined_mask = combine_ma_masks(gfed_ba_1d, obs_fapar_1d, obs_fuel_build_up_1d)
-
-    timestep = 4 * 60 * 60
 
     kwargs = dict(
         t1p5m_tile=t1p5m_tile,

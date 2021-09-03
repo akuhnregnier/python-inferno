@@ -38,8 +38,6 @@ if __name__ == "__main__":
     # Define the ignition method (`ignition_method`).
     ignition_method = 1
 
-    timestep = 4 * 60 * 60
-
     cube = iris.cube.Cube(np.expand_dims(np.mean(frac, axis=0), 1))
     cube.add_aux_coord(jules_lats, data_dims=(1, 2))
     cube.add_aux_coord(jules_lons, data_dims=(1, 2))

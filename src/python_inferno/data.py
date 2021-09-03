@@ -3,26 +3,37 @@ from pathlib import Path
 
 import iris
 import numpy as np
-from iris.time import PartialDateTime
 from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lons
 from jules_output_analysis.utils import convert_longitudes
 from tqdm import tqdm
 from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4, homogenise_time_coordinate
 
 from .cache import cache, mark_dependency
-from .utils import make_contiguous, temporal_nearest_neighbour_interp
+from .precip_dry_day import calculate_inferno_dry_days
+from .utils import (
+    PartialDateTime,
+    make_contiguous,
+    monthly_average_data,
+    temporal_nearest_neighbour_interp,
+    temporal_processing,
+    unpack_wrapped,
+)
+
+timestep = 4 * 60 * 60
 
 
 @cache(dependencies=[make_contiguous, temporal_nearest_neighbour_interp])
 @mark_dependency
 def load_data(
     filenames=(
-        [
-            str(Path(s).expanduser())
-            for s in [
-                "~/tmp/climatology5_c.nc",
+        tuple(
+            [
+                str(Path(s).expanduser())
+                for s in [
+                    "~/tmp/climatology5_c.nc",
+                ]
             ]
-        ]
+        )
     ),
     N=None,
     output_timesteps=4,
@@ -145,3 +156,111 @@ def load_data(
         # Whether or not the data is climatological.
         climatology_dates is not None,
     )
+
+
+@cache(dependencies=[load_data, temporal_processing, monthly_average_data])
+def get_processed_climatological_data(n_samples_pft, average_samples):
+    (
+        t1p5m_tile,
+        q1p5m_tile,
+        pstar,
+        sthu_soilt,
+        frac,
+        c_soil_dpm_gb,
+        c_soil_rpm_gb,
+        canht,
+        ls_rain,
+        con_rain,
+        fuel_build_up,
+        fapar_diag_pft,
+        jules_lats,
+        jules_lons,
+        gfed_ba_1d,
+        obs_fapar_1d,
+        jules_ba_gb,
+        jules_time_coord,
+        npp_pft,
+        npp_gb,
+        climatology_output,
+    ) = load_data(
+        filenames=(
+            tuple(
+                [
+                    str(Path(s).expanduser())
+                    for s in [
+                        "~/tmp/climatology5_c.nc",
+                    ]
+                ]
+            )
+        ),
+        N=None,
+        output_timesteps=4,
+        climatology_dates=(PartialDateTime(2000, 1), PartialDateTime(2016, 12)),
+    )
+
+    data_dict = dict(
+        t1p5m_tile=t1p5m_tile,
+        q1p5m_tile=q1p5m_tile,
+        pstar=pstar,
+        sthu_soilt=sthu_soilt,
+        frac=frac,
+        c_soil_dpm_gb=c_soil_dpm_gb,
+        c_soil_rpm_gb=c_soil_rpm_gb,
+        canht=canht,
+        ls_rain=ls_rain,
+        con_rain=con_rain,
+        # NOTE NPP is used here now, NOT FAPAR!
+        fuel_build_up=npp_pft,
+        fapar_diag_pft=npp_pft,
+        # TODO: How is dry-day calculation affected by climatological input data?
+        dry_days=unpack_wrapped(calculate_inferno_dry_days)(
+            ls_rain, con_rain, threshold=1.0, timestep=timestep
+        ),
+        # NOTE The target BA is only included here to ease processing. It will be
+        # removed prior to the modelling function.
+        gfed_ba_1d=gfed_ba_1d,
+    )
+
+    data_dict, jules_time_coord = temporal_processing(
+        data_dict=data_dict,
+        antecedent_shifts_dict={"fuel_build_up": n_samples_pft},
+        average_samples=average_samples,
+        aggregator={
+            name: {"dry_days": "MAX", "t1p5m_tile": "MAX"}.get(name, "MEAN")
+            for name in data_dict
+        },
+        time_coord=jules_time_coord,
+        climatology_input=climatology_output,
+    )
+
+    assert jules_time_coord.cell(-1).point.month == 12
+    last_year = jules_time_coord.cell(-1).point.year
+    for start_i in range(jules_time_coord.shape[0]):
+        if jules_time_coord.cell(start_i).point.year == last_year:
+            break
+    else:
+        raise ValueError("Target year not encountered.")
+
+    # Trim the data and temporal coord such that the data spans a single year.
+    jules_time_coord = jules_time_coord[start_i:]
+    for data_name in data_dict:
+        data_dict[data_name] = data_dict[data_name][start_i:]
+
+    # Remove the target BA.
+    gfed_ba_1d = data_dict.pop("gfed_ba_1d")
+
+    # NOTE The mask array on `gfed_ba_1d` determines which samples are selected for
+    # comparison later on.
+
+    # Calculate monthly averages.
+    mon_avg_gfed_ba_1d = monthly_average_data(gfed_ba_1d, time_coord=jules_time_coord)
+
+    # Ensure the data spans a single year.
+    assert mon_avg_gfed_ba_1d.shape[0] == 12
+    assert (
+        jules_time_coord.cell(0).point.year == jules_time_coord.cell(-1).point.year
+        and jules_time_coord.cell(0).point.month == 1
+        and jules_time_coord.cell(-1).point.month == 12
+        and jules_time_coord.shape[0] >= 12
+    )
+    return data_dict, jules_time_coord

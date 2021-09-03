@@ -7,7 +7,7 @@ import numpy as np
 from joblib import Memory
 
 from python_inferno.configuration import land_pts
-from python_inferno.data import load_data
+from python_inferno.data import load_data, timestep
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import unpack_wrapped
@@ -40,8 +40,6 @@ if __name__ == "__main__":
 
     # Define the ignition method (`ignition_method`).
     ignition_method = 1
-
-    timestep = 3600 * 4
 
     ba, dry_bal = unpack_wrapped(multi_timestep_inferno)(
         t1p5m_tile=t1p5m_tile,

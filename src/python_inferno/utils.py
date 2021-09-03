@@ -5,8 +5,10 @@ from functools import reduce, wraps
 import iris
 import numpy as np
 from iris.coord_categorisation import add_month_number, add_year
+from iris.time import PartialDateTime as IrisPartialDateTime
 from numba import njit
 from scipy.optimize import minimize
+from wildfires.cache.hashing import PartialDateTimeHasher
 
 from .cache import mark_dependency
 from .metrics import nme
@@ -15,6 +17,11 @@ if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
 else:
     from tqdm import tqdm  # noqa
+
+
+class PartialDateTime(IrisPartialDateTime):
+    def __hash__(self):
+        return int(PartialDateTimeHasher.calculate_hash(self), 16)
 
 
 @mark_dependency
@@ -155,6 +162,7 @@ def unpack_wrapped(func):
     return inner
 
 
+@mark_dependency
 def monthly_average_data(data, time_coord=None, trim_single=True):
     """Calculate monthly average of data.
 
@@ -337,12 +345,13 @@ def shift_data(*, antecedent_shifts_dict, data_dict, time_coord):
     return data_dict, time_coord
 
 
+@mark_dependency
 def temporal_processing(
     *,
     data_dict,
     antecedent_shifts_dict,
     average_samples,
-    aggregator=iris.analysis.MEAN,
+    aggregator="MEAN",
     time_coord,
     climatology_input=False,
 ):
@@ -388,6 +397,20 @@ def temporal_processing(
     if not isinstance(aggregator, dict):
         # Use the same aggregator for each variable.
         aggregator = {name: aggregator for name in data_dict}
+
+    # Use strings as an intermediary here to enable caching of function input values
+    # (iris aggregators are not easily hashable).
+    aggregators_map = {
+        "MAX": iris.analysis.MAX,
+        "MEAN": iris.analysis.MEAN,
+        "MEDIAN": iris.analysis.MEDIAN,
+        "MIN": iris.analysis.MIN,
+    }
+
+    # Choose the corresponding aggregation functions.
+    aggregator = {
+        name: aggregators_map[agg_name] for name, agg_name in aggregator.items()
+    }
 
     for variable in data_dict:
         data = data_dict[variable]

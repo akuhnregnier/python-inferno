@@ -4,14 +4,13 @@ from collections import defaultdict
 from functools import partial
 
 import hyperopt
-import iris
 import numpy as np
 from hyperopt import fmin, hp, tpe
 from hyperopt.mongoexp import MongoTrials
 from sklearn.metrics import r2_score
 
 from python_inferno.configuration import land_pts
-from python_inferno.data import load_data
+from python_inferno.data import load_data, timestep
 from python_inferno.hyperopt import Space
 from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
@@ -23,8 +22,6 @@ from python_inferno.utils import (
     temporal_processing,
     unpack_wrapped,
 )
-
-timestep = 4 * 60 * 60
 
 
 def to_optimise(opt_kwargs):
@@ -106,9 +103,7 @@ def to_optimise(opt_kwargs):
         antecedent_shifts_dict={"fuel_build_up": n_samples_pft},
         average_samples=opt_kwargs["average_samples"],
         aggregator={
-            name: {"dry_days": iris.analysis.MAX, "t1p5m_tile": iris.analysis.MAX}.get(
-                name, iris.analysis.MEAN
-            )
+            name: {"dry_days": "MAX", "t1p5m_tile": "MAX"}.get(name, "MEAN")
             for name in data_dict
         },
         time_coord=jules_time_coord,

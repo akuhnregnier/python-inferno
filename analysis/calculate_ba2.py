@@ -20,6 +20,7 @@ from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4
 
 from python_inferno import inferno_io
 from python_inferno.configuration import land_pts
+from python_inferno.data import timestep
 from python_inferno.precip_dry_day import precip_moving_sum
 from python_inferno.utils import (
     repeated_exponential_average,
@@ -222,8 +223,6 @@ def main():
     ignition_method = 1
 
     ti = 0
-
-    timestep = 4 * 60 * 60
 
     python_inferno_kwargs = dict(
         t1p5m_tile=t1p5m_tile[ti, :, 0].data,
