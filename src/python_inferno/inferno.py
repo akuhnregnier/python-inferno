@@ -1,294 +1,13 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from numba import njit
-from wildfires.utils import parallel_njit
 
-from .calc_c_comps_triffid import calc_c_comps_triffid
-from .configuration import avg_ba, land_pts, m2_in_km2, npft, s_in_day, s_in_month
-from .qsat_wat import qsat_wat
+from .configuration import m2_in_km2, s_in_day, s_in_month
 
 # Indexing convention is time, pft, land
 
 
-@parallel_njit(cache=True)
-def inferno_io(
-    t1p5m_tile,
-    q1p5m_tile,
-    pstar,
-    sthu_soilt,
-    frac,
-    c_soil_dpm_gb,
-    c_soil_rpm_gb,
-    canht,
-    ls_rain,
-    con_rain,
-    pop_den,
-    flash_rate,
-    ignition_method,
-    fuel_build_up,
-    fapar_diag_pft,
-    dry_bal,
-    flammability_method,
-    fapar_factor,
-    fapar_centre,
-    fuel_build_up_factor,
-    fuel_build_up_centre,
-    temperature_factor,
-    temperature_centre,
-    dryness_method,
-    dry_days,
-    dry_day_factor,
-    dry_day_centre,
-    rain_f,
-    vpd_f,
-    dry_bal_factor,
-    dry_bal_centre,
-    cum_rain,
-):
-    # Description:
-    #   Called every model timestep, this subroutine updates INFERNO's
-    #   driving variables and calls the scientific routines.
-    #
-    # Note that this code is currently incompatible with soil tiling.
-    # The calculation of inferno_sm needs work.
-    # Therefore all soil tile dimensions are hard coded to 1
-
-    # c_root,
-    #   # Carbon in leaves (kg m-2).
-    # c_veg
-    #   # Carbon in vegetation (kg m-2).
-
-    # # Local temporary variables used in the interactive fire code
-    # inferno_temp(land_pts),
-    #   # The temperature (K)
-    # inferno_rhum(land_pts),
-    #   # The Relative Humidity (%)
-    # inferno_sm(land_pts),
-    #   # The Soil Moisture (Fraction of saturation)
-    # inferno_rain(land_pts),
-    #   # The total rainfall (kg/m2/s)
-    # inferno_fuel(land_pts),
-    #   # The fuel density (fine litter and leaves - kg/m3)
-    # qsat(land_pts),
-    #   # Saturation humidity
-    # ignitions(land_pts),
-    #   # The number of ignitions (#/m2/s)
-    # lai_bal_inf(land_pts,npft),
-    #   # The balanced lai used to compute carbon pools
-    # leaf_inf(land_pts,npft),
-    #   # The leaf carbon
-    # wood_inf(land_pts,npft),
-    #   # The wood carbon
-    # dpm_fuel(land_pts),
-    #   # The amount of DPM that is available to burn (kgC.m-2)
-    # rpm_fuel(land_pts),
-    #   # The amount of RPM that is available to burn (kgC.m-2)
-    # ls_rain_filtered(land_pts),
-    #   # Large scale rain from input after filtering negative values
-    # con_rain_filtered(land_pts)
-    #   # Convective rain from input after filtering negative values
-
-    # # HARDCODED Emission factors for DPM in g kg-1
-    # fef_co2_dpm = 1637.0
-    # fef_co_dpm = 89.0
-    # fef_ch4_dpm = 3.92
-    # fef_nox_dpm = 2.51
-    # fef_so2_dpm = 0.40
-    # fef_oc_dpm = 8.2
-    # fef_bc_dpm = 0.56
-
-    # # HARDCODED Emission factors for RPM in g kg-1
-    # fef_co2_rpm = 1489.0
-    # fef_co_rpm = 127.0
-    # fef_ch4_rpm = 5.96
-    # fef_nox_rpm = 0.90
-    # fef_so2_rpm = 0.40
-    # fef_oc_rpm = 8.2
-    # fef_bc_rpm = 0.56
-
-    # Plant Material that is available as fuel (on the surface)
-    pmtofuel = 0.7
-
-    # Fuel availability high/low threshold
-    fuel_low = 0.02
-    fuel_high = 0.2
-
-    # Tolerance number to filter non-physical rain values
-    rain_tolerance = 1.0e-18  # kg/m2/s
-
-    # Driving variables
-    # - inferno_temp(:)
-    # - inferno_rhum(:)
-    # - inferno_sm(:)
-    # - inferno_rain(:)
-    # - inferno_fuel(:)
-
-    inferno_temp = np.zeros((land_pts,))
-    inferno_rhum = np.zeros((land_pts,))
-    inferno_sm = np.zeros((land_pts,))
-    inferno_rain = np.zeros((land_pts,))
-    inferno_fuel = np.zeros((land_pts,))
-
-    # Work variables
-    # - qsat(:)
-    # - lai_bal_inf(:,:)
-    # - leaf_inf(:,:)
-    # - wood_inf(:,:)
-    # - ignitions(:)
-
-    qsat = np.zeros((land_pts,))
-    lai_bal_inf = np.zeros((npft, land_pts))
-    leaf_inf = np.zeros((npft, land_pts))
-    wood_inf = np.zeros((npft, land_pts))
-    ignitions = np.zeros((land_pts,))
-
-    # INFERNO diagnostic variables
-    # - flammability_ft(:,:)
-    # - burnt_area(:)
-    # - burnt_area_ft(:,:)
-
-    flammability_ft = np.zeros((npft, land_pts))
-    burnt_area = np.zeros((land_pts,))
-    burnt_area_ft = np.zeros((npft, land_pts))
-
-    # Update antecedent fuel load.
-    # TODO
-    # fuel_build_up = fuel_build_up + fuel_build_up_alpha * (
-    #     fapar_diag_pft - fuel_build_up
-    # )
-
-    # Get the available DPM and RPM using a scaling parameter
-
-    dpm_fuel = pmtofuel * c_soil_dpm_gb
-    # rpm_fuel = pmtofuel * c_soil_rpm_gb
-
-    # Get the inferno meteorological variables for the whole gridbox
-
-    # Soil Humidity (inferno_sm)
-    # XXX What does selecting one of the 4 layers change here?
-    inferno_sm = sthu_soilt[0, 0, :]
-
-    # Rainfall (inferno_rain)
-
-    # Rain fall values have a significant impact in the calculation of flammability.
-    # In some cases we may be presented with values that have no significant meaning -
-    # e.g in the UM context negative values or very small values can often be found/
-
-    ls_rain_filtered = ls_rain.copy()
-    con_rain_filtered = con_rain.copy()
-
-    ls_rain_filtered[ls_rain < rain_tolerance] = 0.0
-    con_rain_filtered[con_rain < rain_tolerance] = 0.0
-
-    inferno_rain = ls_rain_filtered + con_rain_filtered
-
-    # Diagnose the balanced-growth leaf area index and the carbon
-    # contents of leaves and wood.
-    for i in range(npft):
-        for l in range(land_pts):
-            (
-                lai_bal_inf[i, l],
-                leaf_inf[i, l],
-                c_root,
-                wood_inf[i, l],
-                c_veg,
-            ) = calc_c_comps_triffid(i, canht[i, l])
-
-    # Fire calculations - per PFT
-    for i in range(npft):
-        # Calculate the fuel density
-        # We use normalised Leaf Carbon + the available DPM
-        inferno_fuel = (leaf_inf[i, :] + dpm_fuel - fuel_low) / (fuel_high - fuel_low)
-
-        inferno_fuel[inferno_fuel < 0.0] = 0.0
-        inferno_fuel[inferno_fuel > 1.0] = 1.0
-
-        inferno_temp = t1p5m_tile[i, :]
-
-        for l in range(land_pts):
-            # Conditional statements to make sure we are dealing with
-            # reasonable weather. Note initialisation to 0 already done.
-            # If the driving variables are singularities, we assume
-            # no burnt area.
-
-            # Temperatures constrained akin to qsat (from the WMO)
-            if (inferno_temp[l] > 338.15) or (inferno_temp[l] < 183.15):
-                continue
-
-            # The maximum rain rate ever observed is 38mm in one minute,
-            # here we assume 0.5mm/s stops fires altogether
-            if (inferno_rain[l] > 0.5) or (inferno_rain[l] < 0.0):
-                continue
-
-            # Fuel Density is an index constrained to 0-1
-            if (inferno_fuel[l] > 1.0) or (inferno_fuel[l] < 0.0):
-                continue
-
-            # Soil moisture is a fraction of saturation
-            if (inferno_sm[l] > 1.0) or (inferno_sm[l] < 0.0):
-                continue
-
-            # Get the tile relative humidity using saturation routine
-            qsat[l] = qsat_wat(inferno_temp[l], pstar[l])
-
-            inferno_rhum[l] = (q1p5m_tile[i, l] / qsat[l]) * 100.0
-
-            # Relative Humidity should be constrained to 0-100
-            if (inferno_rhum[l] > 100.0) or (inferno_rhum[l] < 0.0):
-                continue
-
-            # If all these checks are passes, start fire calculations
-
-            ignitions[l] = calc_ignitions(
-                pop_den[l],
-                flash_rate[l],
-                ignition_method,
-            )
-
-            flammability_ft[i, l], dry_bal[i, l] = calc_flam(
-                temp_l=inferno_temp[l],
-                rhum_l=inferno_rhum[l],
-                fuel_l=inferno_fuel[l],
-                sm_l=inferno_sm[l],
-                rain_l=inferno_rain[l],
-                cum_rain_l=cum_rain[l],
-                fuel_build_up=fuel_build_up[i, l],
-                fapar=fapar_diag_pft[i, l],
-                dry_days=dry_days[l],
-                flammability_method=flammability_method,
-                dryness_method=dryness_method,
-                fapar_factor=fapar_factor[i],
-                fapar_centre=fapar_centre[i],
-                fuel_build_up_factor=fuel_build_up_factor[i],
-                fuel_build_up_centre=fuel_build_up_centre[i],
-                temperature_factor=temperature_factor[i],
-                temperature_centre=temperature_centre[i],
-                dry_day_factor=dry_day_factor[i],
-                dry_day_centre=dry_day_centre[i],
-                dry_bal=dry_bal[i, l],
-                rain_f=rain_f[i],
-                vpd_f=vpd_f[i],
-                dry_bal_factor=dry_bal_factor[i],
-                dry_bal_centre=dry_bal_centre[i],
-            )
-
-            burnt_area_ft[i, l] = calc_burnt_area(
-                flammability_ft[i, l], ignitions[l], avg_ba[i]
-            )
-
-        # We add pft-specific variables to the gridbox totals
-        burnt_area = burnt_area + frac[i, :] * burnt_area_ft[i, :]
-
-    return burnt_area, dry_bal
-
-
-# Note: calc_ignitions, calc_flam and calc_burnt_area) are
-# computed for each landpoint to ascertain no points with
-# unrealistic weather contain fires.
-# These are then aggregated in inferno_io_mod into pft arrays.
-
-
-@njit(nogil=True, cache=True)
+@njit(nogil=True, cache=True, fastmath=True)
 def calc_ignitions(pop_den_l, flash_rate_l, ignition_method):
     # Description:
     #     Calculate the number of ignitions/m2/s at each gridpoint
@@ -355,7 +74,7 @@ def calc_ignitions(pop_den_l, flash_rate_l, ignition_method):
         return ignitions_l * tune_MODIS
 
 
-@njit(nogil=True, cache=True)
+@njit(nogil=True, cache=True, fastmath=True)
 def fuel_param(x, factor, centre):
     # Description:
     # Takes the value to be transformed, `x`, and applies a simple linear
@@ -364,7 +83,7 @@ def fuel_param(x, factor, centre):
     return 1.0 / (1.0 + np.exp(-factor * (x - centre)))
 
 
-@njit(nogil=True, cache=True)
+@njit(nogil=True, cache=True, fastmath=True)
 def calc_flam(
     temp_l,
     rhum_l,
@@ -501,7 +220,7 @@ def calc_flam(
     return flammability, dry_bal
 
 
-@njit(nogil=True, cache=True)
+@njit(nogil=True, cache=True, fastmath=True)
 def calc_burnt_area(flam_l, ignitions_l, avg_ba_i):
     # Description:
     #    Calculate the burnt area

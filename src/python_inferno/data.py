@@ -263,4 +263,4 @@ def get_processed_climatological_data(n_samples_pft, average_samples):
         and jules_time_coord.cell(-1).point.month == 12
         and jules_time_coord.shape[0] >= 12
     )
-    return data_dict, jules_time_coord
+    return data_dict, mon_avg_gfed_ba_1d, jules_time_coord

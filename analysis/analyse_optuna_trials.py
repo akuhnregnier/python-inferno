@@ -10,7 +10,7 @@ import optuna
 from optimise_ba_model_optuna import space
 
 if __name__ == "__main__":
-    exp_key = "optuna4"
+    exp_key = "optuna5"
     study = optuna.load_study(
         sampler=optuna.samplers.CmaEsSampler(),
         study_name=f"{exp_key}",
