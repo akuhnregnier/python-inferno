@@ -4,7 +4,6 @@ import gc
 from collections import defaultdict
 from functools import partial
 
-import joblib
 import numpy as np
 import optuna
 from sklearn.metrics import r2_score
@@ -81,28 +80,13 @@ def to_optimise(opt_kwargs):
     n_samples_pft = expanded_opt_kwargs.pop("fuel_build_up_n_samples").astype("int64")
     assert "fuel_build_up_n_samples" not in expanded_opt_kwargs
 
-    if not hasattr(to_optimise, "cached_data"):
-        to_optimise.cached_data = dict()
-
-    arg_hash = joblib.hashing.hash((n_samples_pft, opt_kwargs["average_samples"]))
-
-    if arg_hash not in to_optimise.cached_data:
-        (
-            data_dict,
-            mon_avg_gfed_ba_1d,
-            jules_time_coord,
-        ) = get_processed_climatological_data(
-            n_samples_pft=n_samples_pft, average_samples=opt_kwargs["average_samples"]
-        )
-        to_optimise.cached_data[arg_hash] = (
-            data_dict,
-            mon_avg_gfed_ba_1d,
-            jules_time_coord,
-        )
-    else:
-        data_dict, mon_avg_gfed_ba_1d, jules_time_coord = to_optimise.cached_data[
-            arg_hash
-        ]
+    (
+        data_dict,
+        mon_avg_gfed_ba_1d,
+        jules_time_coord,
+    ) = get_processed_climatological_data(
+        n_samples_pft=n_samples_pft, average_samples=opt_kwargs["average_samples"]
+    )
 
     # Model kwargs.
     kwargs = dict(

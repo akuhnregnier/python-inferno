@@ -3,6 +3,7 @@ import os
 from functools import reduce, wraps
 
 import iris
+import joblib
 import numpy as np
 from iris.coord_categorisation import add_month_number, add_year
 from iris.time import PartialDateTime as IrisPartialDateTime
@@ -448,3 +449,23 @@ def temporal_processing(
     )
 
     return data_dict, time_coord
+
+
+def memoize(func):
+    cache = dict()
+
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        hashed = joblib.hashing.hash(
+            (
+                joblib.hashing.hash(args),
+                joblib.hashing.hash(kwargs),
+            )
+        )
+        if hashed in cache:
+            return cache[hashed]
+        output = func(*args, **kwargs)
+        cache[hashed] = output
+        return output
+
+    return wrapped

@@ -13,6 +13,7 @@ from .precip_dry_day import calculate_inferno_dry_days
 from .utils import (
     PartialDateTime,
     make_contiguous,
+    memoize,
     monthly_average_data,
     temporal_nearest_neighbour_interp,
     temporal_processing,
@@ -158,6 +159,7 @@ def load_data(
     )
 
 
+@memoize
 @cache(dependencies=[load_data, temporal_processing, monthly_average_data])
 def get_processed_climatological_data(n_samples_pft, average_samples):
     (
