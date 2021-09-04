@@ -14,6 +14,7 @@ from python_inferno.data import get_processed_climatological_data, timestep
 from python_inferno.hyperopt import Space
 from python_inferno.metrics import loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
+from python_inferno.space import generate_space
 from python_inferno.utils import (
     calculate_factor,
     expand_pft_params,
@@ -173,22 +174,8 @@ if __name__ == "__main__":
         # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
         average_samples=(1, [(40, 161, 60)], hp.quniform),
     )
-    # Generate the actual `space` from the template.
-    spec = dict()
-    for name, template in space_template.items():
-        bounds = template[1]
-        if len(bounds) == 1:
-            # Use the same bounds for all PFTs if only one are given.
-            bounds *= template[0]
-        for i, bound in zip(range(1, template[0] + 1), bounds):
-            if i == 1:
-                arg_name = name
-            else:
-                arg_name = name + str(i)
 
-            spec[arg_name] = (template[2], *bound)
-
-    space = Space(spec)
+    space = Space(generate_space(space_template))
 
     trials = MongoTrials(
         "mongo://maritimus.webredirect.org:1234/ba/jobs", exp_key="exp30"

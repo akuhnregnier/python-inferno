@@ -7,7 +7,6 @@ from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
-from joblib import Memory
 from scipy.optimize import basinhopping
 from sklearn.metrics import r2_score
 from wildfires.dask_cx1.dask_rf import safe_write
@@ -18,8 +17,6 @@ from python_inferno.data import load_data, timestep
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days
 from python_inferno.utils import unpack_wrapped
-
-memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
 
 class Recorder:
@@ -43,7 +40,6 @@ class Recorder:
         safe_write((self.xs, self.fvals), self.filename)
 
 
-# @memory.cache(ignore=["verbose", "record_dir"])
 def optimize_ba(
     *,
     t1p5m_tile,
