@@ -3,6 +3,7 @@ from collections import defaultdict
 from functools import partial
 
 import numpy as np
+from loguru import logger
 from sklearn.metrics import r2_score
 
 from .configuration import land_pts
@@ -46,13 +47,13 @@ def gen_to_optimise(
             else:
                 raise ValueError(f"Unexpected number of values {len(vals)}.")
 
-        print("Normal params")
+        logger.debug("Normal params")
         for name, val in single_opt_kwargs.items():
-            print(" -", name, val)
+            logger.debug(" -", name, val)
 
-        print("Opt param arrays")
+        logger.debug("Opt param arrays")
         for name, vals in expanded_opt_kwargs.items():
-            print(" -", name, vals)
+            logger.debug(" -", name, vals)
 
         if "fuel_build_up_n_samples" in expanded_opt_kwargs:
             n_samples_pft = expanded_opt_kwargs.pop("fuel_build_up_n_samples").astype(
@@ -151,7 +152,9 @@ def gen_to_optimise(
             return fail_func()
 
         # Aim to minimise the combined score.
-        # "loss": scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"],
-        return success_func(scores["nme"] + scores["mpd"])
+        # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
+        loss = scores["nme"] + scores["mpd"]
+        logger.debug(datetime.now(), f"| loss: {loss:0.6f}")
+        return success_func(loss)
 
     return to_optimise

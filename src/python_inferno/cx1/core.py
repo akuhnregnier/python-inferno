@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Run code on the cx1 cluster."""
 import gc
-import logging
 import os
 import random
 import string
@@ -16,12 +15,11 @@ from subprocess import check_output
 
 import cloudpickle
 from jinja2 import Environment, FileSystemLoader
+from loguru import logger
 from wildfires.exceptions import NotCachedError
 
 from ..exceptions import NoCX1Error
 from ..utils import core_unpack_wrapped, tqdm
-
-logger = logging.getLogger(__name__)
 
 __all__ = (
     "get_parsers",
@@ -263,7 +261,7 @@ def run_cx1(func, batch_args, kwargs, cx1_kwargs, verbose):
         )
 
     job_str = check_output(["qsub", str(job_script)]).decode().strip()
-    print(f"Submitted job '{job_str}' with job name '{job_name}'.")
+    logger.info(f"Submitted job '{job_str}' with job name '{job_name}'.")
 
 
 def run(
@@ -341,7 +339,7 @@ def run(
     kwargs = {**dict(single=single, nargs=nargs, verbose=verbose), **kwargs}
 
     if len(args) == 0 or len(args[0]) == 0:
-        print("No args given.")
+        logger.warning("No args given.")
         return
 
     if single:

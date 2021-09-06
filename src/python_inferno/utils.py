@@ -7,6 +7,7 @@ import joblib
 import numpy as np
 from iris.coord_categorisation import add_month_number, add_year
 from iris.time import PartialDateTime as IrisPartialDateTime
+from loguru import logger
 from numba import njit
 from scipy.optimize import minimize
 from wildfires.cache.hashing import PartialDateTimeHasher
@@ -224,7 +225,7 @@ def calculate_factor(*, y_true, y_pred):
     # Minimize `f`, with the initial guess being the ratio of the means.
     guess = np.mean(y_true) / np.mean(y_pred)
     factor = minimize(f, guess).x[0]
-    print(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
+    logger.debug(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
     return factor
 
 

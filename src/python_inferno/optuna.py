@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from string import digits
 
+from loguru import logger
+
 
 class OptunaSpace:
     def __init__(self, spec, remap_float_to_0_1=False, replicate_pft_groups=False):
@@ -40,7 +42,7 @@ class OptunaSpace:
             if remap:
                 orig = out[name]
                 out[name] = (orig * (maxb - minb)) + minb
-                print(f"Remapped '{name}' from '{orig}' to '{out[name]}'.")
+                logger.debug(f"Remapped '{name}' from '{orig}' to '{out[name]}'.")
 
         if self.replicate_pft_groups:
             for name in to_replicate:

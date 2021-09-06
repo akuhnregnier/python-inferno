@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
+from loguru import logger
 from numba import njit, prange, set_num_threads
 from wildfires.qstat import get_ncpus
 
@@ -73,7 +74,7 @@ def multi_timestep_inferno(
     transformed_param_vars = dict()
     for name, val in param_vars.items():
         if not hasattr(val, "__iter__"):
-            print(f"Duplicating: {name}")
+            logger.debug(f"Duplicating: {name}")
             val = [val] * npft
         transformed_param_vars[name] = np.asarray(val, dtype=np.float64)
         assert transformed_param_vars[name].shape == (npft,)
