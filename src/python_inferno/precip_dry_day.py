@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from numba import njit
+from numba import njit, prange
 from wildfires.utils import parallel_njit
 
 from python_inferno.utils import moving_sum
@@ -88,10 +88,10 @@ def calculate_inferno_dry_days(ls_rain, con_rain, threshold, timestep):
     precip_sum = precip_moving_sum(ls_rain, con_rain, timestep)
     dry_days = np.zeros(ls_rain.shape, dtype=np.float64)
 
-    # Iterate over timesteps.
-    for i in range(ls_rain.shape[0]):
-        # Iterate over locations.
-        for l in range(ls_rain.shape[1]):
+    # Iterate over locations.
+    for l in prange(ls_rain.shape[1]):
+        # Iterate over timesteps.
+        for i in range(ls_rain.shape[0]):
             if precip_sum[i, l] > threshold:
                 # If the daily precipitation has exceeded the threshold, reset the dry
                 # days.
