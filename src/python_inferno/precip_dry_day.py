@@ -3,7 +3,8 @@ import numpy as np
 from numba import njit, prange
 from wildfires.utils import parallel_njit
 
-from python_inferno.utils import moving_sum
+from .cache import mark_dependency
+from .utils import moving_sum
 
 day_s = 24 * 60 * 60
 
@@ -29,6 +30,7 @@ def filter_rain(ls_rain, con_rain):
 
 
 @njit(nogil=True, cache=True)
+@mark_dependency
 def precip_moving_sum(ls_rain, con_rain, timestep):
     """Calculate a moving sum of precipitation.
 
@@ -63,6 +65,7 @@ def precip_moving_sum(ls_rain, con_rain, timestep):
 
 
 @parallel_njit(cache=True)
+@mark_dependency
 def calculate_inferno_dry_days(ls_rain, con_rain, threshold, timestep):
     """INFERNO dry-day period calculation across timesteps for comparison.
 

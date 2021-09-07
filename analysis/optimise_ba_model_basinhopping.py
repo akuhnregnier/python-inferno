@@ -90,8 +90,9 @@ space_template = dict(
     fuel_build_up_centre=(1, [(0.0, 0.5)], float),
     temperature_factor=(1, [(0.07, 0.2)], float),
     temperature_centre=(1, [(260, 295)], float),
-    rain_f=(1, [(0.8, 2.0)], float),
-    vpd_f=(1, [(400, 2200)], float),
+    # NOTE - dry_bal calculation is carried out during data loading/processing
+    # rain_f=(1, [(0.8, 2.0)], float),
+    # vpd_f=(1, [(400, 2200)], float),
     dry_bal_factor=(1, [(-100, -1)], float),
     dry_bal_centre=(1, [(-3, 3)], float),
     # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
@@ -142,7 +143,9 @@ class BoundedSteps:
     def __call__(self, x):
         """Return new coordinates relative to existing coordinates `x`."""
         # New coords cannot be outside of [0, 1].
-        logger.info(f"Taking a step with stepsize '{self.stepsize:0.5f}'")
+        logger.info(
+            f"Taking a step with stepsize '{self.stepsize:0.5f}' (in [0, 1] space)"
+        )
         logger.info(f"Old pos: {x}")
 
         min_pos = np.clip(x - self.stepsize, 0, 1)

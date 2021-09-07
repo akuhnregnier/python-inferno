@@ -89,6 +89,8 @@ def gen_to_optimise(
             # temperature_centre=2.82e2,
             dry_day_factor=0.0,
             dry_day_centre=0.0,
+            # TODO - calculation of dry_bal is carried out during data
+            # loading/processing now
             # rain_f=0.5,
             # vpd_f=2500,
             # dry_bal_factor=1,
@@ -154,7 +156,7 @@ def gen_to_optimise(
         # Aim to minimise the combined score.
         # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
         loss = scores["nme"] + scores["mpd"]
-        logger.debug(datetime.now(), f"| loss: {loss:0.6f}")
+        logger.debug(f"loss: {loss:0.6f}")
         return success_func(loss)
 
     return to_optimise

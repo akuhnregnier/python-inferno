@@ -5,11 +5,14 @@ import iris
 import numpy as np
 from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lons
 from jules_output_analysis.utils import convert_longitudes
+from loguru import logger
 from tqdm import tqdm
 from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4, homogenise_time_coordinate
 
 from .cache import cache, mark_dependency
-from .precip_dry_day import calculate_inferno_dry_days
+from .configuration import npft
+from .dry_bal import calculate_dry_bal
+from .precip_dry_day import calculate_inferno_dry_days, precip_moving_sum
 from .utils import (
     PartialDateTime,
     make_contiguous,
@@ -21,6 +24,55 @@ from .utils import (
 )
 
 timestep = 4 * 60 * 60
+
+
+@memoize
+@cache
+@mark_dependency
+def load_single_year_cubes(*, filename, variable_name_slices):
+    logger.info(f"Loading '{', '.join(variable_name_slices)}' from {filename}.")
+
+    cubes = iris.load_raw(filename)
+
+    # Load variables.
+    data_dict = {name: cubes.extract_cube(name) for name in variable_name_slices}
+
+    # Ensure cubes have the same temporal dimensions.
+    assert len(set(cube.shape[0] for cube in data_dict.values())) == 1
+
+    jules_time_coord = next(iter(data_dict.values())).coord("time")
+    if (
+        jules_time_coord.cell(-1).point.year != jules_time_coord.cell(-2).point.year
+        and jules_time_coord.cell(-1).point.month == 1
+    ):
+        # Ensure the last sample is not taken into account if it is the first day of a
+        # new year.
+        N = jules_time_coord.shape[0] - 1
+    else:
+        N = jules_time_coord.shape[0]
+
+    jules_time_coord = jules_time_coord[:N]
+
+    assert (
+        jules_time_coord.cell(-1).point.year == jules_time_coord.cell(0).point.year
+    ), "File should span one year only."
+
+    assert jules_time_coord.cell(0).point.month == 1, "File should start in Jan."
+
+    assert jules_time_coord.cell(-1).point.month == 12, "Data should end in Dec."
+
+    # Extract the actual data.
+    def modify_slices(s):
+        assert isinstance(s, tuple)
+        assert s[0] == slice(None)
+        s = list(s)
+        s[0] = slice(N)
+        return tuple(s)
+
+    return {
+        name: make_contiguous(cube[modify_slices(variable_name_slices[name])].data.data)
+        for name, cube in data_dict.items()
+    }
 
 
 @cache(dependencies=[make_contiguous, temporal_nearest_neighbour_interp])
@@ -159,8 +211,121 @@ def load_data(
     )
 
 
+@cache(dependencies=[load_single_year_cubes, calculate_inferno_dry_days])
+@mark_dependency
+def get_climatological_dry_days(
+    filenames=tuple(
+        str(Path(s).expanduser())
+        for s in (
+            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
+            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
+        )
+    ),
+    threshold=1.0,
+):
+    # Load instantaneous values from the files below, then calculate dry days, then
+    # perform climatological averaging
+
+    clim_dry_days = None
+    n_avg = 0
+
+    for f in tqdm(list(map(str, filenames)), desc="Processing dry-days"):
+        data_dict = load_single_year_cubes(
+            filename=f,
+            variable_name_slices={
+                "ls_rain": (slice(None), 0),
+                "con_rain": (slice(None), 0),
+            },
+        )
+
+        # Calculate dry days.
+        dry_days = unpack_wrapped(calculate_inferno_dry_days)(
+            ls_rain=data_dict["ls_rain"],
+            con_rain=data_dict["con_rain"],
+            threshold=threshold,
+            timestep=timestep,
+        )
+        if clim_dry_days is None:
+            clim_dry_days = dry_days
+            assert n_avg == 0
+        else:
+            clim_dry_days += dry_days
+        n_avg += 1
+
+    return clim_dry_days / n_avg
+
+
+@cache(dependencies=[load_single_year_cubes, calculate_dry_bal, precip_moving_sum])
+@mark_dependency
+def get_climatological_dry_bal(
+    *,
+    filenames=tuple(
+        str(Path(s).expanduser())
+        for s in (
+            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
+            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
+        )
+    ),
+    rain_f,
+    vpd_f,
+):
+    # Load instantaneous values from the files below, then calculate dry_bal, then
+    # perform climatological averaging
+
+    rain_f = np.asarray(rain_f)
+    vpd_f = np.asarray(vpd_f)
+
+    assert rain_f.shape == (npft,)
+    assert vpd_f.shape == (npft,)
+
+    clim_dry_bal = None
+    n_avg = 0
+
+    for f in tqdm(list(map(str, filenames)), desc="Processing dry_bal"):
+        data_dict = load_single_year_cubes(
+            filename=f,
+            variable_name_slices={
+                "t1p5m": (slice(None), slice(None), 0),
+                "q1p5m": (slice(None), slice(None), 0),
+                "pstar": (slice(None), 0),
+                "ls_rain": (slice(None), 0),
+                "con_rain": (slice(None), 0),
+            },
+        )
+
+        # Calculate dry_bal.
+        dry_bal = unpack_wrapped(calculate_dry_bal)(
+            t1p5m_tile=data_dict["t1p5m"],
+            q1p5m_tile=data_dict["q1p5m"],
+            pstar=data_dict["pstar"],
+            cum_rain=precip_moving_sum(
+                ls_rain=data_dict["ls_rain"],
+                con_rain=data_dict["con_rain"],
+                timestep=timestep,
+            ),
+            rain_f=rain_f,
+            vpd_f=vpd_f,
+        )
+        if clim_dry_bal is None:
+            clim_dry_bal = dry_bal
+            assert n_avg == 0
+        else:
+            clim_dry_bal += dry_bal
+        n_avg += 1
+
+    return clim_dry_bal / n_avg
+
+
 @memoize
-@cache(dependencies=[load_data, temporal_processing, monthly_average_data])
+@cache(
+    dependencies=[
+        load_data,
+        temporal_processing,
+        monthly_average_data,
+        get_climatological_dry_bal,
+        get_climatological_dry_days,
+    ]
+)
 def get_processed_climatological_data(n_samples_pft, average_samples):
     (
         t1p5m_tile,
@@ -214,9 +379,10 @@ def get_processed_climatological_data(n_samples_pft, average_samples):
         # NOTE NPP is used here now, NOT FAPAR!
         fuel_build_up=npp_pft,
         fapar_diag_pft=npp_pft,
-        # TODO: How is dry-day calculation affected by climatological input data?
-        dry_days=unpack_wrapped(calculate_inferno_dry_days)(
-            ls_rain, con_rain, threshold=1.0, timestep=timestep
+        dry_days=get_climatological_dry_days(),
+        dry_bal=get_climatological_dry_bal(
+            rain_f=np.asarray([0.3] * npft),
+            vpd_f=np.asarray([40] * npft),
         ),
         # NOTE The target BA is only included here to ease processing. It will be
         # removed prior to the modelling function.

@@ -29,8 +29,10 @@ if __name__ == "__main__":
         temperature_centre=2.82e2,
         dry_day_factor=0.0,
         dry_day_centre=0.0,
-        rain_f=0.5,
-        vpd_f=2500,
+        # TODO - calculation of dry_bal is carried out during data loading/processing
+        # now
+        # rain_f=0.5,
+        # vpd_f=2500,
         dry_bal_factor=1,
         dry_bal_centre=0,
         # These are not used for ignition mode 1, nor do they contain a temporal
@@ -46,9 +48,7 @@ if __name__ == "__main__":
     ]:
         for i in range(2):
             start = time()
-            outputs[name] = unpack_wrapped(function)(
-                **{**kwargs, **data_dict}, return_dry_bal=True
-            )
+            outputs[name] = unpack_wrapped(function)(**{**kwargs, **data_dict})
             times[name].append(time() - start)
 
     for name, time_vals in times.items():

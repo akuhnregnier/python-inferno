@@ -105,8 +105,6 @@ def calc_flam(
     dry_day_factor,
     dry_day_centre,
     dry_bal,
-    rain_f,
-    vpd_f,
     dry_bal_factor,
     dry_bal_centre,
 ):
@@ -196,13 +194,6 @@ def calc_flam(
         if dryness_method == 1:
             dry_factor = fuel_param(dry_days, dry_day_factor, dry_day_centre)
         elif dryness_method == 2:
-            # Evolve the `dry_bal` variable.
-            # Clamp to [-1, 1].
-            # TODO Scale depending on timestep.
-            vpd = (10.0 ** Z_l) * f_rhum_l
-            dry_bal += max(
-                min(rain_f * cum_rain_l - (1 - np.exp(-vpd_f * vpd)), 1.0), -1.0
-            )
             dry_factor = fuel_param(dry_bal, dry_bal_factor, dry_bal_centre)
         else:
             raise ValueError("Unknown 'dryness_method'.")
@@ -217,7 +208,7 @@ def calc_flam(
     else:
         raise ValueError("Unknown 'flammability_method'.")
 
-    return flammability, dry_bal
+    return flammability
 
 
 @njit(nogil=True, cache=True, fastmath=True)

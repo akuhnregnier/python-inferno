@@ -33,7 +33,7 @@ def multi_timestep_inferno(
     ignition_method,
     fuel_build_up,
     fapar_diag_pft,
-    dry_bal=None,
+    dry_bal,
     dry_days,
     fapar_factor,
     fapar_centre,
@@ -45,16 +45,10 @@ def multi_timestep_inferno(
     dryness_method,
     dry_day_factor,
     dry_day_centre,
-    rain_f,
-    vpd_f,
     dry_bal_factor,
     dry_bal_centre,
     timestep,
-    return_dry_bal=False,
 ):
-    if dry_bal is None:
-        dry_bal = np.zeros_like(fapar_diag_pft)
-
     param_vars = dict(
         fapar_factor=fapar_factor,
         fapar_centre=fapar_centre,
@@ -64,8 +58,6 @@ def multi_timestep_inferno(
         temperature_centre=temperature_centre,
         dry_day_factor=dry_day_factor,
         dry_day_centre=dry_day_centre,
-        rain_f=rain_f,
-        vpd_f=vpd_f,
         dry_bal_factor=dry_bal_factor,
         dry_bal_centre=dry_bal_centre,
     )
@@ -81,7 +73,7 @@ def multi_timestep_inferno(
 
     # Call the below using normal, non-numba Python to enable features like
     # keyword-only arguments with default arguments as above.
-    ba, dry_bal = _multi_timestep_inferno(
+    ba = _multi_timestep_inferno(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,
@@ -106,8 +98,6 @@ def multi_timestep_inferno(
         ),
         **transformed_param_vars,
     )
-    if return_dry_bal:
-        return ba, dry_bal
     return ba
 
 
@@ -141,8 +131,6 @@ def _multi_timestep_inferno(
     dryness_method,
     dry_day_factor,
     dry_day_centre,
-    rain_f,
-    vpd_f,
     dry_bal_factor,
     dry_bal_centre,
     cum_rain,
@@ -256,7 +244,7 @@ def _multi_timestep_inferno(
                     ignition_method,
                 )
 
-                flammability_ft, dry_bal[ti, i, l] = calc_flam(
+                flammability_ft = calc_flam(
                     temp_l=t1p5m_tile[ti, i, l],
                     rhum_l=inferno_rhum,
                     fuel_l=inferno_fuel,
@@ -276,9 +264,7 @@ def _multi_timestep_inferno(
                     temperature_centre=temperature_centre[i],
                     dry_day_factor=dry_day_factor[i],
                     dry_day_centre=dry_day_centre[i],
-                    dry_bal=dry_bal[max(ti - 1, 0), i, l],
-                    rain_f=rain_f[i],
-                    vpd_f=vpd_f[i],
+                    dry_bal=dry_bal[ti, i, l],
                     dry_bal_factor=dry_bal_factor[i],
                     dry_bal_centre=dry_bal_centre[i],
                 )
@@ -290,4 +276,4 @@ def _multi_timestep_inferno(
                 # We add pft-specific variables to the gridbox totals
                 burnt_area[ti, l] += frac[ti, i, l] * burnt_area_ft[ti, i, l]
 
-    return burnt_area, dry_bal
+    return burnt_area
