@@ -5,10 +5,11 @@ from numba import njit, prange, set_num_threads
 from wildfires.qstat import get_ncpus
 
 from .calc_c_comps_triffid import calc_c_comps_triffid
-from .configuration import avg_ba, land_pts, npft
+from .configuration import N_pft_groups, avg_ba, land_pts, npft
 from .inferno import calc_burnt_area, calc_flam, calc_ignitions
 from .precip_dry_day import precip_moving_sum
 from .qsat_wat import qsat_wat
+from .utils import get_pft_group_index
 
 # Indexing convention is time, pft, land
 
@@ -33,7 +34,7 @@ def multi_timestep_inferno(
     ignition_method,
     fuel_build_up,
     fapar_diag_pft,
-    dry_bal,
+    grouped_dry_bal,
     dry_days,
     fapar_factor,
     fapar_centre,
@@ -62,14 +63,14 @@ def multi_timestep_inferno(
         dry_bal_centre=dry_bal_centre,
     )
 
-    # Ensure the parameters are given as arrays with 'npft' elements.
+    # Ensure the parameters are given as arrays with `N_pft_groups` elements.
     transformed_param_vars = dict()
     for name, val in param_vars.items():
         if not hasattr(val, "__iter__"):
             logger.debug(f"Duplicating: {name}")
-            val = [val] * npft
+            val = [val] * N_pft_groups
         transformed_param_vars[name] = np.asarray(val, dtype=np.float64)
-        assert transformed_param_vars[name].shape == (npft,)
+        assert transformed_param_vars[name].shape == (N_pft_groups,)
 
     # Call the below using normal, non-numba Python to enable features like
     # keyword-only arguments with default arguments as above.
@@ -89,7 +90,7 @@ def multi_timestep_inferno(
         ignition_method=ignition_method,
         fuel_build_up=fuel_build_up,
         fapar_diag_pft=fapar_diag_pft,
-        dry_bal=dry_bal,
+        grouped_dry_bal=grouped_dry_bal,
         dry_days=dry_days,
         flammability_method=flammability_method,
         dryness_method=dryness_method,
@@ -119,7 +120,7 @@ def _multi_timestep_inferno(
     ignition_method,
     fuel_build_up,
     fapar_diag_pft,
-    dry_bal,
+    grouped_dry_bal,
     dry_days,
     fapar_factor,
     fapar_centre,
@@ -205,6 +206,8 @@ def _multi_timestep_inferno(
                 continue
 
             for i in range(npft):
+                pft_group_i = get_pft_group_index(i)
+
                 # Conditional statements to make sure we are dealing with
                 # reasonable weather. Note initialisation to 0 already done.
                 # If the driving variables are singularities, we assume
@@ -256,17 +259,17 @@ def _multi_timestep_inferno(
                     dry_days=dry_days[ti, l],
                     flammability_method=flammability_method,
                     dryness_method=dryness_method,
-                    fapar_factor=fapar_factor[i],
-                    fapar_centre=fapar_centre[i],
-                    fuel_build_up_factor=fuel_build_up_factor[i],
-                    fuel_build_up_centre=fuel_build_up_centre[i],
-                    temperature_factor=temperature_factor[i],
-                    temperature_centre=temperature_centre[i],
-                    dry_day_factor=dry_day_factor[i],
-                    dry_day_centre=dry_day_centre[i],
-                    dry_bal=dry_bal[ti, i, l],
-                    dry_bal_factor=dry_bal_factor[i],
-                    dry_bal_centre=dry_bal_centre[i],
+                    fapar_factor=fapar_factor[pft_group_i],
+                    fapar_centre=fapar_centre[pft_group_i],
+                    fuel_build_up_factor=fuel_build_up_factor[pft_group_i],
+                    fuel_build_up_centre=fuel_build_up_centre[pft_group_i],
+                    temperature_factor=temperature_factor[pft_group_i],
+                    temperature_centre=temperature_centre[pft_group_i],
+                    dry_day_factor=dry_day_factor[pft_group_i],
+                    dry_day_centre=dry_day_centre[pft_group_i],
+                    dry_bal=grouped_dry_bal[ti, pft_group_i, l],
+                    dry_bal_factor=dry_bal_factor[pft_group_i],
+                    dry_bal_centre=dry_bal_centre[pft_group_i],
                 )
 
                 burnt_area_ft[ti, i, l] = calc_burnt_area(

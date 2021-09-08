@@ -11,6 +11,7 @@ from numpy.testing import assert_allclose
 from python_inferno.utils import (
     expand_pft_params,
     exponential_average,
+    get_pft_group_index,
     moving_sum,
     temporal_nearest_neighbour_interp,
     temporal_processing,
@@ -148,7 +149,7 @@ def test_temporal_processing_no_agg():
         "a": np.arange(10 * 13 * 10).reshape(10, 13, 10),
         "b": np.arange(10 * 10).reshape(10, 10),
     }
-    shifts = expand_pft_params([1, 2, 3]).astype("int64")
+    shifts = np.array([1, 2, 3])
     antecedent_shifts_dict = {"a": shifts}
     out, time_coord = temporal_processing(
         data_dict=data_dict.copy(),
@@ -178,7 +179,7 @@ def test_temporal_processing_agg(aggregator, agg_method):
         "a": np.arange(10 * 13 * 10).reshape(10, 13, 10),
         "b": np.arange(10 * 10).reshape(10, 10),
     }
-    shifts = expand_pft_params([1, 2, 3]).astype("int64")
+    shifts = np.array([1, 2, 3])
     antecedent_shifts_dict = {"a": shifts}
     out, time_coord = temporal_processing(
         data_dict=data_dict.copy(),
@@ -205,7 +206,7 @@ def test_temporal_processing_multi_agg():
         "a": np.arange(10 * 13 * 10).reshape(10, 13, 10),
         "b": np.arange(10 * 10).reshape(10, 10),
     }
-    shifts = expand_pft_params([1, 2, 3]).astype("int64")
+    shifts = np.array([1, 2, 3])
     antecedent_shifts_dict = {"a": shifts}
     out, time_coord = temporal_processing(
         data_dict=data_dict.copy(),
@@ -223,3 +224,13 @@ def test_temporal_processing_multi_agg():
     assert_allclose(time_coord.points[-1], 9)
     assert time_coord.cell(0).bound == (datetime(1970, 1, 4), datetime(1970, 1, 5))
     assert time_coord.cell(-1).bound == (datetime(1970, 1, 10), datetime(1970, 1, 10))
+
+
+def test_get_pft_group_index():
+    assert get_pft_group_index(0) == 0
+    assert get_pft_group_index(3) == 0
+    assert get_pft_group_index(4) == 0
+    assert get_pft_group_index(5) == 1
+    assert get_pft_group_index(10) == 1
+    assert get_pft_group_index(11) == 2
+    assert get_pft_group_index(12) == 2

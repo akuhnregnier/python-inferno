@@ -13,6 +13,13 @@ from scipy.optimize import minimize
 from wildfires.cache.hashing import PartialDateTimeHasher
 
 from .cache import mark_dependency
+from .configuration import (
+    N_pft_groups,
+    npft,
+    pft_groups,
+    pft_groups_array,
+    pft_groups_lengths,
+)
 from .metrics import nme
 
 if "TQDMAUTO" in os.environ:
@@ -229,17 +236,16 @@ def calculate_factor(*, y_true, y_pred):
     return factor
 
 
-def expand_pft_params(
-    params, pft_groups=((0, 1, 2, 3, 4), (5, 6, 7, 8, 9, 10), (11, 12))
-):
+def expand_pft_params(params, pft_groups=pft_groups, dtype=np.float64):
     """Given N values in `params`, repeat these according to `pft_groups`."""
     if len(params) != len(pft_groups):
         raise ValueError("There should be as many 'params' as 'pft_groups'.")
 
-    if len(set(e for elements in pft_groups for e in elements)) != 13:
-        raise ValueError("All 13 PFTs should have a unique entry in 'pft_groups'.")
+    # Verify the integrity of `pft_groups`.
+    if len(set(e for elements in pft_groups for e in elements)) != npft:
+        raise ValueError(f"All {npft} PFTs should have a unique entry in 'pft_groups'.")
 
-    out = np.zeros(13, dtype=np.float64)
+    out = np.zeros(npft, dtype=dtype)
     for param, pft_group in zip(params, pft_groups):
         for e in pft_group:
             out[e] = param
@@ -247,32 +253,51 @@ def expand_pft_params(
     return out
 
 
+def var_shifts_check(*, shifts, variable, data_dict):
+    if len(shifts) != N_pft_groups:
+        raise ValueError(
+            f"'{len(shifts)}' shifts specified for variable '{variable}'. "
+            f"Expected '{N_pft_groups}'."
+        )
+    if variable not in data_dict:
+        raise ValueError(f"Variable '{variable}' was not found in the data.")
+
+    if len(data_dict[variable].shape) == 3:
+        assert data_dict[variable].shape[1] in (npft, N_pft_groups)
+
+
+def _pft_dim_processing(*, shifts, variable, data_dict):
+    # Shape is (time, [pft,] space).
+    if len(data_dict[variable].shape) == 2:
+        # Add a PFT dimensions by replicating the data.
+        data_dict[variable] = np.repeat(
+            np.expand_dims(data_dict[variable], 1), repeats=len(shifts), axis=1
+        )
+
+    if len(data_dict[variable].shape) != 3:
+        raise ValueError(
+            f"Variable '{variable}' had unexpected shape "
+            f"'{data_dict[variable].shape}'."
+        )
+
+    # Expand `shifts` if needed.
+    if data_dict[variable].shape[1] == npft:
+        shifts = expand_pft_params(shifts, dtype=np.int64)
+
+    return data_dict, shifts
+
+
 def shift_climatology_data(*, antecedent_shifts_dict, data_dict, time_coord):
     """Carry out antecedent shifting of climatological data."""
     # Shift the required variables.
     for variable, shifts in antecedent_shifts_dict.items():
-        if len(shifts) != 13:
-            raise ValueError(
-                f"'{len(shifts)}' shifts specified for variable '{variable}'. "
-                "Expected 13."
-            )
-        if variable not in data_dict:
-            raise ValueError(f"Variable '{variable}' was not found in the data.")
+        var_shifts_check(shifts=shifts, variable=variable, data_dict=data_dict)
 
         # Shift the variable.
+        data_dict, shifts = _pft_dim_processing(
+            shifts=shifts, variable=variable, data_dict=data_dict
+        )
 
-        # Shape is (time, [pft,] space).
-        if len(data_dict[variable].shape) == 2:
-            # Add a PFT dimensions by replicating the data.
-            data_dict[variable] = np.repeat(
-                np.expand_dims(data_dict[variable], 1), repeats=len(shifts), axis=1
-            )
-
-        if len(data_dict[variable].shape) != 3:
-            raise ValueError(
-                f"Variable '{variable}' had unexpected shape "
-                f"'{data_dict[variable].shape}'."
-            )
         # Since we are dealing with climatological data, simply roll the data to shift
         # the samples forward in time.
         data_dict[variable] = np.stack(
@@ -299,28 +324,13 @@ def shift_data(*, antecedent_shifts_dict, data_dict, time_coord):
 
     # Shift the required variables.
     for variable, shifts in antecedent_shifts_dict.items():
-        if len(shifts) != 13:
-            raise ValueError(
-                f"'{len(shifts)}' shifts specified for variable '{variable}'. "
-                "Expected 13."
-            )
-        if variable not in data_dict:
-            raise ValueError(f"Variable '{variable}' was not found in the data.")
+        var_shifts_check(shifts=shifts, variable=variable, data_dict=data_dict)
 
         # Shift the variable.
+        data_dict, shifts = _pft_dim_processing(
+            shifts=shifts, variable=variable, data_dict=data_dict
+        )
 
-        # Shape is (time, [pft,] space).
-        if len(data_dict[variable].shape) == 2:
-            # Add a PFT dimensions by replicating the data.
-            data_dict[variable] = np.repeat(
-                np.expand_dims(data_dict[variable], 1), repeats=len(shifts), axis=1
-            )
-
-        if len(data_dict[variable].shape) != 3:
-            raise ValueError(
-                f"Variable '{variable}' had unexpected shape "
-                f"'{data_dict[variable].shape}'."
-            )
         # Remove 'shift' from the end to shift the samples forward in time.
         # Also remove samples from the beginning to ensure all arrays are the same
         # length.
@@ -470,3 +480,14 @@ def memoize(func):
         return output
 
     return wrapped
+
+
+@njit(nogil=True, cache=True, fastmath=True)
+def get_pft_group_index(i):
+    """Return the PFT-group index of the input PFT `i`."""
+    group_i = 0
+    for index in range(N_pft_groups):
+        if i <= pft_groups_array[index][pft_groups_lengths[index] - 1]:
+            return group_i
+        group_i += 1
+    return -1

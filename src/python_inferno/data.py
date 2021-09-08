@@ -10,8 +10,8 @@ from tqdm import tqdm
 from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4, homogenise_time_coordinate
 
 from .cache import cache, mark_dependency
-from .configuration import npft
-from .dry_bal import calculate_dry_bal
+from .configuration import N_pft_groups
+from .dry_bal import calculate_grouped_dry_bal
 from .precip_dry_day import calculate_inferno_dry_days, precip_moving_sum
 from .utils import (
     PartialDateTime,
@@ -22,6 +22,7 @@ from .utils import (
     temporal_processing,
     unpack_wrapped,
 )
+from .vpd import calculate_grouped_vpd
 
 timestep = 4 * 60 * 60
 
@@ -255,9 +256,16 @@ def get_climatological_dry_days(
     return clim_dry_days / n_avg
 
 
-@cache(dependencies=[load_single_year_cubes, calculate_dry_bal, precip_moving_sum])
+@cache(
+    dependencies=[
+        load_single_year_cubes,
+        calculate_grouped_vpd,
+        calculate_grouped_dry_bal,
+        precip_moving_sum,
+    ]
+)
 @mark_dependency
-def get_climatological_dry_bal(
+def get_climatological_grouped_dry_bal(
     *,
     filenames=tuple(
         str(Path(s).expanduser())
@@ -275,8 +283,8 @@ def get_climatological_dry_bal(
     rain_f = np.asarray(rain_f)
     vpd_f = np.asarray(vpd_f)
 
-    assert rain_f.shape == (npft,)
-    assert vpd_f.shape == (npft,)
+    assert rain_f.shape == (N_pft_groups,)
+    assert vpd_f.shape == (N_pft_groups,)
 
     clim_dry_bal = None
     n_avg = 0
@@ -293,11 +301,15 @@ def get_climatological_dry_bal(
             },
         )
 
-        # Calculate dry_bal.
-        dry_bal = unpack_wrapped(calculate_dry_bal)(
+        grouped_vpd = calculate_grouped_vpd(
             t1p5m_tile=data_dict["t1p5m"],
             q1p5m_tile=data_dict["q1p5m"],
             pstar=data_dict["pstar"],
+        )
+
+        # Calculate grouped dry_bal.
+        grouped_dry_bal = calculate_grouped_dry_bal(
+            grouped_vpd=grouped_vpd,
             cum_rain=precip_moving_sum(
                 ls_rain=data_dict["ls_rain"],
                 con_rain=data_dict["con_rain"],
@@ -307,10 +319,10 @@ def get_climatological_dry_bal(
             vpd_f=vpd_f,
         )
         if clim_dry_bal is None:
-            clim_dry_bal = dry_bal
+            clim_dry_bal = grouped_dry_bal
             assert n_avg == 0
         else:
-            clim_dry_bal += dry_bal
+            clim_dry_bal += grouped_dry_bal
         n_avg += 1
 
     return clim_dry_bal / n_avg
@@ -322,7 +334,7 @@ def get_climatological_dry_bal(
         load_data,
         temporal_processing,
         monthly_average_data,
-        get_climatological_dry_bal,
+        get_climatological_grouped_dry_bal,
         get_climatological_dry_days,
     ]
 )
@@ -380,9 +392,9 @@ def get_processed_climatological_data(n_samples_pft, average_samples):
         fuel_build_up=npp_pft,
         fapar_diag_pft=npp_pft,
         dry_days=get_climatological_dry_days(),
-        dry_bal=get_climatological_dry_bal(
-            rain_f=np.asarray([0.3] * npft),
-            vpd_f=np.asarray([40] * npft),
+        grouped_dry_bal=get_climatological_grouped_dry_bal(
+            rain_f=np.asarray([0.3] * N_pft_groups),
+            vpd_f=np.asarray([40] * N_pft_groups),
         ),
         # NOTE The target BA is only included here to ease processing. It will be
         # removed prior to the modelling function.
@@ -391,6 +403,7 @@ def get_processed_climatological_data(n_samples_pft, average_samples):
 
     data_dict, jules_time_coord = temporal_processing(
         data_dict=data_dict,
+        # NOTE 'fuel_build_up' refers to the (initially) unshifted productivity proxy
         antecedent_shifts_dict={"fuel_build_up": n_samples_pft},
         average_samples=average_samples,
         aggregator={

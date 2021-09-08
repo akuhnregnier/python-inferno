@@ -6,16 +6,11 @@ import numpy as np
 from loguru import logger
 from sklearn.metrics import r2_score
 
-from .configuration import land_pts
+from .configuration import N_pft_groups, land_pts
 from .data import get_processed_climatological_data, timestep
 from .metrics import loghist, mpd, nme, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
-from .utils import (
-    calculate_factor,
-    expand_pft_params,
-    monthly_average_data,
-    unpack_wrapped,
-)
+from .utils import calculate_factor, monthly_average_data, unpack_wrapped
 
 
 def gen_to_optimise(
@@ -41,7 +36,7 @@ def gen_to_optimise(
 
         for name, vals in expanded_opt_tmp.items():
             if len(vals) == 3:
-                expanded_opt_kwargs[name] = expand_pft_params(vals)
+                expanded_opt_kwargs[name] = np.asarray(vals)
             elif len(vals) == 1:
                 single_opt_kwargs[name] = vals[0]
             else:
@@ -59,11 +54,11 @@ def gen_to_optimise(
             n_samples_pft = expanded_opt_kwargs.pop("fuel_build_up_n_samples").astype(
                 "int64"
             )
+            assert n_samples_pft.shape == (N_pft_groups,)
         else:
             n_samples_pft = np.array(
-                [single_opt_kwargs.pop("fuel_build_up_n_samples")] * 13
+                [single_opt_kwargs.pop("fuel_build_up_n_samples")] * N_pft_groups
             ).astype("int64")
-        assert n_samples_pft.shape == (13,)
 
         average_samples = int(single_opt_kwargs.pop("average_samples"))
 

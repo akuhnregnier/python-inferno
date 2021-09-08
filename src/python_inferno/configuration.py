@@ -62,3 +62,13 @@ for var in (
     fuel_build_up_alpha,
 ):
     assert len(var) == npft
+
+pft_groups = ((0, 1, 2, 3, 4), (5, 6, 7, 8, 9, 10), (11, 12))
+N_pft_groups = len(pft_groups)
+
+pft_groups_array = np.zeros((N_pft_groups, npft), dtype=np.int64)
+pft_groups_lengths = np.zeros((N_pft_groups,), dtype=np.int64)
+
+for i, indices in enumerate(pft_groups):
+    pft_groups_array[i][: len(indices)] = indices
+    pft_groups_lengths[i] = len(indices)
