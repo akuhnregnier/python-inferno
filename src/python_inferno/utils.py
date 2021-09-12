@@ -491,3 +491,18 @@ def get_pft_group_index(i):
             return group_i
         group_i += 1
     return -1
+
+
+def key_cache(f):
+    """Memoization decorator which uses a special keyword argument `cache_key`."""
+    cache = dict()
+
+    @wraps(f)
+    def cached(*args, cache_key, **kwargs):
+        if cache_key in cache:
+            return cache[cache_key]
+        out = f(*args, **kwargs)
+        cache[cache_key] = out
+        return out
+
+    return cached

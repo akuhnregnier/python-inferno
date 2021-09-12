@@ -10,11 +10,12 @@ from tqdm import tqdm
 from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4, homogenise_time_coordinate
 
 from .cache import cache, mark_dependency
-from .configuration import N_pft_groups
+from .configuration import N_pft_groups, land_pts
 from .dry_bal import calculate_grouped_dry_bal
 from .precip_dry_day import calculate_inferno_dry_days, precip_moving_sum
 from .utils import (
     PartialDateTime,
+    key_cache,
     make_contiguous,
     memoize,
     monthly_average_data,
@@ -256,6 +257,20 @@ def get_climatological_dry_days(
     return clim_dry_days / n_avg
 
 
+def handle_param(param):
+    param = np.asarray(param)
+
+    if param.shape != (N_pft_groups,):
+        assert param.shape in ((), (1,))
+        param = np.asarray([param.ravel()[0]] * N_pft_groups)
+
+    return param
+
+
+key_cached_calculate_grouped_vpd = key_cache(calculate_grouped_vpd)
+key_cached_precip_moving_sum = key_cache(precip_moving_sum)
+
+
 @cache(
     dependencies=[
         load_single_year_cubes,
@@ -276,20 +291,23 @@ def get_climatological_grouped_dry_bal(
     ),
     rain_f,
     vpd_f,
+    verbose=True,
 ):
-    # Load instantaneous values from the files below, then calculate dry_bal, then
-    # perform climatological averaging
+    """Load instantaneous values from the files below, then calculate dry_bal, then
+    perform climatological averaging."""
 
-    rain_f = np.asarray(rain_f)
-    vpd_f = np.asarray(vpd_f)
-
-    assert rain_f.shape == (N_pft_groups,)
-    assert vpd_f.shape == (N_pft_groups,)
+    rain_f = handle_param(rain_f)
+    vpd_f = handle_param(vpd_f)
 
     clim_dry_bal = None
     n_avg = 0
 
-    for f in tqdm(list(map(str, filenames)), desc="Processing dry_bal"):
+    # Array used to store and calculate dry_bal.
+    grouped_dry_bal = None
+
+    for f in tqdm(
+        list(map(str, filenames)), desc="Processing dry_bal", disable=not verbose
+    ):
         data_dict = load_single_year_cubes(
             filename=f,
             variable_name_slices={
@@ -301,22 +319,34 @@ def get_climatological_grouped_dry_bal(
             },
         )
 
-        grouped_vpd = calculate_grouped_vpd(
+        grouped_vpd = key_cached_calculate_grouped_vpd(
             t1p5m_tile=data_dict["t1p5m"],
             q1p5m_tile=data_dict["q1p5m"],
             pstar=data_dict["pstar"],
+            # NOTE Special key used to store and retrieve memoized results.
+            cache_key=f,
         )
+        cum_rain = key_cached_precip_moving_sum(
+            ls_rain=data_dict["ls_rain"],
+            con_rain=data_dict["con_rain"],
+            timestep=timestep,
+            # NOTE Special key used to store and retrieve memoized results.
+            cache_key=f,
+        )
+
+        if grouped_dry_bal is None:
+            # This array only needs to be allocated once for the first file.
+            grouped_dry_bal = np.zeros(
+                (data_dict["pstar"].shape[0], N_pft_groups, land_pts), dtype=np.float64
+            )
 
         # Calculate grouped dry_bal.
         grouped_dry_bal = calculate_grouped_dry_bal(
             grouped_vpd=grouped_vpd,
-            cum_rain=precip_moving_sum(
-                ls_rain=data_dict["ls_rain"],
-                con_rain=data_dict["con_rain"],
-                timestep=timestep,
-            ),
+            cum_rain=cum_rain,
             rain_f=rain_f,
             vpd_f=vpd_f,
+            out=grouped_dry_bal,
         )
         if clim_dry_bal is None:
             clim_dry_bal = grouped_dry_bal
@@ -338,7 +368,13 @@ def get_climatological_grouped_dry_bal(
         get_climatological_dry_days,
     ]
 )
-def get_processed_climatological_data(n_samples_pft, average_samples):
+def get_processed_climatological_data(
+    n_samples_pft,
+    average_samples,
+    rain_f=None,
+    vpd_f=None,
+):
+    logger.debug("start data")
     (
         t1p5m_tile,
         q1p5m_tile,
@@ -376,6 +412,13 @@ def get_processed_climatological_data(n_samples_pft, average_samples):
         output_timesteps=4,
         climatology_dates=(PartialDateTime(2000, 1), PartialDateTime(2016, 12)),
     )
+    logger.debug("Got data")
+
+    dry_bal_func = (
+        get_climatological_grouped_dry_bal
+        if (rain_f is None and vpd_f is None)
+        else get_climatological_grouped_dry_bal._orig_func
+    )
 
     data_dict = dict(
         t1p5m_tile=t1p5m_tile,
@@ -392,14 +435,17 @@ def get_processed_climatological_data(n_samples_pft, average_samples):
         fuel_build_up=npp_pft,
         fapar_diag_pft=npp_pft,
         dry_days=get_climatological_dry_days(),
-        grouped_dry_bal=get_climatological_grouped_dry_bal(
-            rain_f=np.asarray([0.3] * N_pft_groups),
-            vpd_f=np.asarray([40] * N_pft_groups),
+        grouped_dry_bal=dry_bal_func(
+            rain_f=rain_f if rain_f is not None else tuple([0.3] * N_pft_groups),
+            vpd_f=vpd_f if vpd_f is not None else tuple([40] * N_pft_groups),
+            verbose=False,
         ),
         # NOTE The target BA is only included here to ease processing. It will be
         # removed prior to the modelling function.
         gfed_ba_1d=gfed_ba_1d,
     )
+
+    logger.debug("Populated data_dict")
 
     data_dict, jules_time_coord = temporal_processing(
         data_dict=data_dict,
@@ -413,6 +459,8 @@ def get_processed_climatological_data(n_samples_pft, average_samples):
         time_coord=jules_time_coord,
         climatology_input=climatology_output,
     )
+
+    logger.debug("Finished temporal processing.")
 
     assert jules_time_coord.cell(-1).point.month == 12
     last_year = jules_time_coord.cell(-1).point.year

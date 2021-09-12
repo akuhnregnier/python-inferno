@@ -17,7 +17,7 @@ def gen_to_optimise(
     fail_func,
     success_func,
 ):
-    def to_optimise(opt_kwargs):
+    def to_optimise(opt_kwargs, defaults=dict(rain_f=0.3, vpd_f=400)):
         expanded_opt_tmp = defaultdict(list)
         for name, val in opt_kwargs.items():
             if name[-1] not in ("2", "3"):
@@ -62,12 +62,18 @@ def gen_to_optimise(
 
         average_samples = int(single_opt_kwargs.pop("average_samples"))
 
+        proc_kwargs = dict()
+        for key in ("rain_f", "vpd_f"):
+            proc_kwargs[key] = single_opt_kwargs.pop(
+                key, expanded_opt_kwargs.pop(key, defaults[key])
+            )
+
         (
             data_dict,
             mon_avg_gfed_ba_1d,
             jules_time_coord,
         ) = get_processed_climatological_data(
-            n_samples_pft=n_samples_pft, average_samples=average_samples
+            n_samples_pft=n_samples_pft, average_samples=average_samples, **proc_kwargs
         )
 
         # Model kwargs.
