@@ -17,7 +17,11 @@ def gen_to_optimise(
     fail_func,
     success_func,
 ):
-    def to_optimise(opt_kwargs, defaults=dict(rain_f=0.3, vpd_f=400)):
+    def to_optimise(
+        opt_kwargs,
+        defaults=dict(rain_f=0.3, vpd_f=400, crop_f=0.5),
+        dryness_method=2,
+    ):
         expanded_opt_tmp = defaultdict(list)
         for name, val in opt_kwargs.items():
             if name[-1] not in ("2", "3"):
@@ -76,38 +80,65 @@ def gen_to_optimise(
             n_samples_pft=n_samples_pft, average_samples=average_samples, **proc_kwargs
         )
 
+        obs_pftcrop_1d = data_dict["obs_pftcrop_1d"]
+        crop_f = single_opt_kwargs.pop("crop_f", defaults["crop_f"])
+        assert "crop_f" not in expanded_opt_kwargs
+
         # Model kwargs.
         kwargs = dict(
             ignition_method=1,
             timestep=timestep,
             flammability_method=2,
-            dryness_method=2,
+            dryness_method=dryness_method,
             # fapar_factor=-4.83e1,
             # fapar_centre=4.0e-1,
             # fuel_build_up_factor=1.01e1,
             # fuel_build_up_centre=3.76e-1,
             # temperature_factor=8.01e-2,
             # temperature_centre=2.82e2,
-            dry_day_factor=0.0,
-            dry_day_centre=0.0,
-            # TODO - calculation of dry_bal is carried out during data
-            # loading/processing now
-            # rain_f=0.5,
-            # vpd_f=2500,
-            # dry_bal_factor=1,
-            # dry_bal_centre=0,
             # These are not used for ignition mode 1, nor do they contain a temporal
             # coordinate.
             pop_den=np.zeros((land_pts,)) - 1,
             flash_rate=np.zeros((land_pts,)) - 1,
         )
 
+        if dryness_method == 1:
+            kwargs.update(
+                dict(
+                    dry_bal_factor=1,
+                    dry_bal_centre=0,
+                )
+            )
+        elif dryness_method == 2:
+            kwargs.update(
+                dict(
+                    dry_day_factor=0.0,
+                    dry_day_centre=0.0,
+                )
+            )
+        else:
+            raise ValueError(f"Unknown 'dryness_method' {dryness_method}.")
+
         model_ba = unpack_wrapped(multi_timestep_inferno)(
-            **{**kwargs, **expanded_opt_kwargs, **single_opt_kwargs, **data_dict}
+            **{
+                **kwargs,
+                **expanded_opt_kwargs,
+                **single_opt_kwargs,
+                **{
+                    key: val
+                    for key, val in data_dict.items()
+                    if key not in ("obs_pftcrop_1d",)
+                },
+            }
         )
 
         if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
             return fail_func()
+
+        # Modify the predicted BA using the crop fraction (i.e. assume a certain
+        # proportion of cropland never burns, even though this may be the case in
+        # given the weather conditions).
+        model_ba *= 1 - crop_f * obs_pftcrop_1d
 
         # Calculate monthly averages.
         avg_ba = monthly_average_data(model_ba, time_coord=jules_time_coord)

@@ -27,6 +27,8 @@ to_optimise = gen_to_optimise(
     success_func=success_func,
 )
 
+dryness_method = 2
+
 
 space_template = dict(
     fapar_factor=(1, [(-50, -1)], float),
@@ -36,13 +38,29 @@ space_template = dict(
     fuel_build_up_centre=(1, [(0.0, 0.5)], float),
     temperature_factor=(1, [(0.07, 0.2)], float),
     temperature_centre=(1, [(260, 295)], float),
-    # rain_f=(1, [(0.1, 2.0)], float),
-    # vpd_f=(1, [(5, 4000)], float),
-    dry_bal_factor=(1, [(-100, -1)], float),
-    dry_bal_centre=(1, [(-3, 3)], float),
     # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
     average_samples=(1, [(40, 161, 60)], int),
+    # `crop_f` suppresses BA in cropland areas.
+    crop_f=(1, [(0.0, 1.0)], float),
 )
+if dryness_method == 1:
+    space_template.update(
+        dict(
+            dry_day_factor=(1, [(0.0, 0.2)], float),
+            dry_day_centre=(1, [(100, 200)], float),
+        )
+    )
+elif dryness_method == 2:
+    space_template.update(
+        dict(
+            # rain_f=(1, [(0.1, 2.0)], float),
+            # vpd_f=(1, [(5, 4000)], float),
+            dry_bal_factor=(1, [(-100, -1)], float),
+            dry_bal_centre=(1, [(-3, 3)], float),
+        )
+    )
+else:
+    raise ValueError(f"Unknown 'dryness_method' {dryness_method}.")
 
 space = BasinHoppingSpace(generate_space(space_template))
 
@@ -60,7 +78,7 @@ def main(integer_params, *args, **kwargs):
             **space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x))),
             **integer_params,
         }
-        return to_optimise(opt_kwargs)
+        return to_optimise(opt_kwargs, dryness_method=dryness_method)
 
     def basinhopping_callback(x, f, accept):
         values = space.inv_map_float_to_0_1(

@@ -7,7 +7,13 @@ from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lon
 from jules_output_analysis.utils import convert_longitudes
 from loguru import logger
 from tqdm import tqdm
-from wildfires.data import Ext_MOD15A2H_fPAR, GFEDv4, homogenise_time_coordinate
+from wildfires.data import (
+    Datasets,
+    Ext_ESA_CCI_Landcover_PFT,
+    Ext_MOD15A2H_fPAR,
+    GFEDv4,
+    homogenise_time_coordinate,
+)
 
 from .cache import cache, mark_dependency
 from .configuration import N_pft_groups, land_pts
@@ -85,7 +91,7 @@ def load_data(
             [
                 str(Path(s).expanduser())
                 for s in [
-                    "~/tmp/climatology5_c.nc",
+                    "~/tmp/climatology6.nc",
                 ]
             ]
         )
@@ -183,6 +189,9 @@ def load_data(
     # Load observed data.
     gfed_ba_1d = load_obs_data(GFEDv4())
     obs_fapar_1d = load_obs_data(Ext_MOD15A2H_fPAR())
+    obs_pftcrop_1d = load_obs_data(
+        Datasets(Ext_ESA_CCI_Landcover_PFT()).select_variables("pftCrop").dataset
+    )
 
     return (
         # For most variables, return the arrays without any masks (which should just
@@ -204,6 +213,7 @@ def load_data(
         make_contiguous(gfed_ba_1d[:N]),
         make_contiguous(obs_fapar_1d[:N]),
         make_contiguous(jules_ba_gb[:N, 0]),
+        make_contiguous(obs_pftcrop_1d[:N]),
         jules_time_coord[:N],
         # Make magnitudes more similar to e.g. FAPAR, i.e. ~[0, 1].
         make_contiguous(npp_pft[:N, :, 0].data.data) / 1e-7,
@@ -219,8 +229,8 @@ def get_climatological_dry_days(
     filenames=tuple(
         str(Path(s).expanduser())
         for s in (
-            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
-            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
+            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
+            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
         )
     ),
     threshold=1.0,
@@ -285,8 +295,8 @@ def get_climatological_grouped_dry_bal(
     filenames=tuple(
         str(Path(s).expanduser())
         for s in (
-            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
-            "~/tmp/new-with-antec5/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
+            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
+            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
         )
     ),
     rain_f,
@@ -393,6 +403,7 @@ def get_processed_climatological_data(
         gfed_ba_1d,
         obs_fapar_1d,
         jules_ba_gb,
+        obs_pftcrop_1d,
         jules_time_coord,
         npp_pft,
         npp_gb,
@@ -403,7 +414,7 @@ def get_processed_climatological_data(
                 [
                     str(Path(s).expanduser())
                     for s in [
-                        "~/tmp/climatology5_c.nc",
+                        "~/tmp/climatology6.nc",
                     ]
                 ]
             )
@@ -443,6 +454,7 @@ def get_processed_climatological_data(
         # NOTE The target BA is only included here to ease processing. It will be
         # removed prior to the modelling function.
         gfed_ba_1d=gfed_ba_1d,
+        obs_pftcrop_1d=obs_pftcrop_1d,
     )
 
     logger.debug("Populated data_dict")
