@@ -16,8 +16,9 @@ from wildfires.data import (
 )
 
 from .cache import cache, mark_dependency
-from .configuration import N_pft_groups, land_pts
+from .configuration import N_pft_groups, land_pts, npft
 from .dry_bal import calculate_grouped_dry_bal
+from .litter_pool import calculate_litter
 from .precip_dry_day import calculate_inferno_dry_days, precip_moving_sum
 from .utils import (
     PartialDateTime,
@@ -31,6 +32,7 @@ from .utils import (
 )
 from .vpd import calculate_grouped_vpd
 
+# Time step in seconds (for the 'Instant' output profile, which outputs every 4 hours).
 timestep = 4 * 60 * 60
 
 
@@ -267,12 +269,12 @@ def get_climatological_dry_days(
     return clim_dry_days / n_avg
 
 
-def handle_param(param):
+def handle_param(param, N_params=N_pft_groups):
     param = np.asarray(param)
 
-    if param.shape != (N_pft_groups,):
+    if param.shape != (N_params,):
         assert param.shape in ((), (1,))
-        param = np.asarray([param.ravel()[0]] * N_pft_groups)
+        param = np.asarray([param.ravel()[0]] * N_params)
 
     return param
 
@@ -306,8 +308,8 @@ def get_climatological_grouped_dry_bal(
     """Load instantaneous values from the files below, then calculate dry_bal, then
     perform climatological averaging."""
 
-    rain_f = handle_param(rain_f)
-    vpd_f = handle_param(vpd_f)
+    rain_f = handle_param(rain_f, N_params=N_pft_groups)
+    vpd_f = handle_param(vpd_f, N_params=N_pft_groups)
 
     clim_dry_bal = None
     n_avg = 0
@@ -505,3 +507,82 @@ def get_processed_climatological_data(
         and jules_time_coord.shape[0] >= 12
     )
     return data_dict, mon_avg_gfed_ba_1d, jules_time_coord
+
+
+def calc_litter_pool(
+    *,
+    filename=str(
+        Path(
+            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc"
+        ).expanduser()
+    ),
+    litter_tc,
+    leaf_f,
+    verbose=True,
+    Nt=400,
+    spinup_relative_delta=1e-2,
+    max_spinup_cycles=100,
+):
+    litter_tc = handle_param(litter_tc, N_params=npft)
+    leaf_f = handle_param(leaf_f, N_params=npft)
+
+    litter_pool = None
+
+    data_dict = load_single_year_cubes(
+        filename=filename,
+        variable_name_slices={
+            "leaf_litC": (slice(None), slice(None), 0),
+            "t1p5m": (slice(None), slice(npft), 0),
+            "sthu": (slice(None), 0, 0),
+        },
+    )
+
+    if Nt is None:
+        Nt = data_dict["leaf_litC"].shape[0]
+
+    if litter_pool is None:
+        litter_pool = np.zeros((Nt, npft, land_pts), dtype=np.float64)
+
+    # Calculate the litter pool.
+    spinup_cycles = 1
+    prev_pool = litter_pool[0].copy()
+    while spinup_cycles <= max_spinup_cycles:
+        calculate_litter(
+            leaf_litC=data_dict["leaf_litC"][:Nt],
+            T=data_dict["t1p5m"][:Nt],
+            sm=data_dict["sthu"][:Nt],
+            dt=timestep,
+            litter_tc=litter_tc,
+            leaf_f=leaf_f,
+            init=litter_pool[-1],
+            out=litter_pool,
+        )
+        # Ignore zero values.
+        sel = ~np.isclose(litter_pool[0], 0)
+
+        max_delta = np.max(
+            np.abs(litter_pool[0][sel] - prev_pool[sel]) / litter_pool[0][sel]
+        )
+        logger.debug(f"Cycle {spinup_cycles} Delta | max:{max_delta:0.1e}")
+
+        if max_delta < spinup_relative_delta:
+            # Maximum convergence delta has been reached.
+            break
+
+        prev_pool = litter_pool[0].copy()
+        spinup_cycles += 1
+    else:
+        raise RuntimeError(
+            f"Spinup did not converge within {max_spinup_cycles} cycles."
+        )
+    return litter_pool
+
+
+@memoize
+@cache
+def load_jules_lats_lons(filename=str(Path("~/tmp/climatology6.nc").expanduser())):
+    cubes = iris.load_raw(filename)
+    pstar = cubes.extract_cube("pstar")
+    jules_lats = pstar.coord("latitude")
+    jules_lons = pstar.coord("longitude")
+    return jules_lats, jules_lons
