@@ -22,7 +22,9 @@ from python_inferno.data import (
 )
 
 output_dir = Path("~/tmp/jules_diagnostic_graphs").expanduser()
+filtered_output_dir = Path("~/tmp/jules_diagnostic_graphs_filtered").expanduser()
 output_dir.mkdir(exist_ok=True, parents=False)
+filtered_output_dir.mkdir(exist_ok=True, parents=False)
 
 
 if __name__ == "__main__":
@@ -152,5 +154,13 @@ if __name__ == "__main__":
         sub_dir = output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
         sub_dir.mkdir(exist_ok=True, parents=False)
 
+        filtered_sub_dir = filtered_output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
+        filtered_sub_dir.mkdir(exist_ok=True, parents=False)
+
         fig.savefig(sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png")
+
+        if mean_frac >= 1e-3:
+            fig.savefig(
+                filtered_sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png"
+            )
         plt.close(fig)
