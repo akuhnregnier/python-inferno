@@ -44,6 +44,7 @@ if __name__ == "__main__":
             "root_litC": (slice(None), slice(None), 0),
             "t1p5m": (slice(None), slice(npft), 0),
             "sthu": (slice(None), 0, 0),
+            "landCoverFrac": (slice(None), slice(None), 0),
         },
     )
 
@@ -59,6 +60,19 @@ if __name__ == "__main__":
         "sthu": "Soil Moisture",
     }
 
+    units_dict = {
+        # "leaf_litC": r"$kg m^{-2} (360\ \mathrm{days})^{-1}$",
+        # NOTE Omitted here for plotting purposes.
+        "leaf_litC": r"$\leftarrow$",
+        "wood_litC": r"$kg m^{-2} (360\ \mathrm{days})^{-1}$",
+        # NOTE Omitted here for plotting purposes.
+        # "root_litC": r"$kg m^{-2} (360\ \mathrm{days})^{-1}$",
+        "root_litC": r"$\rightarrow$",
+        "t1p5m": "K",
+        "sthu": "1",
+        "Litter Pool": "1",
+    }
+
     date_unit = Unit("seconds since 2010-01-01")
     datetimes = [
         dt._to_real_datetime()
@@ -72,6 +86,11 @@ if __name__ == "__main__":
             for pft_index in range(npft):
                 yield land_index, pft_index
 
+    plot_data = {
+        name: data for name, data in data_dict.items() if name not in ("landCoverFrac",)
+    }
+    frac = data_dict["landCoverFrac"]
+
     for land_index, pft_index in tqdm(list(param_iter()), desc="Plotting"):
         lat = jules_lats[land_index]
         lon = jules_lons[land_index]
@@ -79,18 +98,18 @@ if __name__ == "__main__":
         pft_acronym = pft_acronyms[PFTs.VEG13][pft_index]
 
         fig, axes = plt.subplots(
-            nrows=len(data_dict),
+            nrows=len(plot_data),
             sharex=True,
-            figsize=(4.5, (7.0 / 6.0) * len(data_dict)),
+            figsize=(4.5, (7.0 / 6.0) * len(plot_data)),
         )
-        for (ax, (name, data)) in zip(axes.ravel(), data_dict.items()):
+        for (ax, (name, data)) in zip(axes.ravel(), plot_data.items()):
             sdata = (
                 data[:, pft_index, land_index]
                 if len(data.shape) == 3
                 else data[:, land_index]
             )
             ax.plot(datetimes, sdata)
-            ax.set_ylabel(name_dict.get(name, name))
+            ax.set_ylabel(f"{name_dict.get(name, name)}\n({units_dict[name]})")
 
         # (left, bottom, right, top)
         fig.tight_layout(rect=(0, 0.05, 1.0, 0.85))
@@ -101,11 +120,15 @@ if __name__ == "__main__":
         print_lat = abs(lat)
         print_lat_symb = "N" if lat >= 0 else "S"
 
+        mean_frac = np.mean(frac[:, pft_index, land_index], axis=0)
+        std_frac = np.std(frac[:, pft_index, land_index], axis=0)
+
         plt.text(
             0.33,
             0.95,
             f"{print_lat:.2f}°{print_lat_symb}, {print_lon:.2f}°{print_lon_symb}"
-            f"\n{pft_name}",
+            f"\n{pft_name}"
+            f"\nfrac: {mean_frac:0.3f}±{std_frac:0.3f}",
             ha="center",
             va="top",
             transform=fig.transFigure,
