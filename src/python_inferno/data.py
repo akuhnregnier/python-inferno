@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from functools import partial
 from pathlib import Path
 
 import iris
@@ -85,6 +86,40 @@ def load_single_year_cubes(*, filename, variable_name_slices):
     }
 
 
+def load_obs_data(dataset, obs_dates=None, climatology=False, Nt=None):
+    jules_lats, jules_lons = load_jules_lats_lons()
+
+    # Load observed monthly data.
+
+    if obs_dates is not None:
+        dataset.limit_months(*obs_dates)
+
+    dataset.regrid(
+        new_latitudes=n96e_lats, new_longitudes=n96e_lons, area_weighted=True
+    )
+    # If the JULES data is climatological, compute the climatology here too
+    if climatology:
+        dataset = dataset.get_climatology_dataset(dataset.min_time, dataset.max_time)
+
+    indices_1d_to_2d = get_1d_to_2d_indices(
+        np.ma.getdata(jules_lats.points[0]),
+        convert_longitudes(np.ma.getdata(jules_lons.points[0])),
+        n96e_lats,
+        n96e_lons,
+    )
+
+    mon_data_1d = np.ma.vstack(
+        [data[indices_1d_to_2d][np.newaxis] for data in dataset.cube.data]
+    )
+    if Nt is not None:
+        # Convert from monthly to timestep-aligned values.
+        data_1d = temporal_nearest_neighbour_interp(
+            mon_data_1d, int(np.ceil(Nt / mon_data_1d.shape[0])), "start"
+        )[:Nt]
+        return data_1d
+    return mon_data_1d
+
+
 @cache(dependencies=[make_contiguous, temporal_nearest_neighbour_interp])
 @mark_dependency
 def load_data(
@@ -158,40 +193,16 @@ def load_data(
 
         obs_dates = climatology_dates
 
-    indices_1d_to_2d = get_1d_to_2d_indices(
-        jules_lats.points[0],
-        convert_longitudes(jules_lons.points[0]),
-        n96e_lats,
-        n96e_lons,
-    )
-
-    def load_obs_data(dataset):
-        # Load observed monthly data.
-        dataset.limit_months(*obs_dates)
-        dataset.regrid(
-            new_latitudes=n96e_lats, new_longitudes=n96e_lons, area_weighted=True
-        )
-        # If the JULES data is climatological, compute the climatology here too
-        if climatology_dates is not None:
-            dataset = dataset.get_climatology_dataset(
-                dataset.min_time, dataset.max_time
-            )
-
-        mon_data_1d = np.ma.vstack(
-            [data[indices_1d_to_2d][np.newaxis] for data in dataset.cube.data]
-        )
-        # Convert from monthly to timestep-aligned values.
-        data_1d = temporal_nearest_neighbour_interp(
-            mon_data_1d,
-            int(np.ceil(jules_time_coord.shape[0] / mon_data_1d.shape[0])),
-            "start",
-        )[: jules_time_coord.shape[0]]
-        return data_1d
-
     # Load observed data.
-    gfed_ba_1d = load_obs_data(GFEDv4())
-    obs_fapar_1d = load_obs_data(Ext_MOD15A2H_fPAR())
-    obs_pftcrop_1d = load_obs_data(
+    mod_load_obs_data = partial(
+        load_obs_data,
+        obs_dates=obs_dates,
+        climatology=climatology_dates is not None,
+        Nt=jules_time_coord.shape[0],
+    )
+    gfed_ba_1d = mod_load_obs_data(GFEDv4())
+    obs_fapar_1d = mod_load_obs_data(Ext_MOD15A2H_fPAR())
+    obs_pftcrop_1d = mod_load_obs_data(
         Datasets(Ext_ESA_CCI_Landcover_PFT()).select_variables("pftCrop").dataset
     )
 
@@ -509,6 +520,8 @@ def get_processed_climatological_data(
     return data_dict, mon_avg_gfed_ba_1d, jules_time_coord
 
 
+@memoize
+@cache
 def calc_litter_pool(
     *,
     filename=str(
@@ -559,10 +572,13 @@ def calc_litter_pool(
         )
         # Ignore zero values.
         sel = ~np.isclose(litter_pool[0], 0)
-
-        max_delta = np.max(
-            np.abs(litter_pool[0][sel] - prev_pool[sel]) / litter_pool[0][sel]
-        )
+        if not np.any(sel):
+            # No non-zero values, use dummy value.
+            max_delta = 1e10
+        else:
+            max_delta = np.max(
+                np.abs(litter_pool[0][sel] - prev_pool[sel]) / litter_pool[0][sel]
+            )
         logger.debug(f"Cycle {spinup_cycles} Delta | max:{max_delta:0.1e}")
 
         if max_delta < spinup_relative_delta:

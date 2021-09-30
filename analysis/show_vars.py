@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import cartopy.crs as ccrs
@@ -12,11 +13,13 @@ from cf_units import Unit
 from jules_output_analysis.utils import PFTs, pft_acronyms, pft_names
 from loguru import logger
 from tqdm import tqdm
+from wildfires.data import Ext_MOD15A2H_fPAR
 
 from python_inferno.configuration import land_pts, npft
 from python_inferno.data import (
     calc_litter_pool,
     load_jules_lats_lons,
+    load_obs_data,
     load_single_year_cubes,
     timestep,
 )
@@ -37,45 +40,82 @@ if __name__ == "__main__":
     jules_lats = jules_lats.points.ravel()
     jules_lons = jules_lons.points.ravel()
     assert jules_lats.shape == jules_lons.shape == (land_pts,)
-    fname = "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc"
+    year = 2000
+    fname = (
+        f"~/tmp/new6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPZ.Instant.{year}.nc"
+    )
     data_dict = load_single_year_cubes(
         filename=fname,
         variable_name_slices={
+            "leafC": (slice(None), slice(None), 0),
             "leaf_litC": (slice(None), slice(None), 0),
             "wood_litC": (slice(None), slice(None), 0),
             "root_litC": (slice(None), slice(None), 0),
             "t1p5m": (slice(None), slice(npft), 0),
             "sthu": (slice(None), 0, 0),
             "landCoverFrac": (slice(None), slice(None), 0),
+            "npp_pft": (slice(None), slice(None), 0),
+            "lai": (slice(None), slice(None), 0),
+            "g_leaf": (slice(None), slice(None), 0),
+            "g_leaf_day": (slice(None), slice(None), 0),
+            "g_leaf_dr_out": (slice(None), slice(None), 0),
+            "g_leaf_phen": (slice(None), slice(None), 0),
         },
     )
 
     data_dict["Litter Pool"] = calc_litter_pool(
-        litter_tc=1e-9, leaf_f=1e-3, verbose=False, Nt=None
+        filename=fname,
+        litter_tc=1e-9,
+        leaf_f=1e-3,
+        verbose=False,
+        Nt=None,
+    )
+    data_dict["Obs. FAPAR"] = load_obs_data(
+        Ext_MOD15A2H_fPAR(),
+        obs_dates=(datetime(year, 1, 1), datetime(year, 12, 31)),
+        climatology=False,
+        Nt=next(iter(data_dict.values())).shape[0],
     )
 
     name_dict = {
+        "leafC": "Leaf Carbon",
         "leaf_litC": "Leaf Litter",
         "wood_litC": "Wood Litter",
         "root_litC": "Root Litter",
         "t1p5m": "Temperature",
         "sthu": "Soil Moisture",
+        "npp_pft": "NPP",
+        "lai": "LAI",
+        "g_leaf": "Leaf turnover",
+        "g_leaf_day": "Leaf turn. PHENOL",
+        "g_leaf_dr_out": "Leaf turn. TRIFFID",
+        "g_leaf_phen": "Mean leaf turn. phen",
     }
 
     units_dict = {
+        "leafC": r"$\mathrm{kg}\ \mathrm{m}^{-2}$",
         # "leaf_litC": r"$kg m^{-2} (360\ \mathrm{days})^{-1}$",
         # NOTE Omitted here for plotting purposes.
-        "leaf_litC": r"$\leftarrow$",
-        "wood_litC": r"$kg m^{-2} (360\ \mathrm{days})^{-1}$",
+        # "leaf_litC": r"$\leftarrow$",
+        "leaf_litC": "",
+        "wood_litC": r"$\mathrm{kg}\ \mathrm{m}^{-2}\ (360\ \mathrm{days})^{-1}$",
         # NOTE Omitted here for plotting purposes.
         # "root_litC": r"$kg m^{-2} (360\ \mathrm{days})^{-1}$",
-        "root_litC": r"$\rightarrow$",
+        # "root_litC": r"$\rightarrow$",
+        "root_litC": "",
         "t1p5m": "K",
         "sthu": "1",
+        "npp_pft": r"$\mathrm{kg}\ \mathrm{m}^{-2}\ \mathrm{s}^{-1}$",
+        "lai": "1",
         "Litter Pool": "1",
+        "Obs. FAPAR": "1",
+        "g_leaf": r"$(360\ \mathrm{days})^{-1}$",
+        "g_leaf_day": r"$(360\ \mathrm{days})^{-1}$",
+        "g_leaf_dr_out": r"$(360\ \mathrm{days})^{-1}$",
+        "g_leaf_phen": r"$(360\ \mathrm{days})^{-1}$",
     }
 
-    date_unit = Unit("seconds since 2010-01-01")
+    date_unit = Unit(f"seconds since {year}-01-01")
     datetimes = [
         dt._to_real_datetime()
         for dt in date_unit.num2date(
@@ -84,7 +124,7 @@ if __name__ == "__main__":
     ]
 
     def param_iter():
-        for land_index in np.linspace(0, land_pts, 20, endpoint=False, dtype=np.int64):
+        for land_index in np.random.default_rng(0).choice(land_pts, size=50):
             for pft_index in range(npft):
                 yield land_index, pft_index
 
@@ -111,7 +151,10 @@ if __name__ == "__main__":
                 else data[:, land_index]
             )
             ax.plot(datetimes, sdata)
-            ax.set_ylabel(f"{name_dict.get(name, name)}\n({units_dict[name]})")
+            ax.set_ylabel(
+                f"{name_dict.get(name, name)}\n"
+                + (f"({units_dict[name]})" if units_dict[name] else "")
+            )
 
         # (left, bottom, right, top)
         fig.tight_layout(rect=(0, 0.05, 1.0, 0.85))
@@ -154,12 +197,12 @@ if __name__ == "__main__":
         sub_dir = output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
         sub_dir.mkdir(exist_ok=True, parents=False)
 
-        filtered_sub_dir = filtered_output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
-        filtered_sub_dir.mkdir(exist_ok=True, parents=False)
-
         fig.savefig(sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png")
 
         if mean_frac >= 1e-3:
+            filtered_sub_dir = filtered_output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
+            filtered_sub_dir.mkdir(exist_ok=True, parents=False)
+
             fig.savefig(
                 filtered_sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png"
             )
