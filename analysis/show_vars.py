@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import math
 import sys
 from datetime import datetime
 from pathlib import Path
+from textwrap import wrap
 
 import cartopy.crs as ccrs
 import matplotlib as mpl
@@ -40,7 +42,10 @@ if __name__ == "__main__":
     jules_lats = jules_lats.points.ravel()
     jules_lons = jules_lons.points.ravel()
     assert jules_lats.shape == jules_lons.shape == (land_pts,)
+
     year = 2000
+    temporal_subsampling = 4
+
     fname = (
         f"~/tmp/new6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPZ.Instant.{year}.nc"
     )
@@ -56,12 +61,15 @@ if __name__ == "__main__":
             "landCoverFrac": (slice(None), slice(None), 0),
             "npp_pft": (slice(None), slice(None), 0),
             "lai": (slice(None), slice(None), 0),
+            "lai_bal": (slice(None), slice(None), 0),
+            "lai_phen": (slice(None), slice(None), 0),
             "g_leaf": (slice(None), slice(None), 0),
             "g_leaf_day": (slice(None), slice(None), 0),
             "g_leaf_dr_out": (slice(None), slice(None), 0),
             "g_leaf_phen": (slice(None), slice(None), 0),
         },
-    )
+        temporal_subsampling=temporal_subsampling,
+    ).copy()
 
     data_dict["Litter Pool"] = calc_litter_pool(
         filename=fname,
@@ -69,7 +77,8 @@ if __name__ == "__main__":
         leaf_f=1e-3,
         verbose=False,
         Nt=None,
-    )
+    )[::temporal_subsampling]
+
     data_dict["Obs. FAPAR"] = load_obs_data(
         Ext_MOD15A2H_fPAR(),
         obs_dates=(datetime(year, 1, 1), datetime(year, 12, 31)),
@@ -86,11 +95,14 @@ if __name__ == "__main__":
         "sthu": "Soil Moisture",
         "npp_pft": "NPP",
         "lai": "LAI",
+        "lai_bal": "LAI (seasonal max)",
+        "lai_phen": "LAI after phen",
         "g_leaf": "Leaf turnover",
         "g_leaf_day": "Leaf turn. PHENOL",
         "g_leaf_dr_out": "Leaf turn. TRIFFID",
         "g_leaf_phen": "Mean leaf turn. phen",
     }
+    name_dict = {key: "\n".join(wrap(name, 12)) for key, name in name_dict.items()}
 
     units_dict = {
         "leafC": r"$\mathrm{kg}\ \mathrm{m}^{-2}$",
@@ -107,6 +119,8 @@ if __name__ == "__main__":
         "sthu": "1",
         "npp_pft": r"$\mathrm{kg}\ \mathrm{m}^{-2}\ \mathrm{s}^{-1}$",
         "lai": "1",
+        "lai_bal": "1",
+        "lai_phen": "1",
         "Litter Pool": "1",
         "Obs. FAPAR": "1",
         "g_leaf": r"$(360\ \mathrm{days})^{-1}$",
@@ -119,7 +133,9 @@ if __name__ == "__main__":
     datetimes = [
         dt._to_real_datetime()
         for dt in date_unit.num2date(
-            np.arange(next(iter(data_dict.values())).shape[0]) * timestep
+            np.arange(next(iter(data_dict.values())).shape[0])
+            * timestep
+            * temporal_subsampling
         )
     ]
 
@@ -128,10 +144,8 @@ if __name__ == "__main__":
             for pft_index in range(npft):
                 yield land_index, pft_index
 
-    plot_data = {
-        name: data for name, data in data_dict.items() if name not in ("landCoverFrac",)
-    }
-    frac = data_dict["landCoverFrac"]
+    frac = data_dict.pop("landCoverFrac")
+    plot_data = data_dict.copy()
 
     for land_index, pft_index in tqdm(list(param_iter()), desc="Plotting"):
         lat = jules_lats[land_index]
@@ -139,12 +153,16 @@ if __name__ == "__main__":
         pft_name = pft_names[PFTs.VEG13][pft_index]
         pft_acronym = pft_acronyms[PFTs.VEG13][pft_index]
 
+        ncols = 2
+        nrows = math.ceil(len(plot_data) / ncols)
+
         fig, axes = plt.subplots(
-            nrows=len(plot_data),
+            nrows=nrows,
+            ncols=ncols,
             sharex=True,
-            figsize=(4.5, (7.0 / 6.0) * len(plot_data)),
+            figsize=(4.5 * ncols, (7.0 / 6.0) * (nrows + 1)),
         )
-        for (ax, (name, data)) in zip(axes.ravel(), plot_data.items()):
+        for (ax, (name, data)) in zip(axes.T.ravel(), plot_data.items()):
             sdata = (
                 data[:, pft_index, land_index]
                 if len(data.shape) == 3
@@ -179,7 +197,7 @@ if __name__ == "__main__":
             transform=fig.transFigure,
         )
         fig.align_ylabels()
-        plt.setp(ax.get_xticklabels(), ha="right", rotation=45)
+        # plt.setp(ax.get_xticklabels(), ha="right", rotation=45)
 
         # [left, bottom, width, height]
         map_ax = plt.axes([0.6, 0.85, 0.35, 0.14], projection=ccrs.Robinson())

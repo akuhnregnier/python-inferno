@@ -40,7 +40,7 @@ timestep = 4 * 60 * 60
 @memoize
 @cache
 @mark_dependency
-def load_single_year_cubes(*, filename, variable_name_slices):
+def load_single_year_cubes(*, filename, variable_name_slices, temporal_subsampling=1):
     logger.info(f"Loading '{', '.join(variable_name_slices)}' from {filename}.")
 
     cubes = iris.load_raw(filename)
@@ -77,11 +77,14 @@ def load_single_year_cubes(*, filename, variable_name_slices):
         assert isinstance(s, tuple)
         assert s[0] == slice(None)
         s = list(s)
-        s[0] = slice(N)
+        s[0] = slice(0, N, temporal_subsampling)
         return tuple(s)
 
     return {
-        name: make_contiguous(cube[modify_slices(variable_name_slices[name])].data.data)
+        name: np.asarray(
+            make_contiguous(cube[modify_slices(variable_name_slices[name])].data.data),
+            dtype=np.float32,
+        )
         for name, cube in data_dict.items()
     }
 
