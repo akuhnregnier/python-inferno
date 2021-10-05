@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
+from datetime import datetime
 from functools import partial
 from pathlib import Path
 
 import iris
 import numpy as np
+from dateutil.relativedelta import relativedelta
 from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lons
 from jules_output_analysis.utils import convert_longitudes
 from loguru import logger
@@ -115,10 +117,74 @@ def load_obs_data(dataset, obs_dates=None, climatology=False, Nt=None):
         [data[indices_1d_to_2d][np.newaxis] for data in dataset.cube.data]
     )
     if Nt is not None:
+        total_pad_samples = 0
+
         # Convert from monthly to timestep-aligned values.
+        if obs_dates is None or climatology:
+            N_interp = Nt
+        elif obs_dates is not None:
+            # Compensate for missing data if needed.
+            # Nt corresponds to obs_dates.
+            total_seconds = (obs_dates[1] - obs_dates[0]).total_seconds()
+
+            min_time = (
+                dataset.min_time
+                if dataset.frequency != "monthly"
+                # Lowest datetime in the 'max_time' month.
+                else datetime(dataset.min_time.year, dataset.min_time.month, 1)
+            )
+
+            max_time = (
+                dataset.max_time
+                if dataset.frequency != "monthly"
+                # Highest datetime in the 'max_time' month.
+                else datetime(dataset.max_time.year, dataset.max_time.month, 1)
+                + relativedelta(months=+1, microseconds=-1)
+            )
+
+            initial_pad_seconds = max((min_time - obs_dates[0]).total_seconds(), 0)
+            final_pad_seconds = max((obs_dates[1] - max_time).total_seconds(), 0)
+
+            initial_pad_samples = int(
+                np.floor((initial_pad_seconds / total_seconds) * Nt)
+            )
+            final_pad_samples = int(np.floor((final_pad_seconds / total_seconds) * Nt))
+
+            total_pad_samples = initial_pad_samples + final_pad_samples
+
+            N_interp = Nt - total_pad_samples
+            if total_pad_samples > 0:
+                logger.warning(f"Padding for {dataset}.")
+                logger.warning(f"{min_time}, {max_time}.")
+                logger.warning(
+                    f"Initial samples: {initial_pad_samples} ({initial_pad_seconds} s)."
+                )
+                logger.warning(
+                    f"Final samples: {final_pad_samples} ({final_pad_seconds} s)."
+                )
+
         data_1d = temporal_nearest_neighbour_interp(
-            mon_data_1d, int(np.ceil(Nt / mon_data_1d.shape[0])), "start"
-        )[:Nt]
+            mon_data_1d, int(np.ceil(N_interp / mon_data_1d.shape[0])), "start"
+        )[:N_interp]
+
+        if initial_pad_samples > 0:
+            data_1d = np.ma.vstack(
+                (
+                    np.ma.MaskedArray(
+                        np.zeros((initial_pad_samples, *data_1d.shape[1:])), mask=True
+                    ),
+                    data_1d,
+                )
+            )
+        if final_pad_samples > 0:
+            data_1d = np.ma.vstack(
+                (
+                    data_1d,
+                    np.ma.MaskedArray(
+                        np.zeros((final_pad_samples, *data_1d.shape[1:])), mask=True
+                    ),
+                )
+            )
         return data_1d
     return mon_data_1d
 

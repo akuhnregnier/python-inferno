@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import math
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from textwrap import wrap
@@ -12,9 +13,8 @@ import matplotlib.pyplot as plt
 import numpy
 import numpy as np
 from cf_units import Unit
-from jules_output_analysis.utils import PFTs, pft_acronyms, pft_names
 from loguru import logger
-from tqdm import tqdm
+from sklearn.metrics.pairwise import haversine_distances
 from wildfires.data import Datasets, Ext_MOD15A2H_fPAR, MOD15A2H_LAI_fPAR
 
 from python_inferno.configuration import land_pts, npft
@@ -27,10 +27,38 @@ from python_inferno.data import (
 
 # TIME, PFT, LAND
 
-output_dir = Path("~/tmp/jules_diagnostic_graphs").expanduser()
-filtered_output_dir = Path("~/tmp/jules_diagnostic_graphs_filtered").expanduser()
+output_dir = Path("~/tmp/jules_diagnostic_graphs_transects").expanduser()
 output_dir.mkdir(exist_ok=True, parents=False)
-filtered_output_dir.mkdir(exist_ok=True, parents=False)
+
+
+def frac_weighted_avg(data, frac):
+    """Calculate the frac-weighted mean."""
+    frac = frac[:, :13]  # Select vegetation PFT fractions only.
+
+    assert len(data.shape) == len(frac.shape) == 3
+    assert data.shape == frac.shape
+
+    frac_sum = np.sum(frac, axis=1)
+    sel = ~np.isclose(frac_sum, 0)
+
+    agg_data_flat = np.sum(data * frac, axis=1)[sel] / frac_sum[sel]
+
+    agg_data = np.ma.MaskedArray(np.zeros((frac.shape[0], frac.shape[2])), mask=True)
+    agg_data[sel] = agg_data_flat
+
+    return agg_data
+
+
+def get_land_index(lat, lon, lats_arr, lons_arr):
+    """Retrieve the index into `lats_arr` and `lons_arr`."""
+
+    # Compute Haversine distances.
+    distances = haversine_distances(
+        np.radians(np.hstack((lats_arr.reshape(-1, 1), lons_arr.reshape(-1, 1)))),
+        np.radians(np.array([[lat, lon]])),
+    )
+    assert distances.shape == (lats_arr.shape[0], 1)
+    return np.argmin(distances[:, 0])
 
 
 if __name__ == "__main__":
@@ -152,22 +180,83 @@ if __name__ == "__main__":
         )
     ]
 
-    def param_iter():
-        for land_index in np.random.default_rng(0).choice(land_pts, size=50):
-            for pft_index in range(npft):
-                yield land_index, pft_index
+    def set_ylabel(ax):
+        ax.set_ylabel(
+            f"{name_dict.get(name, name)}\n"
+            + (f"({units_dict[name]})" if units_dict[name] else "")
+        )
 
     frac = data_dict.pop("landCoverFrac")
-    plot_data = data_dict.copy()
 
-    for land_index, pft_index in tqdm(list(param_iter()), desc="Plotting"):
-        lat = jules_lats[land_index]
-        lon = jules_lons[land_index]
-        pft_name = pft_names[PFTs.VEG13][pft_index]
-        pft_acronym = pft_acronyms[PFTs.VEG13][pft_index]
+    # Calculate frac-weighted averages if needed.
+    data_dict = {
+        name: frac_weighted_avg(data, frac=frac) if len(data.shape) == 3 else data
+        for name, data in data_dict.items()
+    }
+
+    for lat_range, lon_range, nlat, nlon in [
+        [(-45, 65), (110, 130), 5, 8],
+        [(-45, 65), (10, 30), 5, 8],
+        [(-45, 65), (-80, -60), 5, 8],
+    ]:
+        plotted_coords = []
+        plotted_lat_indices = []
+
+        lon_avg_data = defaultdict(lambda: defaultdict(dict))
+
+        for (data_i, (name, data)) in enumerate(data_dict.items()):
+            for lat_i, olat in enumerate(np.linspace(*lat_range, nlat)):
+                avg_raw_data = np.ma.MaskedArray(np.zeros((nlon, Nt)), mask=True)
+
+                for lon_i, olon in enumerate(np.linspace(*lon_range, nlon)):
+                    # Get closest land point.
+                    land_index = get_land_index(olat, olon, jules_lats, jules_lons)
+
+                    avg_raw_data[lon_i] = data[:, land_index]
+
+                    if data_i == 0:
+                        # Only do this for the first variable.
+
+                        # Get the corresponding actual lat, lon.
+                        lat = jules_lats[land_index]
+                        lon = jules_lons[land_index]
+
+                        plotted_coords.append((lat, lon))
+                        plotted_lat_indices.append(lat_i)
+
+                lon_avg_data[lat_i][name] = np.ma.average(avg_raw_data, axis=0)
+
+        def plot_map(map_ax):
+            map_ax.set_global()
+            map_ax.coastlines(linewidth=0.2)
+            map_ax.gridlines(zorder=0, alpha=0.4, linestyle="--", linewidth=0.2)
+
+            for (plot_i, (p_lat, p_lon)) in zip(plotted_lat_indices, plotted_coords):
+                map_ax.plot(
+                    p_lon,
+                    p_lat,
+                    marker="x",
+                    color=f"C{plot_i}",
+                    transform=ccrs.PlateCarree(),
+                    alpha=0.6,
+                )
+
+        # Save setup.
+        loc_str = (
+            f"{lat_range[0]:0.2f}_{lat_range[1]:0.2f}__"
+            f"{lon_range[0]:0.2f}_{lon_range[1]:0.2f}"
+        )
+
+        loc_dir = output_dir / loc_str
+        loc_dir.mkdir(exist_ok=True, parents=False)
+
+        # Title with location information.
+        title_str = f"{lon_range[0]:.2f}°E - {lon_range[1]:.2f}°E\n" + ", ".join(
+            [f"{lat:0.2f}°N" for lat, _ in plotted_coords[::nlon]]
+        )
 
         ncols = 2
-        nrows = math.ceil(len(plot_data) / ncols)
+        nrows = math.ceil(len(data_dict) / ncols)
 
         fig, axes = plt.subplots(
             nrows=nrows,
@@ -175,66 +264,46 @@ if __name__ == "__main__":
             sharex=True,
             figsize=(4.5 * ncols, (7.0 / 6.0) * (nrows + 1)),
         )
-        for (ax, (name, data)) in zip(axes.T.ravel(), plot_data.items()):
-            sdata = (
-                data[:, pft_index, land_index]
-                if len(data.shape) == 3
-                else data[:, land_index]
-            )
-            ax.plot(datetimes, sdata)
-            ax.set_ylabel(
-                f"{name_dict.get(name, name)}\n"
-                + (f"({units_dict[name]})" if units_dict[name] else "")
-            )
+        for ax, name in zip(axes.T.ravel(), data_dict):
+            for lat_i in range(nlat):
+                ax.plot(datetimes, lon_avg_data[lat_i][name], c=f"C{lat_i}", alpha=0.6)
+            set_ylabel(ax)
 
         # (left, bottom, right, top)
         fig.tight_layout(rect=(0, 0.05, 1.0, 0.85))
 
-        print_lon = abs(((lon + 180) % 360) - 180)
-        print_lon_symb = "E" if np.isclose(print_lon, lon) else "W"
-
-        print_lat = abs(lat)
-        print_lat_symb = "N" if lat >= 0 else "S"
-
-        mean_frac = np.mean(frac[:, pft_index, land_index], axis=0)
-        std_frac = np.std(frac[:, pft_index, land_index], axis=0)
-
         plt.text(
-            0.33,
-            0.95,
-            f"{print_lat:.2f}°{print_lat_symb}, {print_lon:.2f}°{print_lon_symb}"
-            f"\n{pft_name}"
-            f"\nfrac: {mean_frac:0.3f}±{std_frac:0.3f}",
-            ha="center",
-            va="top",
-            transform=fig.transFigure,
+            0.33, 0.95, title_str, ha="center", va="top", transform=fig.transFigure
         )
         fig.align_ylabels()
         # plt.setp(ax.get_xticklabels(), ha="right", rotation=45)
 
         # [left, bottom, width, height]
-        map_ax = plt.axes([0.6, 0.85, 0.35, 0.14], projection=ccrs.Robinson())
-        map_ax.set_global()
-        map_ax.coastlines(linewidth=0.2)
-        map_ax.gridlines(zorder=0, alpha=0.4, linestyle="--", linewidth=0.2)
-        map_ax.plot(
-            lon,
-            lat,
-            marker="x",
-            color="C1",
-            transform=ccrs.PlateCarree(),
-        )
+        plot_map(plt.axes([0.6, 0.85, 0.35, 0.14], projection=ccrs.Robinson()))
 
-        sub_dir = output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
-        sub_dir.mkdir(exist_ok=True, parents=False)
-
-        fig.savefig(sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png")
-
-        if mean_frac >= 1e-3:
-            filtered_sub_dir = filtered_output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
-            filtered_sub_dir.mkdir(exist_ok=True, parents=False)
-
-            fig.savefig(
-                filtered_sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png"
-            )
+        # Save.
+        fig.savefig(loc_dir / "all_variables.png")
         plt.close(fig)
+
+        # Single variables per plot.
+
+        for name in data_dict:
+            fig, ax = plt.subplots(1, 1, figsize=(4.5, 14.0 / 6.0))
+
+            for lat_i in range(nlat):
+                ax.plot(datetimes, lon_avg_data[lat_i][name], c=f"C{lat_i}", alpha=0.6)
+            set_ylabel(ax)
+
+            # (left, bottom, right, top)
+            fig.tight_layout(rect=(0, 0.05, 1.0, 0.74))
+
+            plt.text(
+                0.33, 0.95, title_str, ha="center", va="top", transform=fig.transFigure
+            )
+            fig.align_ylabels()
+
+            # [left, bottom, width, height]
+            plot_map(plt.axes([0.6, 0.75, 0.4, 0.24], projection=ccrs.Robinson()))
+
+            fig.savefig(loc_dir / f"{name}.png")
+            plt.close(fig)
