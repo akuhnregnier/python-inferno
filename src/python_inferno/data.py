@@ -117,7 +117,8 @@ def load_obs_data(dataset, obs_dates=None, climatology=False, Nt=None):
         [data[indices_1d_to_2d][np.newaxis] for data in dataset.cube.data]
     )
     if Nt is not None:
-        total_pad_samples = 0
+        initial_pad_samples = 0
+        final_pad_samples = 0
 
         # Convert from monthly to timestep-aligned values.
         if obs_dates is None or climatology:
@@ -162,6 +163,8 @@ def load_obs_data(dataset, obs_dates=None, climatology=False, Nt=None):
                 logger.warning(
                     f"Final samples: {final_pad_samples} ({final_pad_seconds} s)."
                 )
+        else:
+            raise RuntimeError()
 
         data_1d = temporal_nearest_neighbour_interp(
             mon_data_1d, int(np.ceil(N_interp / mon_data_1d.shape[0])), "start"
