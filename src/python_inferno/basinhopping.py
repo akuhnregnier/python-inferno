@@ -2,16 +2,12 @@
 # -*- coding: utf-8 -*-
 import random
 import string
-import sys
 from itertools import product
 from pathlib import Path
 
 import numpy as np
 from loguru import logger
-from scipy.optimize import basinhopping
 from wildfires.dask_cx1.dask_rf import safe_write
-
-from python_inferno.cx1 import run
 
 
 class BasinHoppingSpace:
@@ -110,57 +106,3 @@ class BoundedSteps:
 
         logger.info(f"New pos: {new}")
         return new
-
-
-def main(integer_params, *args, **kwargs):
-    def to_optimise_with_int(x):
-        opt_kwargs = {
-            **space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x))),
-            **integer_params,
-        }
-        return to_optimise(opt_kwargs)
-
-    def basinhopping_callback(x, f, accept):
-        values = space.inv_map_float_to_0_1(
-            {**dict(zip(space.float_param_names, x)), **integer_params}
-        )
-        logger.info(f"Minimum found | loss: {f:0.6f}")
-
-        for name, val in values.items():
-            logger.info(f" - {name}: {val}")
-
-        if recorder is not None:
-            recorder.record(values, f)
-
-            # Update record in file.
-            recorder.dump()
-
-    return (
-        basinhopping(
-            to_optimise_with_int,
-            x0=space.float_x0_mid,
-            disp=True,
-            minimizer_kwargs=dict(
-                method="L-BFGS-B",
-                jac=None,
-                bounds=[(0, 1)] * len(space.float_param_names),
-                options=dict(maxiter=50, ftol=1e-5, eps=1e-3),
-            ),
-            seed=0,
-            niter_success=10,
-            callback=basinhopping_callback,
-            take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
-        ),
-        space,
-        integer_params,
-    )
-
-
-if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="INFO")
-    run(
-        main,
-        list(space.int_param_product),
-        cx1_kwargs=dict(walltime="24:00:00", ncpus=2, mem="10GB"),
-    )
