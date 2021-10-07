@@ -12,7 +12,7 @@ from python_inferno.utils import unpack_wrapped
 
 if __name__ == "__main__":
     data_dict, mon_avg_gfed_ba_1d, jules_time_coord = get_processed_climatological_data(
-        np.array([20] * 13, dtype=np.int64), 20
+        n_samples_pft=np.array([20] * 13, dtype=np.int64), average_samples=20
     )
 
     # Model kwargs.

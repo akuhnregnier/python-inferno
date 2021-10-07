@@ -6,7 +6,7 @@ import numpy as np
 from loguru import logger
 from sklearn.metrics import r2_score
 
-from .configuration import N_pft_groups, land_pts
+from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
 from .metrics import loghist, mpd, nme, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
@@ -19,8 +19,16 @@ def gen_to_optimise(
 ):
     def to_optimise(
         opt_kwargs,
-        defaults=dict(rain_f=0.3, vpd_f=400, crop_f=0.5),
+        defaults=dict(
+            rain_f=0.3,
+            vpd_f=400,
+            crop_f=0.5,
+            fuel_build_up_n_samples=0,
+            litter_tc=1e-9,
+            leaf_f=1e-3,
+        ),
         dryness_method=2,
+        fuel_build_up_method=1,
     ):
         expanded_opt_tmp = defaultdict(list)
         for name, val in opt_kwargs.items():
@@ -48,21 +56,24 @@ def gen_to_optimise(
 
         logger.debug("Normal params")
         for name, val in single_opt_kwargs.items():
-            logger.debug(" -", name, val)
+            logger.debug(f" - {name}: {val}")
 
         logger.debug("Opt param arrays")
         for name, vals in expanded_opt_kwargs.items():
-            logger.debug(" -", name, vals)
+            logger.debug(f" - {name}: {val}")
 
-        if "fuel_build_up_n_samples" in expanded_opt_kwargs:
-            n_samples_pft = expanded_opt_kwargs.pop("fuel_build_up_n_samples").astype(
-                "int64"
-            )
-            assert n_samples_pft.shape == (N_pft_groups,)
-        else:
-            n_samples_pft = np.array(
-                [single_opt_kwargs.pop("fuel_build_up_n_samples")] * N_pft_groups
-            ).astype("int64")
+        def extract_param(key, dtype_str, size):
+            if key in expanded_opt_kwargs:
+                param = expanded_opt_kwargs.pop(key).astype(dtype_str)
+                assert param.shape == (size,)
+                return param
+            elif key in single_opt_kwargs:
+                return np.array([single_opt_kwargs.pop(key)] * size).astype(dtype_str)
+            return np.array([defaults[key]] * size).astype(dtype_str)
+
+        n_samples_pft = extract_param("fuel_build_up_n_samples", "int64", N_pft_groups)
+        litter_tc = extract_param("litter_tc", "float64", npft)
+        leaf_f = extract_param("leaf_f", "float64", npft)
 
         average_samples = int(single_opt_kwargs.pop("average_samples"))
 
@@ -77,7 +88,11 @@ def gen_to_optimise(
             mon_avg_gfed_ba_1d,
             jules_time_coord,
         ) = get_processed_climatological_data(
-            n_samples_pft=n_samples_pft, average_samples=average_samples, **proc_kwargs
+            litter_tc=litter_tc,
+            leaf_f=leaf_f,
+            n_samples_pft=n_samples_pft,
+            average_samples=average_samples,
+            **proc_kwargs,
         )
 
         obs_pftcrop_1d = data_dict["obs_pftcrop_1d"]
@@ -90,6 +105,7 @@ def gen_to_optimise(
             timestep=timestep,
             flammability_method=2,
             dryness_method=dryness_method,
+            fuel_build_up_method=fuel_build_up_method,
             # fapar_factor=-4.83e1,
             # fapar_centre=4.0e-1,
             # fuel_build_up_factor=1.01e1,
@@ -118,6 +134,23 @@ def gen_to_optimise(
             )
         else:
             raise ValueError(f"Unknown 'dryness_method' {dryness_method}.")
+
+        if fuel_build_up_method == 1:
+            kwargs.update(
+                dict(
+                    litter_pool_factor=0.0,
+                    litter_pool_centre=0.0,
+                )
+            )
+        elif fuel_build_up_method == 2:
+            kwargs.update(
+                dict(
+                    fuel_build_up_factor=0.0,
+                    fuel_build_up_centre=0.0,
+                )
+            )
+        else:
+            raise ValueError(f"Unknown 'fuel_build_up_method' {fuel_build_up_method}.")
 
         model_ba = unpack_wrapped(multi_timestep_inferno)(
             **{

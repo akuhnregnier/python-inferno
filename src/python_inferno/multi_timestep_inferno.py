@@ -36,14 +36,18 @@ def multi_timestep_inferno(
     fapar_diag_pft,
     grouped_dry_bal,
     dry_days,
+    litter_pool,
     fapar_factor,
     fapar_centre,
     fuel_build_up_factor,
     fuel_build_up_centre,
     temperature_factor,
     temperature_centre,
+    litter_pool_factor,
+    litter_pool_centre,
     flammability_method,
     dryness_method,
+    fuel_build_up_method,
     dry_day_factor,
     dry_day_centre,
     dry_bal_factor,
@@ -61,6 +65,8 @@ def multi_timestep_inferno(
         dry_day_centre=dry_day_centre,
         dry_bal_factor=dry_bal_factor,
         dry_bal_centre=dry_bal_centre,
+        litter_pool_factor=litter_pool_factor,
+        litter_pool_centre=litter_pool_centre,
     )
 
     # Ensure the parameters are given as arrays with `N_pft_groups` elements.
@@ -97,6 +103,8 @@ def multi_timestep_inferno(
         cum_rain=precip_moving_sum(
             ls_rain=ls_rain, con_rain=con_rain, timestep=timestep
         ),
+        litter_pool=litter_pool,
+        fuel_build_up_method=fuel_build_up_method,
         **transformed_param_vars,
     )
     return ba
@@ -128,13 +136,17 @@ def _multi_timestep_inferno(
     fuel_build_up_centre,
     temperature_factor,
     temperature_centre,
+    litter_pool_factor,
+    litter_pool_centre,
     flammability_method,
     dryness_method,
+    fuel_build_up_method,
     dry_day_factor,
     dry_day_centre,
     dry_bal_factor,
     dry_bal_centre,
     cum_rain,
+    litter_pool,
 ):
     # Ensure consistency of the time dimension.
     if not (
@@ -259,6 +271,7 @@ def _multi_timestep_inferno(
                     dry_days=dry_days[ti, l],
                     flammability_method=flammability_method,
                     dryness_method=dryness_method,
+                    fuel_build_up_method=fuel_build_up_method,
                     fapar_factor=fapar_factor[pft_group_i],
                     fapar_centre=fapar_centre[pft_group_i],
                     fuel_build_up_factor=fuel_build_up_factor[pft_group_i],
@@ -270,6 +283,9 @@ def _multi_timestep_inferno(
                     dry_bal=grouped_dry_bal[ti, pft_group_i, l],
                     dry_bal_factor=dry_bal_factor[pft_group_i],
                     dry_bal_centre=dry_bal_centre[pft_group_i],
+                    litter_pool=litter_pool[ti, i, l],
+                    litter_pool_factor=litter_pool_factor[pft_group_i],
+                    litter_pool_centre=litter_pool_centre[pft_group_i],
                 )
 
                 burnt_area_ft[ti, i, l] = calc_burnt_area(

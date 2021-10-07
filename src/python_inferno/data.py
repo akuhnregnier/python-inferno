@@ -464,6 +464,9 @@ def get_climatological_grouped_dry_bal(
     ]
 )
 def get_processed_climatological_data(
+    *,
+    litter_tc,
+    leaf_f,
     n_samples_pft,
     average_samples,
     rain_f=None,
@@ -528,8 +531,9 @@ def get_processed_climatological_data(
         ls_rain=ls_rain,
         con_rain=con_rain,
         # NOTE NPP is used here now, NOT FAPAR!
-        fuel_build_up=npp_pft,
+        fuel_build_up=npp_pft,  # Note this is shifted below.
         fapar_diag_pft=npp_pft,
+        litter_pool=calc_litter_pool(litter_tc=litter_tc, leaf_f=leaf_f, Nt=None),
         dry_days=get_climatological_dry_days(),
         grouped_dry_bal=dry_bal_func(
             rain_f=rain_f if rain_f is not None else tuple([0.3] * N_pft_groups),

@@ -96,6 +96,7 @@ def calc_flam(
     dry_days,
     flammability_method,
     dryness_method,
+    fuel_build_up_method,
     fapar_factor,
     fapar_centre,
     fuel_build_up_factor,
@@ -107,6 +108,9 @@ def calc_flam(
     dry_bal,
     dry_bal_factor,
     dry_bal_centre,
+    litter_pool,
+    litter_pool_factor,
+    litter_pool_centre,
 ):
     # Description:
     #   Performs the calculation of the flammibility
@@ -156,34 +160,35 @@ def calc_flam(
     #   # The factor dependence on soil moisture
     # rain_rate
 
-    TsbyT_l = Ts / temp_l
-
-    Z_l = (
-        a * (TsbyT_l - 1.0)
-        + b * np.log10(TsbyT_l)
-        + c * (10.0 ** (d * (1.0 - TsbyT_l)) - 1.0)
-        + f * (10.0 ** (h * (TsbyT_l - 1.0)) - 1.0)
-    )
-
-    f_rhum_l = (rhum_up - rhum_l) / (rhum_up - rhum_low)
-
-    # Create boundary limits
-    # First for relative humidity
-    if rhum_l < rhum_low:
-        # Always fires for RH < 10%
-        f_rhum_l = 1.0
-    if rhum_l > rhum_up:
-        # No fires for RH > 90%
-        f_rhum_l = 0.0
-
-    # The flammability goes down linearly with soil moisture
-    f_sm_l = 1 - sm_l
-
-    # convert rain rate from kg/m2/s to mm/day
-    rain_rate = rain_l * s_in_day
-
     if flammability_method == 1:
         # Old flammability calculation.
+
+        TsbyT_l = Ts / temp_l
+
+        Z_l = (
+            a * (TsbyT_l - 1.0)
+            + b * np.log10(TsbyT_l)
+            + c * (10.0 ** (d * (1.0 - TsbyT_l)) - 1.0)
+            + f * (10.0 ** (h * (TsbyT_l - 1.0)) - 1.0)
+        )
+
+        f_rhum_l = (rhum_up - rhum_l) / (rhum_up - rhum_low)
+
+        # Create boundary limits
+        # First for relative humidity
+        if rhum_l < rhum_low:
+            # Always fires for RH < 10%
+            f_rhum_l = 1.0
+        if rhum_l > rhum_up:
+            # No fires for RH > 90%
+            f_rhum_l = 0.0
+
+        # The flammability goes down linearly with soil moisture
+        f_sm_l = 1 - sm_l
+
+        # convert rain rate from kg/m2/s to mm/day
+        rain_rate = rain_l * s_in_day
+
         flammability = max(
             min(10.0 ** Z_l * f_rhum_l * fuel_l * f_sm_l * np.exp(cr * rain_rate), 1.0),
             0.0,
@@ -198,11 +203,22 @@ def calc_flam(
         else:
             raise ValueError("Unknown 'dryness_method'.")
 
+        if fuel_build_up_method == 1:
+            fuel_factor = fuel_param(
+                fuel_build_up, fuel_build_up_factor, fuel_build_up_centre
+            )
+        elif fuel_build_up_method == 2:
+            fuel_factor = fuel_param(
+                litter_pool, litter_pool_factor, litter_pool_centre
+            )
+        else:
+            raise ValueError("Unknown 'fuel_build_up_method'.")
+
         # Convert fuel build-up index to flammability factor.
         flammability = (
             dry_factor
             * fuel_param(temp_l, temperature_factor, temperature_centre)
-            * fuel_param(fuel_build_up, fuel_build_up_factor, fuel_build_up_centre)
+            * fuel_factor
             * fuel_param(fapar, fapar_factor, fapar_centre)
         )
     else:

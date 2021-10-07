@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import random
 import string
+from enum import Enum
 from itertools import product
 from pathlib import Path
 
@@ -9,15 +10,17 @@ import numpy as np
 from loguru import logger
 from wildfires.dask_cx1.dask_rf import safe_write
 
+ArgType = Enum("ArgType", ["FLOAT", "CHOICE"])
+
 
 class BasinHoppingSpace:
     def __init__(self, spec):
         for (arg_type, *args) in spec.values():
-            assert arg_type in (float, int)
-            if arg_type == float:
+            assert arg_type in (ArgType.FLOAT, ArgType.CHOICE)
+            if arg_type == ArgType.FLOAT:
                 assert len(args) == 2
-            elif arg_type == int:
-                assert len(args) == 3
+            elif arg_type == ArgType.CHOICE:
+                assert len(args) >= 1
 
         self.spec = spec
 
@@ -30,7 +33,7 @@ class BasinHoppingSpace:
         remapped = {}
         for name, value in params.items():
             arg_type, *args = self.spec[name]
-            if arg_type == float:
+            if arg_type == ArgType.FLOAT:
                 minb, maxb = args
                 remapped[name] = (value * (maxb - minb)) + minb
             else:
@@ -41,19 +44,23 @@ class BasinHoppingSpace:
     @property
     def float_param_names(self):
         """Return the list of floating point parameters which are to be optimised."""
-        return tuple(name for name, value in self.spec.items() if value[0] == float)
+        return tuple(
+            name for name, value in self.spec.items() if value[0] == ArgType.FLOAT
+        )
 
     @property
-    def int_param_names(self):
-        """Return the list of integer parameters."""
-        return tuple(name for name, value in self.spec.items() if value[0] == int)
+    def choice_param_names(self):
+        """Return the list of choice parameters."""
+        return tuple(
+            name for name, value in self.spec.items() if value[0] == ArgType.CHOICE
+        )
 
     @property
-    def int_param_product(self):
-        """Yield all integer parameter combinations."""
-        iterables = [range(*self.spec[name][1:]) for name in self.int_param_names]
+    def choice_param_product(self):
+        """Yield all choice parameter combinations."""
+        iterables = [self.spec[name][1:] for name in self.choice_param_names]
         for ps in product(*iterables):
-            yield dict(zip(self.int_param_names, ps))
+            yield dict(zip(self.choice_param_names, ps))
 
     @property
     def float_x0_mid(self):
