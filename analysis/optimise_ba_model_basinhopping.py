@@ -150,5 +150,5 @@ if __name__ == "__main__":
     run(
         main,
         list(space.choice_param_product),
-        cx1_kwargs=dict(walltime="24:00:00", ncpus=2, mem="10GB"),
+        cx1_kwargs=dict(walltime="24:00:00", ncpus=2, mem="25GB"),
     )
