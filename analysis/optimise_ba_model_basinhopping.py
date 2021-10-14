@@ -9,6 +9,7 @@ import numpy as np
 from loguru import logger
 from scipy.optimize import basinhopping
 
+from python_inferno.ba_model import gen_to_optimise
 from python_inferno.basinhopping import (
     ArgType,
     BasinHoppingSpace,
@@ -16,7 +17,6 @@ from python_inferno.basinhopping import (
     Recorder,
 )
 from python_inferno.cx1 import run
-from python_inferno.optimisation import gen_to_optimise
 from python_inferno.space import generate_space
 
 
@@ -50,9 +50,9 @@ def main(
             **choice_params,
         }
         return to_optimise(
-            opt_kwargs,
             dryness_method=dryness_method,
             fuel_build_up_method=fuel_build_up_method,
+            **opt_kwargs,
         )
 
     def basinhopping_callback(x, f, accept):

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from collections import defaultdict
+from enum import Enum
 from functools import partial
 
 import numpy as np
@@ -11,6 +12,8 @@ from .data import get_processed_climatological_data, timestep
 from .metrics import loghist, mpd, nme, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
 from .utils import calculate_factor, monthly_average_data, unpack_wrapped
+
+Status = Enum("Status", ["SUCCESS", "FAIL"])
 
 
 def process_params(*, opt_kwargs, defaults):
@@ -133,11 +136,12 @@ def run_model(
     return model_ba
 
 
-def analyse_pred(
-    *, model_ba, fail_func, success_func, jules_time_coord, mon_avg_gfed_ba_1d
-):
+def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
+
+    fail_out = (None, Status.FAIL, None)
+
     if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
-        return fail_func()
+        return fail_out
 
     # Calculate monthly averages.
     avg_ba = monthly_average_data(model_ba, time_coord=jules_time_coord)
@@ -167,7 +171,7 @@ def analyse_pred(
 
     if ignored > 5600:
         # Ensure that not too many samples are ignored.
-        return fail_func()
+        return fail_out
 
     scores = dict(
         # 1D stats
@@ -180,13 +184,79 @@ def analyse_pred(
     )
 
     if any(np.ma.is_masked(val) for val in scores.values()):
+        return fail_out
+
+    return scores, Status.SUCCESS, avg_ba
+
+
+def raise_runtimeerror():
+    raise RuntimeError()
+
+
+def get_pred_ba(
+    *,
+    defaults=dict(
+        rain_f=0.3,
+        vpd_f=400,
+        crop_f=0.5,
+        fuel_build_up_n_samples=0,
+        litter_tc=1e-9,
+        leaf_f=1e-3,
+    ),
+    dryness_method=2,
+    fuel_build_up_method=1,
+    fail_func=raise_runtimeerror,
+    **opt_kwargs,
+):
+    (
+        data_params,
+        single_opt_kwargs,
+        expanded_opt_kwargs,
+    ) = process_params(opt_kwargs=opt_kwargs, defaults=defaults)
+
+    (
+        data_dict,
+        mon_avg_gfed_ba_1d,
+        jules_time_coord,
+    ) = get_processed_climatological_data(
+        litter_tc=data_params["litter_tc"],
+        leaf_f=data_params["leaf_f"],
+        n_samples_pft=data_params["n_samples_pft"],
+        average_samples=data_params["average_samples"],
+        rain_f=data_params["rain_f"],
+        vpd_f=data_params["vpd_f"],
+    )
+
+    # Shallow copy to allow popping of the dictionary without affecting the
+    # memoized copy.
+    data_dict = data_dict.copy()
+    # Extract variables not used further below.
+    obs_pftcrop_1d = data_dict.pop("obs_pftcrop_1d")
+
+    model_ba = run_model(
+        dryness_method=dryness_method,
+        fuel_build_up_method=fuel_build_up_method,
+        single_opt_kwargs=single_opt_kwargs,
+        expanded_opt_kwargs=expanded_opt_kwargs,
+        data_dict=data_dict,
+    )
+
+    # Modify the predicted BA using the crop fraction (i.e. assume a certain
+    # proportion of cropland never burns, even though this may be the case in
+    # given the weather conditions).
+    model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
+
+    scores, status, avg_ba = calculate_scores(
+        model_ba=model_ba,
+        jules_time_coord=jules_time_coord,
+        mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
+    )
+    if status is Status.FAIL:
         return fail_func()
 
-    # Aim to minimise the combined score.
-    # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
-    loss = scores["nme"] + scores["mpd"]
-    logger.debug(f"loss: {loss:0.6f}")
-    return success_func(loss)
+    assert status is Status.SUCCESS
+
+    return avg_ba, scores, mon_avg_gfed_ba_1d
 
 
 def gen_to_optimise(
@@ -194,62 +264,12 @@ def gen_to_optimise(
     fail_func,
     success_func,
 ):
-    def to_optimise(
-        opt_kwargs,
-        defaults=dict(
-            rain_f=0.3,
-            vpd_f=400,
-            crop_f=0.5,
-            fuel_build_up_n_samples=0,
-            litter_tc=1e-9,
-            leaf_f=1e-3,
-        ),
-        dryness_method=2,
-        fuel_build_up_method=1,
-    ):
-        (
-            data_params,
-            single_opt_kwargs,
-            expanded_opt_kwargs,
-        ) = process_params(opt_kwargs=opt_kwargs, defaults=defaults)
-
-        (
-            data_dict,
-            mon_avg_gfed_ba_1d,
-            jules_time_coord,
-        ) = get_processed_climatological_data(
-            litter_tc=data_params["litter_tc"],
-            leaf_f=data_params["leaf_f"],
-            n_samples_pft=data_params["n_samples_pft"],
-            average_samples=data_params["average_samples"],
-            rain_f=data_params["rain_f"],
-            vpd_f=data_params["vpd_f"],
-        )
-        # Shallow copy to allow popping of the dictionary without affecting the
-        # memoized copy.
-        data_dict = data_dict.copy()
-        # Extract variables not used further below.
-        obs_pftcrop_1d = data_dict.pop("obs_pftcrop_1d")
-
-        model_ba = run_model(
-            dryness_method=dryness_method,
-            fuel_build_up_method=fuel_build_up_method,
-            single_opt_kwargs=single_opt_kwargs,
-            expanded_opt_kwargs=expanded_opt_kwargs,
-            data_dict=data_dict,
-        )
-
-        # Modify the predicted BA using the crop fraction (i.e. assume a certain
-        # proportion of cropland never burns, even though this may be the case in
-        # given the weather conditions).
-        model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
-
-        return analyse_pred(
-            model_ba=model_ba,
-            fail_func=fail_func,
-            success_func=success_func,
-            jules_time_coord=jules_time_coord,
-            mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
-        )
+    def to_optimise(**kwargs):
+        scores = get_pred_ba(**kwargs)[1]
+        # Aim to minimise the combined score.
+        # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
+        loss = scores["nme"] + scores["mpd"]
+        logger.debug(f"loss: {loss:0.6f}")
+        return success_func(loss)
 
     return to_optimise

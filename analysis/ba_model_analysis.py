@@ -3,23 +3,18 @@
 import os
 import pickle
 import sys
-from functools import partial
 from itertools import product
 from pathlib import Path
 from pprint import pprint
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
-from sklearn.metrics import r2_score
 from wildfires.analysis import cube_plotting
 
-from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
-from python_inferno.metrics import loghist, mpd, nme, nmse
-from python_inferno.optimisation import process_params, run_model
-from python_inferno.utils import calculate_factor, monthly_average_data
+from python_inferno.ba_model import get_pred_ba
+from python_inferno.data import load_jules_lats_lons
 
 
 def check_params(params, key):
@@ -27,110 +22,6 @@ def check_params(params, key):
         assert all(key in p for p in params)
         return True
     return False
-
-
-def get_pred_ba(
-    *,
-    defaults=dict(
-        rain_f=0.3,
-        vpd_f=400,
-        crop_f=0.5,
-        fuel_build_up_n_samples=0,
-        litter_tc=1e-9,
-        leaf_f=1e-3,
-    ),
-    dryness_method=2,
-    fuel_build_up_method=1,
-    **opt_kwargs,
-):
-    (
-        data_params,
-        single_opt_kwargs,
-        expanded_opt_kwargs,
-    ) = process_params(opt_kwargs=opt_kwargs, defaults=defaults)
-
-    (
-        data_dict,
-        mon_avg_gfed_ba_1d,
-        jules_time_coord,
-    ) = get_processed_climatological_data(
-        litter_tc=data_params["litter_tc"],
-        leaf_f=data_params["leaf_f"],
-        n_samples_pft=data_params["n_samples_pft"],
-        average_samples=data_params["average_samples"],
-        rain_f=data_params["rain_f"],
-        vpd_f=data_params["vpd_f"],
-    )
-
-    # Shallow copy to allow popping of the dictionary without affecting the
-    # memoized copy.
-    data_dict = data_dict.copy()
-    # Extract variables not used further below.
-    obs_pftcrop_1d = data_dict.pop("obs_pftcrop_1d")
-
-    model_ba = run_model(
-        dryness_method=dryness_method,
-        fuel_build_up_method=fuel_build_up_method,
-        single_opt_kwargs=single_opt_kwargs,
-        expanded_opt_kwargs=expanded_opt_kwargs,
-        data_dict=data_dict,
-    )
-
-    # Modify the predicted BA using the crop fraction (i.e. assume a certain
-    # proportion of cropland never burns, even though this may be the case in
-    # given the weather conditions).
-    model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
-
-    def fail_func():
-        raise RuntimeError()
-
-    if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
-        return fail_func()
-
-    # Calculate monthly averages.
-    avg_ba = monthly_average_data(model_ba, time_coord=jules_time_coord)
-    assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
-
-    # Get ypred.
-    y_pred = np.ma.getdata(avg_ba)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-
-    y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-
-    # Estimate the adjustment factor by minimising the NME.
-    adj_factor = calculate_factor(y_true=y_true, y_pred=y_pred)
-
-    y_pred *= adj_factor
-
-    assert y_pred.shape == y_true.shape
-
-    pad_func = partial(
-        np.pad,
-        pad_width=((0, 12 - mon_avg_gfed_ba_1d.shape[0]), (0, 0)),
-        constant_values=0.0,
-    )
-    obs_pad = pad_func(mon_avg_gfed_ba_1d)
-    # Apply adjustment factor similarly to y_pred.
-    pred_pad = adj_factor * pad_func(avg_ba)
-    mpd_val, ignored = mpd(obs=obs_pad, pred=pred_pad, return_ignored=True)
-
-    if ignored > 5600:
-        # Ensure that not too many samples are ignored.
-        return fail_func()
-
-    scores = dict(
-        # 1D stats
-        r2=r2_score(y_true=y_true, y_pred=y_pred),
-        nme=nme(obs=y_true, pred=y_pred),
-        nmse=nmse(obs=y_true, pred=y_pred),
-        loghist=loghist(obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)),
-        # Temporal stats.
-        mpd=mpd_val,
-    )
-
-    if any(np.ma.is_masked(val) for val in scores.values()):
-        return fail_func()
-
-    return avg_ba, scores, mon_avg_gfed_ba_1d
 
 
 if __name__ == "__main__":

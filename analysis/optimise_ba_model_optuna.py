@@ -4,7 +4,7 @@ import gc
 
 import optuna
 
-from python_inferno.optimisation import gen_to_optimise
+from python_inferno.ba_model import gen_to_optimise
 from python_inferno.optuna import OptunaSpace
 from python_inferno.space import generate_space
 
