@@ -6,6 +6,7 @@ from warnings import filterwarnings
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from jules_output_analysis.data import regrid_to_n96e
 from wildfires.data import GFEDv4
 from wildfires.utils import get_land_mask, match_shape
 
@@ -21,9 +22,10 @@ if __name__ == "__main__":
     gfed = gfed.get_climatology_dataset(gfed.min_time, gfed.max_time)
     print(gfed)
 
-    data = gfed.cube.data
-    data.mask |= match_shape(get_land_mask(), data.shape)
-    print("shape:", data.shape)
+    gfed.cube.data.mask |= match_shape(get_land_mask(), gfed.cube.shape)
+    print("shape:", gfed.cube.shape)
+
+    data = regrid_to_n96e(gfed.cube).data
 
     valid = data.data[~data.mask]
 
