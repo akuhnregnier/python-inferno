@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from functools import reduce
+from operator import mul
 
 import cf_units
 import iris
@@ -12,6 +14,7 @@ from python_inferno.utils import (
     expand_pft_params,
     exponential_average,
     get_pft_group_index,
+    monthly_average_data,
     moving_sum,
     temporal_nearest_neighbour_interp,
     temporal_processing,
@@ -234,3 +237,119 @@ def test_get_pft_group_index():
     assert get_pft_group_index(10) == 1
     assert get_pft_group_index(11) == 2
     assert get_pft_group_index(12) == 2
+
+
+def test_monthly_average_data():
+    data = np.random.default_rng(0).random((2, 2))
+
+    # Define the time coordinate.
+    units = cf_units.Unit("days since 1970-01-01", calendar="gregorian")
+    num_dates = units.date2num(
+        [
+            datetime(1970, 1, 1) + relativedelta(months=months)
+            for months in range(data.shape[0] + 1)
+        ]
+    )
+    time_coord = iris.coords.DimCoord(
+        (num_dates[1:] + num_dates[:-1]) / 2.0,
+        bounds=np.hstack((num_dates[:-1].reshape(-1, 1), num_dates[1:].reshape(-1, 1))),
+        standard_name="time",
+        var_name="time",
+        units=units,
+    )
+
+    mon_avg = monthly_average_data(data, time_coord=time_coord, conservative=False)
+    mon_avg_con = monthly_average_data(data, time_coord=time_coord, conservative=True)
+
+    assert np.allclose(mon_avg, mon_avg_con)
+
+
+def test_monthly_average_data_days():
+    shape = (4, 2)
+    data = np.arange(reduce(mul, shape)).reshape(shape)
+
+    # Define the time coordinate.
+    units = cf_units.Unit("days since 1970-01-01", calendar="gregorian")
+    num_dates = units.date2num(
+        [datetime(1970, 1, 1) + relativedelta(days=days) for days in range(0, 49, 12)]
+    )
+    time_coord = iris.coords.DimCoord(
+        (num_dates[1:] + num_dates[:-1]) / 2.0,
+        bounds=np.hstack((num_dates[:-1].reshape(-1, 1), num_dates[1:].reshape(-1, 1))),
+        standard_name="time",
+        var_name="time",
+        units=units,
+    )
+
+    mon_avg = monthly_average_data(data, time_coord=time_coord, conservative=False)
+    mon_avg_con = monthly_average_data(data, time_coord=time_coord, conservative=True)
+
+    assert np.allclose(mon_avg, np.vstack((data[1][np.newaxis], data[-1][np.newaxis])))
+
+    # Width of sample bounds in seconds.
+    bound_width = (
+        time_coord.cell(0).bound[1] - time_coord.cell(0).bound[0]
+    ).total_seconds()
+
+    # The 3rd sample overlaps both months, so determine the contributions to each
+    # month.
+    contribs = np.zeros(2)
+    contribs[0] = (datetime(1970, 2, 1) - time_coord.cell(2).bound[0]).total_seconds()
+    contribs[1] = (time_coord.cell(2).bound[1] - datetime(1970, 2, 1)).total_seconds()
+    assert np.isclose(np.sum(contribs), bound_width)
+
+    # Calculate the expected conservative average.
+    weights = np.zeros((4, 2))
+    comp_avg_con = np.zeros((2, 2))
+
+    weights[0:2, 0] = bound_width
+    weights[2, 0] = contribs[0]
+    weights[2, 1] = contribs[1]
+    weights[3, 1] = bound_width
+
+    for i in range(2):
+        comp_avg_con[i] = np.sum(weights[:, i][:, np.newaxis] * data, axis=0) / np.sum(
+            weights[:, i]
+        )
+
+    assert np.allclose(mon_avg_con, comp_avg_con)
+
+
+def test_monthly_average_data_rand():
+    data = np.ma.MaskedArray(np.random.default_rng(0).random((100, 10000)), mask=False)
+    # Get mask array.
+    data.mask = np.ma.getmaskarray(data.mask)
+    data.mask[:-1, 0] = True
+    data.mask[:-2, 1] = True
+    data.mask[1:, 2] = True
+    data.mask[2:, 3] = True
+
+    # Define the time coordinate.
+    units = cf_units.Unit("days since 1970-01-01", calendar="gregorian")
+    s_per_day = 24 * 60 * 60
+    num_dates = units.date2num(
+        [
+            datetime(1970, 1, 1) + relativedelta(seconds=int(seconds))
+            for seconds in np.linspace(
+                0, 80 * s_per_day, data.shape[0] + 1, dtype=np.int64
+            )
+        ]
+    )
+    time_coord = iris.coords.DimCoord(
+        (num_dates[1:] + num_dates[:-1]) / 2.0,
+        bounds=np.hstack((num_dates[:-1].reshape(-1, 1), num_dates[1:].reshape(-1, 1))),
+        standard_name="time",
+        var_name="time",
+        units=units,
+    )
+
+    mon_avg_con = monthly_average_data(data, time_coord=time_coord, conservative=True)
+
+    assert np.all(mon_avg_con <= np.max(data))
+    assert np.all(mon_avg_con >= np.min(data))
+
+    assert np.isclose(mon_avg_con[-1, 0], data[-1, 0])
+    assert np.isclose(mon_avg_con[-1, 1], np.mean(data[-2:, 1]))
+
+    assert np.isclose(mon_avg_con[0, 2], data[0, 2])
+    assert np.isclose(mon_avg_con[0, 3], np.mean(data[:2, 3]))

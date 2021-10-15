@@ -144,7 +144,9 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
         return fail_out
 
     # Calculate monthly averages.
-    avg_ba = monthly_average_data(model_ba, time_coord=jules_time_coord)
+    avg_ba = monthly_average_data(
+        model_ba, time_coord=jules_time_coord, conservative=True
+    )
     assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
 
     # Get ypred.
