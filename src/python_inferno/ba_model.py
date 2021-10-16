@@ -273,7 +273,7 @@ def gen_to_optimise(
     success_func,
 ):
     def to_optimise(**kwargs):
-        scores = get_pred_ba(**kwargs)[1]
+        scores = get_pred_ba(**kwargs, fail_func=fail_func)[1]
         # Aim to minimise the combined score.
         # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
         loss = scores["arcsinh_nme"] + scores["mpd"]
