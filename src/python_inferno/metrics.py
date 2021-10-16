@@ -52,7 +52,7 @@ def mpd(*, obs, pred, return_ignored=False):
         or len(pred.shape) != 2
         or pred.shape[0] != 12
     ):
-        raise ValueError(f"Shape should be (12, N), got {x.shape}.")
+        raise ValueError(f"Shape should be (12, N), got {obs.shape} and {pred.shape}.")
 
     # Ignore those locations with all 0s in either `obs` or `pred`.
     def close_func(a, b):
