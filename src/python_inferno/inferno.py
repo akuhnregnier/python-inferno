@@ -111,6 +111,7 @@ def calc_flam(
     litter_pool,
     litter_pool_factor,
     litter_pool_centre,
+    include_temperature,
 ):
     # Description:
     #   Performs the calculation of the flammibility
@@ -214,10 +215,19 @@ def calc_flam(
         else:
             raise ValueError("Unknown 'fuel_build_up_method'.")
 
+        if include_temperature == 1:
+            temperature_factor = fuel_param(
+                temp_l, temperature_factor, temperature_centre
+            )
+        elif include_temperature == 0:
+            temperature_factor = 1.0
+        else:
+            raise ValueError("Unknown 'include_temperature'.")
+
         # Convert fuel build-up index to flammability factor.
         flammability = (
             dry_factor
-            * fuel_param(temp_l, temperature_factor, temperature_centre)
+            * temperature_factor
             * fuel_factor
             * fuel_param(fapar, fapar_factor, fapar_centre)
         )

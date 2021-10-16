@@ -52,6 +52,7 @@ def multi_timestep_inferno(
     dry_day_centre,
     dry_bal_factor,
     dry_bal_centre,
+    include_temperature,
     timestep,
 ):
     param_vars = dict(
@@ -105,6 +106,7 @@ def multi_timestep_inferno(
         ),
         litter_pool=litter_pool,
         fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
         **transformed_param_vars,
     )
     return ba
@@ -147,6 +149,7 @@ def _multi_timestep_inferno(
     dry_bal_centre,
     cum_rain,
     litter_pool,
+    include_temperature,
 ):
     # Ensure consistency of the time dimension.
     if not (
@@ -286,6 +289,7 @@ def _multi_timestep_inferno(
                     litter_pool=litter_pool[ti, i, l],
                     litter_pool_factor=litter_pool_factor[pft_group_i],
                     litter_pool_centre=litter_pool_centre[pft_group_i],
+                    include_temperature=include_temperature,
                 )
 
                 burnt_area_ft[ti, i, l] = calc_burnt_area(

@@ -79,6 +79,7 @@ def get_parsers():
         type=int,
         help="number of cores to use in parallel (default: single threaded)",
     )
+    parser.add_argument("--info", action="store_true", help="print out info")
     mode_group = parser.add_mutually_exclusive_group(required=False)
     mode_group.add_argument(
         "--threads", action="store_true", help="use threads (default)"
@@ -272,6 +273,7 @@ def run(
     return_local_args=False,
     batch_size=None,
     cmd_args=None,
+    info=False,
     **kwargs,
 ):
     """Run a function depending on given (including command line) arguments.
@@ -308,6 +310,7 @@ def run(
         cmd_args (object): Namespace-like object which may be given to circumvent
             using `sys.argv` in combination with the standard parser (i.e. if
             `cmd_args` is given, `get_parsers` is not used).
+        info (bool): If True, print out information about the run to stdout and return.
         **kwargs: Function keyword arguments. These will be given identically to each
             function call, as opposed to `args`.
 
@@ -321,6 +324,10 @@ def run(
     """
     if cmd_args is None:
         cmd_args = get_parsers()["parser"].parse_args()
+    info = cmd_args.info
+    if info:
+        print(f"Number of args: {len(list(zip(*args)))}")
+        return
     verbose = cmd_args.verbose
     single = cmd_args.single
     nargs = cmd_args.nargs

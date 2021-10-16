@@ -22,6 +22,7 @@ def get_cmd_args(dest="local", batch_size=-1, n_cores=1):
             uncached=False,
             processes=False,
             threads=False,
+            info=False,
             n_cores=n_cores,
         ),
     )

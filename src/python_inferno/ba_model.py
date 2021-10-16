@@ -93,10 +93,13 @@ def run_model(
     *,
     dryness_method,
     fuel_build_up_method,
+    include_temperature,
     single_opt_kwargs,
     expanded_opt_kwargs,
     data_dict,
     missing_param_defaults=dict(
+        temperature_factor=0.0,
+        temperature_centre=0.0,
         dry_bal_factor=1,
         dry_bal_centre=0,
         dry_day_factor=0.0,
@@ -114,6 +117,7 @@ def run_model(
         flammability_method=2,
         dryness_method=dryness_method,
         fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
         # These are not used for ignition mode 1, nor do they contain a temporal
         # coordinate.
         pop_den=np.zeros((land_pts,)) - 1,
@@ -137,7 +141,6 @@ def run_model(
 
 
 def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
-
     fail_out = (None, Status.FAIL, None)
 
     if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
@@ -149,16 +152,8 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
     )
     assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
 
-    # Get ypred.
     y_pred = np.ma.getdata(avg_ba)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-
     y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-
-    # Estimate the adjustment factor by minimising the NME.
-    adj_factor = calculate_factor(y_true=y_true, y_pred=y_pred)
-
-    y_pred *= adj_factor
-
     assert y_pred.shape == y_true.shape
 
     pad_func = partial(
@@ -166,19 +161,28 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
         pad_width=((0, 12 - mon_avg_gfed_ba_1d.shape[0]), (0, 0)),
         constant_values=0.0,
     )
-    obs_pad = pad_func(mon_avg_gfed_ba_1d)
-    # Apply adjustment factor similarly to y_pred.
-    pred_pad = adj_factor * pad_func(avg_ba)
-    mpd_val, ignored = mpd(obs=obs_pad, pred=pred_pad, return_ignored=True)
+    mpd_val, ignored = mpd(
+        obs=pad_func(mon_avg_gfed_ba_1d), pred=pad_func(avg_ba), return_ignored=True
+    )
 
     if ignored > 5600:
         # Ensure that not too many samples are ignored.
         return fail_out
 
+    # Estimate the adjustment factor by minimising the NME.
+    adj_factor = calculate_factor(y_true=y_true, y_pred=y_pred)
+    y_pred *= adj_factor
+
+    arcsinh_factor = 1e6
+    arcsinh_y_true = np.arcsinh(arcsinh_factor * y_true)
+    arcsinh_y_pred = np.arcsinh(arcsinh_factor * y_pred)
+    arcsinh_adj_factor = calculate_factor(y_true=arcsinh_y_true, y_pred=arcsinh_y_pred)
+
     scores = dict(
         # 1D stats
         r2=r2_score(y_true=y_true, y_pred=y_pred),
         nme=nme(obs=y_true, pred=y_pred),
+        arcsinh_nme=nme(obs=arcsinh_y_true, pred=arcsinh_adj_factor * arcsinh_y_pred),
         nmse=nmse(obs=y_true, pred=y_pred),
         loghist=loghist(obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)),
         # Temporal stats.
@@ -207,6 +211,7 @@ def get_pred_ba(
     ),
     dryness_method=2,
     fuel_build_up_method=1,
+    include_temperature=1,
     fail_func=raise_runtimeerror,
     **opt_kwargs,
 ):
@@ -238,6 +243,7 @@ def get_pred_ba(
     model_ba = run_model(
         dryness_method=dryness_method,
         fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
         single_opt_kwargs=single_opt_kwargs,
         expanded_opt_kwargs=expanded_opt_kwargs,
         data_dict=data_dict,
@@ -270,7 +276,7 @@ def gen_to_optimise(
         scores = get_pred_ba(**kwargs)[1]
         # Aim to minimise the combined score.
         # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
-        loss = scores["nme"] + scores["mpd"]
+        loss = scores["arcsinh_nme"] + scores["mpd"]
         logger.debug(f"loss: {loss:0.6f}")
         return success_func(loss)
 

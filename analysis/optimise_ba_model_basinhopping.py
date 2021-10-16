@@ -39,6 +39,7 @@ def main(
     space,
     dryness_method,
     fuel_build_up_method,
+    include_temperature,
     *args,
     **kwargs,
 ):
@@ -52,6 +53,7 @@ def main(
         return to_optimise(
             dryness_method=dryness_method,
             fuel_build_up_method=fuel_build_up_method,
+            include_temperature=include_temperature,
             **opt_kwargs,
         )
 
@@ -59,6 +61,10 @@ def main(
         values = space.inv_map_float_to_0_1(
             {**dict(zip(space.float_param_names, x)), **choice_params}
         )
+        values["dryness_method"] = dryness_method
+        values["fuel_build_up_method"] = fuel_build_up_method
+        values["include_temperature"] = include_temperature
+
         logger.info(f"Minimum found | loss: {f:0.6f}")
 
         for name, val in values.items():
@@ -97,17 +103,16 @@ if __name__ == "__main__":
 
     dryness_methods = (1, 2)
     fuel_build_up_methods = (1, 2)
+    include_temperatures = (0, 1)  # 0 - False, 1 - True
 
     args = []
 
-    for dryness_method, fuel_build_up_method in product(
-        dryness_methods, fuel_build_up_methods
+    for dryness_method, fuel_build_up_method, include_temperature in product(
+        dryness_methods, fuel_build_up_methods, include_temperatures
     ):
         space_template = dict(
             fapar_factor=(1, [(-50, -1)], ArgType.FLOAT),
             fapar_centre=(1, [(-0.1, 1.1)], ArgType.FLOAT),
-            temperature_factor=(1, [(0.07, 0.2)], ArgType.FLOAT),
-            temperature_centre=(1, [(260, 295)], ArgType.FLOAT),
             # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
             average_samples=(1, [(*range(40, 161, 60),)], ArgType.CHOICE),
             # `crop_f` suppresses BA in cropland areas.
@@ -123,8 +128,8 @@ if __name__ == "__main__":
         elif dryness_method == 2:
             space_template.update(
                 dict(
-                    # rain_f=(1, [(0.1, 2.0)], ArgType.FLOAT),
-                    # vpd_f=(1, [(5, 4000)], ArgType.FLOAT),
+                    rain_f=(1, [np.geomspace(0.01, 5, 5)], ArgType.CHOICE),
+                    vpd_f=(1, [np.geomspace(100, 1000, 5)], ArgType.CHOICE),
                     dry_bal_factor=(1, [(-100, -1)], ArgType.FLOAT),
                     dry_bal_centre=(1, [(-3, 3)], ArgType.FLOAT),
                 )
@@ -156,10 +161,30 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Unknown 'fuel_build_up_method' {fuel_build_up_method}.")
 
+        if include_temperature == 1:
+            space_template.update(
+                dict(
+                    temperature_factor=(1, [(0.07, 0.2)], ArgType.FLOAT),
+                    temperature_centre=(1, [(260, 295)], ArgType.FLOAT),
+                )
+            )
+        elif include_temperature == 0:
+            pass
+        else:
+            raise ValueError(f"Unknown 'include_temperature' {include_temperature}.")
+
         space = BasinHoppingSpace(generate_space(space_template))
 
         for choice_params in space.choice_param_product:
-            args.append((choice_params, space, dryness_method, fuel_build_up_method))
+            args.append(
+                (
+                    choice_params,
+                    space,
+                    dryness_method,
+                    fuel_build_up_method,
+                    include_temperature,
+                )
+            )
 
     run(
         main,

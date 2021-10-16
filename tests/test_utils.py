@@ -11,6 +11,7 @@ from dateutil.relativedelta import relativedelta
 from numpy.testing import assert_allclose
 
 from python_inferno.utils import (
+    calculate_factor,
     expand_pft_params,
     exponential_average,
     get_pft_group_index,
@@ -353,3 +354,10 @@ def test_monthly_average_data_rand():
 
     assert np.isclose(mon_avg_con[0, 2], data[0, 2])
     assert np.isclose(mon_avg_con[0, 3], np.mean(data[:2, 3]))
+
+
+def test_calculate_factor():
+    y_true = np.random.default_rng(0).random(100)
+    y_pred = y_true / 2.0
+
+    assert np.isclose(calculate_factor(y_true=y_true, y_pred=y_pred), 2.0)
