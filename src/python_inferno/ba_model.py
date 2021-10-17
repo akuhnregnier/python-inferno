@@ -16,6 +16,10 @@ from .utils import calculate_factor, monthly_average_data, unpack_wrapped
 Status = Enum("Status", ["SUCCESS", "FAIL"])
 
 
+class BAModelException(RuntimeError):
+    """Raised when inadequate BA model parameters are used."""
+
+
 def process_params(*, opt_kwargs, defaults):
     expanded_opt_tmp = defaultdict(list)
     for name, val in opt_kwargs.items():
@@ -195,10 +199,6 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
     return scores, Status.SUCCESS, avg_ba
 
 
-def raise_runtimeerror():
-    raise RuntimeError()
-
-
 def get_pred_ba(
     *,
     defaults=dict(
@@ -212,7 +212,6 @@ def get_pred_ba(
     dryness_method=2,
     fuel_build_up_method=1,
     include_temperature=1,
-    fail_func=raise_runtimeerror,
     **opt_kwargs,
 ):
     (
@@ -260,7 +259,7 @@ def get_pred_ba(
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
     )
     if status is Status.FAIL:
-        return fail_func()
+        raise BAModelException()
 
     assert status is Status.SUCCESS
 
@@ -273,7 +272,11 @@ def gen_to_optimise(
     success_func,
 ):
     def to_optimise(**kwargs):
-        scores = get_pred_ba(**kwargs, fail_func=fail_func)[1]
+        try:
+            scores = get_pred_ba(**kwargs)[1]
+        except BAModelException:
+            return fail_func()
+
         # Aim to minimise the combined score.
         # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
         loss = scores["arcsinh_nme"] + scores["mpd"]
