@@ -143,6 +143,8 @@ if __name__ == "__main__":
             plt.xlabel(col)
             plt.ylabel("loss")
             plt.title(exp_name)
+            if col in ("rain_f", "vpd_f", "litter_tc", "leaf_f"):
+                plt.xscale("log")
             plt.savefig(hist_save_dir / f"{col}.png")
             plt.close()
 
