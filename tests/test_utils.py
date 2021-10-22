@@ -12,9 +12,11 @@ from numpy.testing import assert_allclose
 
 from python_inferno.utils import (
     calculate_factor,
+    dict_match,
     expand_pft_params,
     exponential_average,
     get_pft_group_index,
+    memoize,
     monthly_average_data,
     moving_sum,
     temporal_nearest_neighbour_interp,
@@ -361,3 +363,46 @@ def test_calculate_factor():
     y_pred = y_true / 2.0
 
     assert np.isclose(calculate_factor(y_true=y_true, y_pred=y_pred), 2.0)
+
+
+def test_dict_match():
+    assert dict_match({"a": 1}, {"a": 1})
+    assert dict_match({"a": 1, "b": 2.0}, {"a": 1, "b": 2.0})
+    assert dict_match({"a": 1, "b": 2.123}, {"a": 1, "b": 2.123})
+    assert not dict_match({"a": 1 - 1e-4, "b": 2.123}, {"a": 1, "b": 2.123})
+    assert not dict_match({"b": 2.123}, {"a": 1, "b": 2.123})
+
+
+def test_memoize():
+    def fn_side_effects():
+        if not hasattr(fn_side_effects, "counter"):
+            fn_side_effects.counter = 0
+        fn_side_effects.counter += 1
+
+        return fn_side_effects.counter
+
+    assert (fn_side_effects(), fn_side_effects()) == (1, 2)
+
+    @memoize
+    def memo_fn_side_effects():
+        if not hasattr(memo_fn_side_effects, "counter"):
+            memo_fn_side_effects.counter = 0
+        memo_fn_side_effects.counter += 1
+
+        return memo_fn_side_effects.counter
+
+    assert (memo_fn_side_effects(), memo_fn_side_effects()) == (1, 1)
+
+
+def test_inactive_memoize(monkeypatch):
+    @memoize
+    def memo_fn_side_effects():
+        if not hasattr(memo_fn_side_effects, "counter"):
+            memo_fn_side_effects.counter = 0
+        memo_fn_side_effects.counter += 1
+
+        return memo_fn_side_effects.counter
+
+    monkeypatch.setattr(memoize, "active", False)
+
+    assert (memo_fn_side_effects(), memo_fn_side_effects()) == (1, 2)

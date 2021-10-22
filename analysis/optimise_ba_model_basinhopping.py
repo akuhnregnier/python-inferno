@@ -16,8 +16,9 @@ from python_inferno.basinhopping import (
     BoundedSteps,
     Recorder,
 )
-from python_inferno.cx1 import run
+from python_inferno.cx1 import get_parsers, run
 from python_inferno.space import generate_space
+from python_inferno.utils import dict_match, memoize
 
 
 def fail_func(*args, **kwargs):
@@ -41,10 +42,9 @@ def main(
     fuel_build_up_method,
     include_temperature,
     *args,
+    pre_calculate=False,
     **kwargs,
 ):
-    recorder = Recorder(record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record")
-
     def to_optimise_with_choice(x):
         opt_kwargs = {
             **space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x))),
@@ -56,6 +56,12 @@ def main(
             include_temperature=include_temperature,
             **opt_kwargs,
         )
+
+    if pre_calculate:
+        # Only call the function once to pre-calculate cached results.
+        return to_optimise_with_choice(space.float_x0_mid)
+
+    recorder = Recorder(record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record")
 
     def basinhopping_callback(x, f, accept):
         values = space.inv_map_float_to_0_1(
@@ -95,6 +101,14 @@ def main(
         space,
         choice_params,
     )
+
+
+def mod_get_parsers():
+    parser_dict = get_parsers()
+    parser_dict["parser"].add_argument(
+        "--pre-calculate", action="store_true", help="pre-calculate cached results"
+    )
+    return parser_dict
 
 
 if __name__ == "__main__":
@@ -186,8 +200,24 @@ if __name__ == "__main__":
                 )
             )
 
+    # CHOICE parameters cause re-calculation of cached results when their value
+    # changes.
+    choice_param_examples = []
+    for arg in args:
+        if not any(dict_match(arg[0], p[0]) for p in choice_param_examples):
+            choice_param_examples.append(arg)
+
+    pre_calculate = mod_get_parsers()["parser"].parse_args().pre_calculate
+
+    if pre_calculate:
+        memoize.active = False
+
     run(
         main,
-        *zip(*args),
-        cx1_kwargs=dict(walltime="24:00:00", ncpus=2, mem="25GB"),
+        *zip(*(choice_param_examples if pre_calculate else args)),
+        pre_calculate=pre_calculate,
+        cx1_kwargs=dict(
+            walltime="24:00:00", ncpus=1, mem=("25GB" if pre_calculate else "2GB")
+        ),
+        get_parsers=mod_get_parsers,
     )

@@ -605,8 +605,15 @@ def temporal_processing(
 def memoize(func):
     cache = dict()
 
+    if not hasattr(memoize, "active"):
+        memoize.active = True
+
     @wraps(func)
     def wrapped(*args, **kwargs):
+        if not memoize.active:
+            # If memoization is disabled, simply call the function.
+            return func(*args, **kwargs)
+
         hashed = joblib.hashing.hash(
             (
                 joblib.hashing.hash(args),
@@ -646,3 +653,15 @@ def key_cache(f):
         return out
 
     return cached
+
+
+def dict_match(a, b, rtol=1e-5, atol=1e-8):
+    """Determine if two dictionaries are identical, up to floating point precision."""
+    if a.keys() != b.keys():
+        return False
+
+    for key in a:
+        if not np.isclose(a[key], b[key], rtol=rtol, atol=atol):
+            return False
+
+    return True
