@@ -8,6 +8,7 @@ from itertools import product
 from pathlib import Path
 from pprint import pprint
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -31,7 +32,32 @@ def check_params(params, key, value=NoVal.NoVal):
     return False
 
 
+def lin_cube_plotting(*, data, exp_name):
+    cube_plotting(
+        data,
+        title=exp_name,
+        nbins=9,
+        vmin_vmax_percentiles=(5, 95),
+        fig=plt.figure(figsize=(12, 5)),
+        colorbar_kwargs=dict(format="%.1e"),
+    )
+
+
+def log_cube_plotting(*, data, exp_name, raw_data):
+    cube_plotting(
+        data,
+        title=exp_name,
+        boundaries=np.geomspace(*np.quantile(raw_data[raw_data > 0], [0.05, 0.95]), 8),
+        fig=plt.figure(figsize=(12, 5)),
+        colorbar_kwargs=dict(format="%.1e"),
+    )
+
+
 if __name__ == "__main__":
+    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    save_dir = Path("~/tmp/ba-model-analysis/").expanduser()
+    save_dir.mkdir(exist_ok=True, parents=False)
+
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
@@ -69,7 +95,7 @@ if __name__ == "__main__":
             raise ValueError("include_temperature")
 
         for ps, loss in zip(params, losses):
-            if loss > (np.min(losses) + 0.1 * np.ptp(losses)):
+            if loss > 0.95:
                 # Skip poor samples.
                 continue
 
@@ -80,16 +106,10 @@ if __name__ == "__main__":
     df["loss"] = global_losses
     print(df.head())
 
-    for col in [col for col in df.columns if col != "loss"]:
-        plt.figure()
-        plt.plot(df[col], df["loss"], linestyle="", marker="o", alpha=0.6)
-        plt.xlabel(col)
-        plt.ylabel("loss")
-
     df["dryness_method"] = df["dryness_method"].astype("int")
     df["fuel_build_up_method"] = df["fuel_build_up_method"].astype("int")
 
-    hist_bins = 30
+    hist_bins = 50
 
     for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
         sel = (df["dryness_method"] == dryness_method) & (
@@ -98,15 +118,33 @@ if __name__ == "__main__":
         if not np.any(sel):
             continue
 
-        df_sel = df[sel]
-        min_index = df_sel["loss"].argmin()
-        min_loss = df_sel.iloc[min_index]["loss"]
-
         dryness_descr = {1: "Dry Day", 2: "VPD & Precip"}
         fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
 
         exp_name = f"Dry:{dryness_descr[dryness_method]}, Fuel:{fuel_descr[fuel_build_up_method]}"
         print(exp_name)
+
+        dryness_keys = {1: "Dry_Day", 2: "VPD_Precip"}
+        fuel_keys = {1: "Antec_NPP", 2: "Leaf_Litter_Pool"}
+
+        exp_key = f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"
+        print(exp_key)
+
+        hist_save_dir = save_dir / exp_key
+        hist_save_dir.mkdir(exist_ok=True, parents=False)
+
+        df_sel = df[sel]
+        min_index = df_sel["loss"].argmin()
+        min_loss = df_sel.iloc[min_index]["loss"]
+
+        for col in [col for col in df_sel.columns if col != "loss"]:
+            plt.figure()
+            plt.plot(df_sel[col], df_sel["loss"], linestyle="", marker="o", alpha=0.6)
+            plt.xlabel(col)
+            plt.ylabel("loss")
+            plt.title(exp_name)
+            plt.savefig(hist_save_dir / f"{col}.png")
+            plt.close()
 
         params = {
             key: val
@@ -116,7 +154,8 @@ if __name__ == "__main__":
         pprint(params)
 
         logger.info("Predicting BA")
-        model_ba, scores, mon_avg_gfed_ba_1d = get_pred_ba(**params)
+        model_ba, scores, mon_avg_gfed_ba_1d, adj_factor = get_pred_ba(**params)
+        model_ba *= adj_factor
         model_ba_1d = get_1d_data_cube(model_ba, lats=jules_lats, lons=jules_lons)
         logger.info("Getting 2D cube")
         model_ba_2d = cube_1d_to_2d(model_ba_1d)
@@ -128,15 +167,16 @@ if __name__ == "__main__":
         plt.hist(raw_data, bins=hist_bins)
         plt.yscale("log")
         plt.title(exp_name)
+        plt.savefig(save_dir / f"hist_{exp_key}.png")
+        plt.close()
 
-        cube_plotting(
-            model_ba_2d.data,
-            title=exp_name,
-            boundaries=np.append(
-                0, np.geomspace(np.unique(raw_data)[1], np.max(model_ba), 6)
-            ),
-            fig=plt.figure(figsize=(12, 5)),
-        )
+        log_cube_plotting(data=model_ba_2d.data, exp_name=exp_name, raw_data=raw_data)
+        plt.savefig(save_dir / f"BA_map_{exp_key}.png")
+        plt.close()
+
+        lin_cube_plotting(data=model_ba_2d.data, exp_name=exp_name)
+        plt.savefig(save_dir / f"BA_map_lin_{exp_key}.png")
+        plt.close()
 
     raw_data = np.ma.getdata(mon_avg_gfed_ba_1d)[
         ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
@@ -149,15 +189,23 @@ if __name__ == "__main__":
     )
     plt.yscale("log")
     plt.title("GFED4")
+    plt.savefig(save_dir / "hist_GFED4.png")
 
-    cube_plotting(
-        cube_1d_to_2d(
+    log_cube_plotting(
+        data=cube_1d_to_2d(
             get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
         ).data,
-        title="GFED4",
-        boundaries=np.append(
-            0, np.geomspace(np.unique(raw_data)[1], np.max(mon_avg_gfed_ba_1d), 6)
-        ),
-        fig=plt.figure(figsize=(12, 5)),
+        exp_name="GFED4",
+        raw_data=raw_data,
     )
-    plt.show()
+    plt.savefig(save_dir / "BA_map_GFED4.png")
+    plt.close()
+
+    lin_cube_plotting(
+        data=cube_1d_to_2d(
+            get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
+        ).data,
+        exp_name="GFED4",
+    )
+    plt.savefig(save_dir / "BA_map_lin_GFED4.png")
+    plt.close()

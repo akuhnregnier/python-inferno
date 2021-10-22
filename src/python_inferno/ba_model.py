@@ -145,7 +145,7 @@ def run_model(
 
 
 def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
-    fail_out = (None, Status.FAIL, None)
+    fail_out = (None, Status.FAIL, None, None)
 
     if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
         return fail_out
@@ -196,7 +196,7 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
     if any(np.ma.is_masked(val) for val in scores.values()):
         return fail_out
 
-    return scores, Status.SUCCESS, avg_ba
+    return scores, Status.SUCCESS, avg_ba, adj_factor
 
 
 def get_pred_ba(
@@ -253,7 +253,7 @@ def get_pred_ba(
     # given the weather conditions).
     model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
 
-    scores, status, avg_ba = calculate_scores(
+    scores, status, avg_ba, adj_factor = calculate_scores(
         model_ba=model_ba,
         jules_time_coord=jules_time_coord,
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
@@ -263,7 +263,7 @@ def get_pred_ba(
 
     assert status is Status.SUCCESS
 
-    return avg_ba, scores, mon_avg_gfed_ba_1d
+    return avg_ba, scores, mon_avg_gfed_ba_1d, adj_factor
 
 
 def gen_to_optimise(
