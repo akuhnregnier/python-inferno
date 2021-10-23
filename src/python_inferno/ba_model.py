@@ -196,7 +196,13 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
     if any(np.ma.is_masked(val) for val in scores.values()):
         return fail_out
 
-    return scores, Status.SUCCESS, avg_ba, adj_factor
+    calc_factors = dict(
+        adj_factor=adj_factor,
+        arcsinh_factor=arcsinh_factor,
+        arcsinh_adj_factor=arcsinh_adj_factor,
+    )
+
+    return scores, Status.SUCCESS, avg_ba, calc_factors
 
 
 def get_pred_ba(
@@ -253,7 +259,7 @@ def get_pred_ba(
     # given the weather conditions).
     model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
 
-    scores, status, avg_ba, adj_factor = calculate_scores(
+    scores, status, avg_ba, calc_factors = calculate_scores(
         model_ba=model_ba,
         jules_time_coord=jules_time_coord,
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
@@ -263,7 +269,7 @@ def get_pred_ba(
 
     assert status is Status.SUCCESS
 
-    return avg_ba, scores, mon_avg_gfed_ba_1d, adj_factor
+    return avg_ba, scores, mon_avg_gfed_ba_1d, calc_factors
 
 
 def gen_to_optimise(

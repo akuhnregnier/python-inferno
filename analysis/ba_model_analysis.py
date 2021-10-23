@@ -159,8 +159,9 @@ if __name__ == "__main__":
         pprint(params)
 
         logger.info("Predicting BA")
-        model_ba, scores, mon_avg_gfed_ba_1d, adj_factor = get_pred_ba(**params)
-        model_ba *= adj_factor
+        model_ba, scores, mon_avg_gfed_ba_1d, calc_factors = get_pred_ba(**params)
+        model_ba *= calc_factors["adj_factor"]
+
         model_ba_1d = get_1d_data_cube(model_ba, lats=jules_lats, lons=jules_lons)
         logger.info("Getting 2D cube")
         model_ba_2d = cube_1d_to_2d(model_ba_1d)
@@ -183,6 +184,14 @@ if __name__ == "__main__":
         plt.savefig(save_dir / f"BA_map_lin_{exp_key}.png")
         plt.close()
 
+        lin_cube_plotting(
+            data=calc_factors["arcsinh_adj_factor"]
+            * np.arcsinh(calc_factors["arcsinh_factor"] * model_ba_2d.data),
+            exp_name=exp_name,
+        )
+        plt.savefig(save_dir / f"BA_map_arcsinh_{exp_key}.png")
+        plt.close()
+
     raw_data = np.ma.getdata(mon_avg_gfed_ba_1d)[
         ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
     ]
@@ -196,10 +205,12 @@ if __name__ == "__main__":
     plt.title("GFED4")
     plt.savefig(save_dir / "hist_GFED4.png")
 
+    GFED_2d = cube_1d_to_2d(
+        get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
+    ).data
+
     log_cube_plotting(
-        data=cube_1d_to_2d(
-            get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
-        ).data,
+        data=GFED_2d,
         exp_name="GFED4",
         raw_data=raw_data,
     )
@@ -207,10 +218,17 @@ if __name__ == "__main__":
     plt.close()
 
     lin_cube_plotting(
-        data=cube_1d_to_2d(
-            get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
-        ).data,
+        data=GFED_2d,
         exp_name="GFED4",
     )
     plt.savefig(save_dir / "BA_map_lin_GFED4.png")
+    plt.close()
+
+    lin_cube_plotting(
+        # NOTE: Assuming arcsinh_factor is constant across all experiments, which
+        # should be true.
+        data=np.arcsinh(calc_factors["arcsinh_factor"] * GFED_2d),
+        exp_name="GFED4",
+    )
+    plt.savefig(save_dir / "BA_map_arcsinh_GFED4.png")
     plt.close()
