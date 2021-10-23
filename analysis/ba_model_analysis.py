@@ -138,6 +138,9 @@ if __name__ == "__main__":
         min_loss = df_sel.iloc[min_index]["loss"]
 
         for col in [col for col in df_sel.columns if col != "loss"]:
+            if df_sel[col].isna().all():
+                continue
+
             plt.figure()
             plt.plot(df_sel[col], df_sel["loss"], linestyle="", marker="o", alpha=0.6)
             plt.xlabel(col)
