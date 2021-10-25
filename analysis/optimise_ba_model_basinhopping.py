@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 from scipy.optimize import basinhopping
+from tqdm import tqdm
 
 from python_inferno.ba_model import gen_to_optimise
 from python_inferno.basinhopping import (
@@ -18,7 +19,7 @@ from python_inferno.basinhopping import (
 )
 from python_inferno.cx1 import get_parsers, run
 from python_inferno.space import generate_space
-from python_inferno.utils import dict_match, memoize
+from python_inferno.utils import memoize
 
 
 def fail_func(*args, **kwargs):
@@ -108,6 +109,11 @@ def mod_get_parsers():
     parser_dict["parser"].add_argument(
         "--pre-calculate", action="store_true", help="pre-calculate cached results"
     )
+    parser_dict["parser"].add_argument(
+        "--use-pre-calculate",
+        action="store_true",
+        help="actually use pre-calculated cached results (e.g. different CX1 specs)",
+    )
     return parser_dict
 
 
@@ -117,7 +123,7 @@ if __name__ == "__main__":
 
     dryness_methods = (1, 2)
     fuel_build_up_methods = (1, 2)
-    include_temperatures = (0, 1)  # 0 - False, 1 - True
+    include_temperatures = (1,)  # 0 - False, 1 - True
 
     args = []
 
@@ -125,8 +131,9 @@ if __name__ == "__main__":
         dryness_methods, fuel_build_up_methods, include_temperatures
     ):
         space_template = dict(
-            fapar_factor=(1, [(-50, -1)], ArgType.FLOAT),
-            fapar_centre=(1, [(-0.1, 1.1)], ArgType.FLOAT),
+            fapar_factor=(3, [(-50, -1)], ArgType.FLOAT),
+            fapar_centre=(3, [(-0.1, 1.1)], ArgType.FLOAT),
+            fapar_shape=(3, [(0.1, 20.0)], ArgType.FLOAT),
             # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
             average_samples=(1, [(*range(40, 161, 60),)], ArgType.CHOICE),
             # `crop_f` suppresses BA in cropland areas.
@@ -135,17 +142,19 @@ if __name__ == "__main__":
         if dryness_method == 1:
             space_template.update(
                 dict(
-                    dry_day_factor=(1, [(0.0, 0.2)], ArgType.FLOAT),
-                    dry_day_centre=(1, [(100, 200)], ArgType.FLOAT),
+                    dry_day_factor=(3, [(0.0, 0.2)], ArgType.FLOAT),
+                    dry_day_centre=(3, [(100, 200)], ArgType.FLOAT),
+                    dry_day_shape=(3, [(0.1, 20.0)], ArgType.FLOAT),
                 )
             )
         elif dryness_method == 2:
             space_template.update(
                 dict(
-                    rain_f=(1, [np.geomspace(0.01, 5, 5)], ArgType.CHOICE),
-                    vpd_f=(1, [np.geomspace(100, 1000, 5)], ArgType.CHOICE),
-                    dry_bal_factor=(1, [(-100, -1)], ArgType.FLOAT),
-                    dry_bal_centre=(1, [(-3, 3)], ArgType.FLOAT),
+                    rain_f=(3, [np.linspace(0.1, 0.6, 3)], ArgType.CHOICE),
+                    vpd_f=(3, [np.linspace(50, 200, 3)], ArgType.CHOICE),
+                    dry_bal_factor=(3, [(-100, -1)], ArgType.FLOAT),
+                    dry_bal_centre=(3, [(-3, 3)], ArgType.FLOAT),
+                    dry_bal_shape=(3, [(0.1, 20.0)], ArgType.FLOAT),
                 )
             )
         else:
@@ -155,21 +164,23 @@ if __name__ == "__main__":
             space_template.update(
                 dict(
                     fuel_build_up_n_samples=(
-                        1,
+                        3,
                         [(*range(100, 1301, 400),)],
                         ArgType.CHOICE,
                     ),
-                    fuel_build_up_factor=(1, [(0.5, 30)], ArgType.FLOAT),
-                    fuel_build_up_centre=(1, [(0.0, 0.5)], ArgType.FLOAT),
+                    fuel_build_up_factor=(3, [(0.5, 40)], ArgType.FLOAT),
+                    fuel_build_up_centre=(3, [(-1.0, 1.0)], ArgType.FLOAT),
+                    fuel_build_up_shape=(3, [(0.1, 20.0)], ArgType.FLOAT),
                 )
             )
         elif fuel_build_up_method == 2:
             space_template.update(
                 dict(
-                    litter_tc=(1, [np.geomspace(1e-10, 1e-8, 4)], ArgType.CHOICE),
-                    leaf_f=(1, [np.geomspace(1e-4, 1e-2, 4)], ArgType.CHOICE),
-                    litter_pool_factor=(1, [(0.001, 0.1)], ArgType.FLOAT),
-                    litter_pool_centre=(1, [(10, 5000)], ArgType.FLOAT),
+                    litter_tc=(3, [np.geomspace(1e-10, 1e-9, 3)], ArgType.CHOICE),
+                    leaf_f=(3, [np.geomspace(1e-4, 1e-3, 3)], ArgType.CHOICE),
+                    litter_pool_factor=(3, [(0.001, 0.1)], ArgType.FLOAT),
+                    litter_pool_centre=(3, [(10, 5000)], ArgType.FLOAT),
+                    litter_pool_shape=(3, [(0.1, 20.0)], ArgType.FLOAT),
                 )
             )
         else:
@@ -178,8 +189,9 @@ if __name__ == "__main__":
         if include_temperature == 1:
             space_template.update(
                 dict(
-                    temperature_factor=(1, [(0.07, 0.2)], ArgType.FLOAT),
-                    temperature_centre=(1, [(260, 295)], ArgType.FLOAT),
+                    temperature_factor=(3, [(0.19, 0.3)], ArgType.FLOAT),
+                    temperature_centre=(3, [(280, 320)], ArgType.FLOAT),
+                    temperature_shape=(3, [(0.1, 20.0)], ArgType.FLOAT),
                 )
             )
         elif include_temperature == 0:
@@ -189,7 +201,14 @@ if __name__ == "__main__":
 
         space = BasinHoppingSpace(generate_space(space_template))
 
-        for choice_params in space.choice_param_product:
+        exp_desc = (
+            f"dry{dryness_method}fuel{fuel_build_up_method}"
+            f"temp{include_temperature} - nChoice"
+        )
+
+        logger.info(f"Choice param names: {space.choice_param_names}")
+
+        for choice_params in tqdm(list(space.choice_param_product), desc=exp_desc):
             args.append(
                 (
                     choice_params,
@@ -200,16 +219,24 @@ if __name__ == "__main__":
                 )
             )
 
-    # CHOICE parameters cause re-calculation of cached results when their value
-    # changes.
-    choice_param_examples = []
-    for arg in args:
-        if not any(dict_match(arg[0], p[0]) for p in choice_param_examples):
-            choice_param_examples.append(arg)
-
     pre_calculate = mod_get_parsers()["parser"].parse_args().pre_calculate
+    use_pre_calculate = mod_get_parsers()["parser"].parse_args().use_pre_calculate
+
+    choice_param_examples = []
 
     if pre_calculate:
+        # CHOICE parameters cause re-calculation of cached results when their value
+        # changes.
+        # For now, duplicate calculation only occurs for `include_temperature` 1 or 0
+        # pairs.
+        for arg in tqdm(args, desc="Choosing pre-calc args"):
+            for p in choice_param_examples:
+                if arg[0] == p[0]:
+                    break
+            else:
+                # If there are no matches, add to the list.
+                choice_param_examples.append(arg)
+
         memoize.active = False
 
     run(
@@ -217,7 +244,7 @@ if __name__ == "__main__":
         *zip(*(choice_param_examples if pre_calculate else args)),
         pre_calculate=pre_calculate,
         cx1_kwargs=dict(
-            walltime="24:00:00", ncpus=1, mem=("25GB" if pre_calculate else "2GB")
+            walltime="24:00:00", ncpus=1, mem=("2GB" if use_pre_calculate else "25GB")
         ),
         get_parsers=mod_get_parsers,
     )

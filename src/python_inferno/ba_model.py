@@ -104,14 +104,19 @@ def run_model(
     missing_param_defaults=dict(
         temperature_factor=0.0,
         temperature_centre=0.0,
+        temperature_shape=1.0,
         dry_bal_factor=1,
         dry_bal_centre=0,
+        dry_bal_shape=1.0,
         dry_day_factor=0.0,
         dry_day_centre=0.0,
+        dry_day_shape=1.0,
         litter_pool_factor=0.0,
         litter_pool_centre=0.0,
+        litter_pool_shape=1.0,
         fuel_build_up_factor=0.0,
         fuel_build_up_centre=0.0,
+        fuel_build_up_shape=1.0,
     ),
 ):
     # Model kwargs.

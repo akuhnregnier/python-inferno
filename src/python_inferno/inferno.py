@@ -75,12 +75,10 @@ def calc_ignitions(pop_den_l, flash_rate_l, ignition_method):
 
 
 @njit(nogil=True, cache=True, fastmath=True)
-def fuel_param(x, factor, centre):
-    # Description:
-    # Takes the value to be transformed, `x`, and applies a simple linear
-    # transformation about `centre` with a slope determined by `factor`
-    # (+ve or -ve). The result is in [0, 1].
-    return 1.0 / (1.0 + np.exp(-factor * (x - centre)))
+def sigmoid(x, factor, centre, shape):
+    """Apply generalised sigmoid with slope determine by `factor`, position by
+    `centre`, and shape by `shape`, with the result being in [0, 1]."""
+    return (1.0 + np.exp(factor * shape * (centre - x))) ** (-1.0 / shape)
 
 
 @njit(nogil=True, cache=True, fastmath=True)
@@ -99,18 +97,24 @@ def calc_flam(
     fuel_build_up_method,
     fapar_factor,
     fapar_centre,
+    fapar_shape,
     fuel_build_up_factor,
     fuel_build_up_centre,
+    fuel_build_up_shape,
     temperature_factor,
     temperature_centre,
+    temperature_shape,
     dry_day_factor,
     dry_day_centre,
+    dry_day_shape,
     dry_bal,
     dry_bal_factor,
     dry_bal_centre,
+    dry_bal_shape,
     litter_pool,
     litter_pool_factor,
     litter_pool_centre,
+    litter_pool_shape,
     include_temperature,
 ):
     # Description:
@@ -198,26 +202,31 @@ def calc_flam(
         # New calculation, based on FAPAR (and derived fuel_build_up).
 
         if dryness_method == 1:
-            dry_factor = fuel_param(dry_days, dry_day_factor, dry_day_centre)
+            dry_factor = sigmoid(
+                dry_days, dry_day_factor, dry_day_centre, dry_day_shape
+            )
         elif dryness_method == 2:
-            dry_factor = fuel_param(dry_bal, dry_bal_factor, dry_bal_centre)
+            dry_factor = sigmoid(dry_bal, dry_bal_factor, dry_bal_centre, dry_bal_shape)
         else:
             raise ValueError("Unknown 'dryness_method'.")
 
         if fuel_build_up_method == 1:
-            fuel_factor = fuel_param(
-                fuel_build_up, fuel_build_up_factor, fuel_build_up_centre
+            fuel_factor = sigmoid(
+                fuel_build_up,
+                fuel_build_up_factor,
+                fuel_build_up_centre,
+                fuel_build_up_shape,
             )
         elif fuel_build_up_method == 2:
-            fuel_factor = fuel_param(
-                litter_pool, litter_pool_factor, litter_pool_centre
+            fuel_factor = sigmoid(
+                litter_pool, litter_pool_factor, litter_pool_centre, litter_pool_shape
             )
         else:
             raise ValueError("Unknown 'fuel_build_up_method'.")
 
         if include_temperature == 1:
-            temperature_factor = fuel_param(
-                temp_l, temperature_factor, temperature_centre
+            temperature_factor = sigmoid(
+                temp_l, temperature_factor, temperature_centre, temperature_shape
             )
         elif include_temperature == 0:
             temperature_factor = 1.0
@@ -229,7 +238,7 @@ def calc_flam(
             dry_factor
             * temperature_factor
             * fuel_factor
-            * fuel_param(fapar, fapar_factor, fapar_centre)
+            * sigmoid(fapar, fapar_factor, fapar_centre, fapar_shape)
         )
     else:
         raise ValueError("Unknown 'flammability_method'.")
