@@ -17,7 +17,7 @@ from scipy.optimize import basinhopping
 
 from python_inferno.ba_model import gen_to_optimise
 from python_inferno.basinhopping import BoundedSteps, Recorder
-from python_inferno.hyperopt import HyperoptSpace
+from python_inferno.hyperopt import HyperoptSpace, mod_quniform
 from python_inferno.space import generate_space
 
 
@@ -59,6 +59,8 @@ def main(
     recorder = Recorder(record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record")
 
     def basinhopping_callback(x, f, accept):
+        # NOTE: Parameters recorded here are authoritative, since hyperopt will not
+        # properly report values modified as in e.g. `mod_quniform`.
         values = space.inv_map_float_to_0_1(
             {**dict(zip(space.continuous_param_names, x)), **discrete_params}
         )
@@ -108,10 +110,6 @@ if __name__ == "__main__":
     fuel_build_up_methods = (1, 2)
     include_temperatures = (1,)  # 0 - False, 1 - True
 
-    # NOTE: hp.quniform (and qloguniform) will not respect 'start', instead only
-    # returning i*step (even true for qloguniform, where values are still linear
-    # spaced, but not all equally likely as in quniform).
-
     experiment_args = dict()
 
     for dryness_method, fuel_build_up_method, include_temperature in product(
@@ -122,7 +120,7 @@ if __name__ == "__main__":
             fapar_centre=(3, [(-0.1, 1.1)], hp.uniform),
             fapar_shape=(3, [(0.1, 20.0)], hp.uniform),
             # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
-            average_samples=(1, [(40, 161, 60)], hp.quniform),
+            average_samples=(1, [(40, 160, 60)], mod_quniform),
             # `crop_f` suppresses BA in cropland areas.
             crop_f=(1, [(0.0, 1.0)], hp.uniform),
         )
@@ -137,8 +135,8 @@ if __name__ == "__main__":
         elif dryness_method == 2:
             space_template.update(
                 dict(
-                    rain_f=(3, [(0.1, 0.61, 0.25)], hp.quniform),
-                    vpd_f=(3, [(50, 201, 75)], hp.quniform),
+                    rain_f=(3, [(0.1, 0.6, 0.25)], mod_quniform),
+                    vpd_f=(3, [(50, 200, 75)], mod_quniform),
                     dry_bal_factor=(3, [(-100, -1)], hp.uniform),
                     dry_bal_centre=(3, [(-3, 3)], hp.uniform),
                     dry_bal_shape=(3, [(0.1, 20.0)], hp.uniform),
@@ -150,7 +148,7 @@ if __name__ == "__main__":
         if fuel_build_up_method == 1:
             space_template.update(
                 dict(
-                    fuel_build_up_n_samples=(3, [(100, 1301, 400)], hp.quniform),
+                    fuel_build_up_n_samples=(3, [(100, 1300, 400)], mod_quniform),
                     fuel_build_up_factor=(3, [(0.5, 40)], hp.uniform),
                     fuel_build_up_centre=(3, [(-1.0, 1.0)], hp.uniform),
                     fuel_build_up_shape=(3, [(0.1, 20.0)], hp.uniform),
@@ -159,8 +157,8 @@ if __name__ == "__main__":
         elif fuel_build_up_method == 2:
             space_template.update(
                 dict(
-                    litter_tc=(3, [(1e-10, 1.1e-9, 4.5e-10)], hp.quniform),
-                    leaf_f=(3, [(1e-4, 1.1e-3, 4.5e-4)], hp.quniform),
+                    litter_tc=(3, [(1e-10, 1e-9, 4.5e-10)], mod_quniform),
+                    leaf_f=(3, [(1e-4, 1e-3, 4.5e-4)], mod_quniform),
                     litter_pool_factor=(3, [(0.001, 0.1)], hp.uniform),
                     litter_pool_centre=(3, [(10, 5000)], hp.uniform),
                     litter_pool_shape=(3, [(0.1, 20.0)], hp.uniform),
@@ -208,16 +206,16 @@ if __name__ == "__main__":
                     fmin,
                     fn=partial(
                         main,
-                        space=space,
-                        dryness_method=dryness_method,
-                        fuel_build_up_method=fuel_build_up_method,
-                        include_temperature=include_temperature,
+                        **experiment_arg,
                     ),
                     algo=tpe.suggest,
                     trials=trials,
                     rstate=np.random.RandomState(0),
                     space=space.render_discrete(),
-                    max_evals=10000,
+                    # NOTE: Sometimes the same parameters are sampled repeatedly.
+                    max_evals=min(
+                        10000, round(2 * experiment_arg["space"].n_discrete_product)
+                    ),
                     verbose=False,
                     max_queue_len=100,
                 )

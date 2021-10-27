@@ -5,10 +5,10 @@ from functools import partial
 import hyperopt
 import matplotlib.pyplot as plt
 import numpy as np
-from hyperopt import Trials, fmin, hp, tpe
+from hyperopt import Trials, fmin, tpe
 from tqdm import tqdm
 
-from python_inferno.hyperopt import Space
+from python_inferno.hyperopt import HyperoptSpace, mod_quniform
 
 if __name__ == "__main__":
     seeds = 3
@@ -32,13 +32,15 @@ if __name__ == "__main__":
             verbose=False,
         )
 
-        space = Space({"x": (hp.quniform, -20, 20, 2)})
+        space = HyperoptSpace({"x": (mod_quniform, -20, 20, 2)})
 
         out1 = part_fmin(
             space=space.render(),
             max_evals=iters // 2,
         )
-        out2 = part_fmin(space=space.shrink(out1, factor=0.2).render(), max_evals=iters)
+        out2 = part_fmin(
+            space=space.shrink(trials, factor=0.2).render(), max_evals=iters
+        )
 
         data[seed] = trials.vals["x"]
         losses.append(trials.losses())
