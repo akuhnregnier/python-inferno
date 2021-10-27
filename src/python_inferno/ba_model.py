@@ -11,7 +11,12 @@ from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
 from .metrics import loghist, mpd, nme, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
-from .utils import calculate_factor, monthly_average_data, unpack_wrapped
+from .utils import (
+    calculate_factor,
+    expand_pft_params,
+    monthly_average_data,
+    unpack_wrapped,
+)
 
 Status = Enum("Status", ["SUCCESS", "FAIL"])
 
@@ -56,7 +61,9 @@ def process_params(*, opt_kwargs, defaults):
     def extract_param(key, dtype_str, size):
         if key in expanded_opt_kwargs:
             param = expanded_opt_kwargs.pop(key).astype(dtype_str)
-            assert param.shape == (size,)
+            if param.shape == (N_pft_groups,) and size == npft:
+                return expand_pft_params(param)
+            assert param.shape == (size,), f"Expected: {(size,)}, got {param.shape}"
             return param
         elif key in single_opt_kwargs:
             return np.array([single_opt_kwargs.pop(key)] * size).astype(dtype_str)

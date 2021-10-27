@@ -10,62 +10,26 @@ import numpy as np
 from loguru import logger
 from wildfires.dask_cx1.dask_rf import safe_write
 
+from python_inferno.space import OptSpace
+
 ArgType = Enum("ArgType", ["FLOAT", "CHOICE"])
 
 
-class BasinHoppingSpace:
+class BasinHoppingSpace(OptSpace):
     def __init__(self, spec):
-        for (arg_type, *args) in spec.values():
-            assert arg_type in (ArgType.FLOAT, ArgType.CHOICE)
-            if arg_type == ArgType.FLOAT:
-                assert len(args) == 2
-            elif arg_type == ArgType.CHOICE:
-                assert len(args) >= 1
-
-        self.spec = spec
-
-    def inv_map_float_to_0_1(self, params):
-        """Undo mapping of floats to [0, 1].
-
-        This maps the floats back to their original range.
-
-        """
-        remapped = {}
-        for name, value in params.items():
-            arg_type, *args = self.spec[name]
-            if arg_type == ArgType.FLOAT:
-                minb, maxb = args
-                remapped[name] = (value * (maxb - minb)) + minb
-            else:
-                remapped[name] = value
-
-        return remapped
-
-    @property
-    def float_param_names(self):
-        """Return the list of floating point parameters which are to be optimised."""
-        return tuple(
-            name for name, value in self.spec.items() if value[0] == ArgType.FLOAT
+        super().__init__(
+            spec=spec,
+            float_type=ArgType.FLOAT,
+            continuous_types={ArgType.FLOAT},
+            discrete_types={ArgType.CHOICE},
         )
 
     @property
-    def choice_param_names(self):
-        """Return the list of choice parameters."""
-        return tuple(
-            name for name, value in self.spec.items() if value[0] == ArgType.CHOICE
-        )
-
-    @property
-    def choice_param_product(self):
+    def discrete_param_product(self):
         """Yield all choice parameter combinations."""
-        iterables = [self.spec[name][1:] for name in self.choice_param_names]
+        iterables = [self.spec[name][1:] for name in self.discrete_param_names]
         for ps in product(*iterables):
-            yield dict(zip(self.choice_param_names, ps))
-
-    @property
-    def float_x0_mid(self):
-        """The midpoints of all floating point parameter ranges."""
-        return [0.5] * len(self.float_param_names)
+            yield dict(zip(self.discrete_param_names, ps))
 
 
 class Recorder:

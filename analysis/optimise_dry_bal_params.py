@@ -47,7 +47,7 @@ def calc_hist_loss(*, dry_bal, bins, hists):
 
 def to_optimise(x):
     dry_bal = get_climatological_grouped_dry_bal._orig_func(
-        **space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x))),
+        **space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x))),
         verbose=False,
     )
     # Select a single PFT since we are only using single parameters.
@@ -82,7 +82,7 @@ def to_optimise(x):
 if __name__ == "__main__":
 
     def basinhopping_callback(x, f, accept):
-        values = space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x)))
+        values = space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x)))
         logger.info(f"Minimum found | loss: {f:0.6f}")
 
         for name, val in values.items():
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         minimizer_kwargs=dict(
             method="L-BFGS-B",
             jac=None,
-            bounds=[(0, 1)] * len(space.float_param_names),
+            bounds=[(0, 1)] * len(space.continuous_param_names),
             options=dict(maxiter=100, ftol=1e-6, eps=1e-4),
         ),
         seed=0,

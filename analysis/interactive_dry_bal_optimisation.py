@@ -181,7 +181,7 @@ def calc_loss1(*, dry_bal, bins, hists):
 def get_to_optimise(*, loss1_c, loss2_c, loss3_c):
     def to_optimise(x):
         dry_bal = get_fewer_climatological_grouped_dry_bal(
-            **space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x))),
+            **space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x))),
             verbose=False,
             points=5,
         )
@@ -231,7 +231,7 @@ if __name__ == "__main__":
 
     def plot_line(x):
         dry_bal = get_fewer_climatological_grouped_dry_bal(
-            **space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x))),
+            **space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x))),
             verbose=False,
             points=5,
         )
@@ -279,7 +279,7 @@ if __name__ == "__main__":
             x0=space.float_x0_mid,
             method="L-BFGS-B",
             jac=None,
-            bounds=[(0, 1)] * len(space.float_param_names),
+            bounds=[(0, 1)] * len(space.continuous_param_names),
             options=dict(maxfun=1000, ftol=1e-6, eps=1e-4, disp=True),
         )
         opt_x = result.x

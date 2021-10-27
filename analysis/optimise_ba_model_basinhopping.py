@@ -37,7 +37,7 @@ to_optimise = gen_to_optimise(
 
 
 def main(
-    choice_params,
+    discrete_params,
     space,
     dryness_method,
     fuel_build_up_method,
@@ -46,10 +46,10 @@ def main(
     pre_calculate=False,
     **kwargs,
 ):
-    def to_optimise_with_choice(x):
+    def to_optimise_with_discrete(x):
         opt_kwargs = {
-            **space.inv_map_float_to_0_1(dict(zip(space.float_param_names, x))),
-            **choice_params,
+            **space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x))),
+            **discrete_params,
         }
         return to_optimise(
             dryness_method=dryness_method,
@@ -60,13 +60,13 @@ def main(
 
     if pre_calculate:
         # Only call the function once to pre-calculate cached results.
-        return to_optimise_with_choice(space.float_x0_mid)
+        return to_optimise_with_discrete(space.continuous_x0_mid)
 
     recorder = Recorder(record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record")
 
     def basinhopping_callback(x, f, accept):
         values = space.inv_map_float_to_0_1(
-            {**dict(zip(space.float_param_names, x)), **choice_params}
+            {**dict(zip(space.continuous_param_names, x)), **discrete_params}
         )
         values["dryness_method"] = dryness_method
         values["fuel_build_up_method"] = fuel_build_up_method
@@ -85,13 +85,13 @@ def main(
 
     return (
         basinhopping(
-            to_optimise_with_choice,
-            x0=space.float_x0_mid,
+            to_optimise_with_discrete,
+            x0=space.continuous_x0_mid,
             disp=True,
             minimizer_kwargs=dict(
                 method="L-BFGS-B",
                 jac=None,
-                bounds=[(0, 1)] * len(space.float_param_names),
+                bounds=[(0, 1)] * len(space.continuous_param_names),
                 options=dict(maxiter=50, ftol=1e-5, eps=1e-3),
             ),
             seed=0,
@@ -100,7 +100,7 @@ def main(
             take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
         ),
         space,
-        choice_params,
+        discrete_params,
     )
 
 
@@ -203,15 +203,15 @@ if __name__ == "__main__":
 
         exp_desc = (
             f"dry{dryness_method}fuel{fuel_build_up_method}"
-            f"temp{include_temperature} - nChoice"
+            f"temp{include_temperature} - nDiscrete"
         )
 
-        logger.info(f"Choice param names: {space.choice_param_names}")
+        logger.info(f"Discrete param names: {space.discrete_param_names}")
 
-        for choice_params in tqdm(list(space.choice_param_product), desc=exp_desc):
+        for discrete_params in tqdm(list(space.discrete_param_product), desc=exp_desc):
             args.append(
                 (
-                    choice_params,
+                    discrete_params,
                     space,
                     dryness_method,
                     fuel_build_up_method,
@@ -222,7 +222,7 @@ if __name__ == "__main__":
     pre_calculate = mod_get_parsers()["parser"].parse_args().pre_calculate
     use_pre_calculate = mod_get_parsers()["parser"].parse_args().use_pre_calculate
 
-    choice_param_examples = []
+    discrete_param_examples = []
 
     if pre_calculate:
         # CHOICE parameters cause re-calculation of cached results when their value
@@ -230,18 +230,18 @@ if __name__ == "__main__":
         # For now, duplicate calculation only occurs for `include_temperature` 1 or 0
         # pairs.
         for arg in tqdm(args, desc="Choosing pre-calc args"):
-            for p in choice_param_examples:
+            for p in discrete_param_examples:
                 if arg[0] == p[0]:
                     break
             else:
                 # If there are no matches, add to the list.
-                choice_param_examples.append(arg)
+                discrete_param_examples.append(arg)
 
         memoize.active = False
 
     run(
         main,
-        *zip(*(choice_param_examples if pre_calculate else args)),
+        *zip(*(discrete_param_examples if pre_calculate else args)),
         pre_calculate=pre_calculate,
         cx1_kwargs=dict(
             walltime="24:00:00", ncpus=1, mem=("2GB" if use_pre_calculate else "25GB")

@@ -5,7 +5,7 @@ import hyperopt
 import numpy as np
 from hyperopt import Trials, fmin, hp, tpe
 
-from python_inferno.hyperopt import Space
+from python_inferno.hyperopt import HyperoptSpace
 
 
 def test_uniform_space():
@@ -23,7 +23,7 @@ def test_uniform_space():
         verbose=False,
     )
 
-    space = Space({"x": (hp.uniform, -10, 10)})
+    space = HyperoptSpace({"x": (hp.uniform, -10, 10)})
 
     out = part_fmin(space=space.render(), max_evals=100)
 
@@ -48,7 +48,7 @@ def test_quniform_space():
         verbose=False,
     )
 
-    space = Space({"x": (hp.quniform, -10, 10, 2)})
+    space = HyperoptSpace({"x": (hp.quniform, -10, 10, 2)})
 
     out = part_fmin(space=space.render(), max_evals=100)
 

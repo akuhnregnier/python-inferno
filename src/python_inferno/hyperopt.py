@@ -1,18 +1,39 @@
 # -*- coding: utf-8 -*-
-
 import numpy as np
 from hyperopt import hp
 
+from python_inferno.space import OptSpace
 
-class Space:
+continuous_types = {hp.uniform}
+discrete_types = {hp.quniform}
+
+
+class HyperoptSpace(OptSpace):
     def __init__(self, spec):
-        self.spec = spec
+        super().__init__(
+            spec=spec,
+            float_type=hp.uniform,
+            continuous_types={hp.uniform},
+            discrete_types={hp.quniform},
+        )
 
     def render(self):
-        """Get the final dictionary given the hyperopt's `fmin`."""
+        """Get the final `space` dictionary given to hyperopt's `fmin`."""
         out = {}
         for (name, (arg_type, *args)) in self.spec.items():
             out[name] = arg_type(name, *args)
+        return out
+
+    def render_discrete(self):
+        """Get the final `space` dictionary given to hyperopt's `fmin`.
+
+        Only considers discrete parameters.
+
+        """
+        out = {}
+        for (name, (arg_type, *args)) in self.spec.items():
+            if arg_type in self.discrete_types:
+                out[name] = arg_type(name, *args)
         return out
 
     def shrink(self, best_vals, factor=0.5):
@@ -56,9 +77,8 @@ class Space:
 
                         new[name] = (arg_type, start, end, step)
             else:
-                raise ValueError(f"Unsupported `arg_type`: {arg_type}.")
+                raise ValueError(
+                    f"Unsupported `arg_type`: {arg_type} for parameter '{name}'."
+                )
 
-        return Space(new)
-
-    def __str__(self):
-        return str(self.spec)
+        return type(self)(new)

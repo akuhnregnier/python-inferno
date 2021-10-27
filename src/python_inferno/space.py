@@ -1,6 +1,71 @@
 # -*- coding: utf-8 -*-
 
 
+class OptSpace:
+    def __init__(self, spec, float_type, continuous_types, discrete_types):
+        self.float_type = float_type
+        self.continuous_types = continuous_types
+        self.discrete_types = discrete_types
+
+        for (arg_type, *args) in spec.values():
+            assert arg_type in self.continuous_types.union(self.discrete_types)
+            if arg_type == self.float_type:
+                assert len(args) == 2
+            elif arg_type in self.discrete_types:
+                assert len(args) >= 1
+            else:
+                raise NotImplementedError()
+
+        self.spec = spec
+
+    def inv_map_float_to_0_1(self, params):
+        """Undo mapping of floats to [0, 1].
+
+        This maps the floats back to their original range.
+
+        """
+        remapped = {}
+        for name, value in params.items():
+            arg_type, *args = self.spec[name]
+            if arg_type == self.float_type:
+                minb, maxb = args
+                remapped[name] = (value * (maxb - minb)) + minb
+            else:
+                remapped[name] = value
+
+        return remapped
+
+    @property
+    def continuous_param_names(self):
+        """Return the list of floating point parameters which are to be optimised."""
+        return tuple(
+            name
+            for name, value in self.spec.items()
+            if value[0] in self.continuous_types
+        )
+
+    @property
+    def discrete_param_names(self):
+        """Return the list of choice parameters."""
+        return tuple(
+            name for name, value in self.spec.items() if value[0] in self.discrete_types
+        )
+
+    @property
+    def continuous_x0_mid(self):
+        """The midpoints (0.5) of all floating point parameter ranges.
+
+        See `inv_map_float_to_0_1` for inverse mapping of the implied [0, 1] range.
+
+        """
+        assert len(self.continuous_types) == 1
+        assert list(self.continuous_types)[0] == self.float_type
+        return [0.5] * len(self.continuous_param_names)
+
+    def __str__(self):
+        return str(self.spec)
+
+
 def generate_space(space_template):
     """Generate the actual `space` from the template.
 
