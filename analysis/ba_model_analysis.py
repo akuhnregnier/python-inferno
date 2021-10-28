@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import gc
 import os
 import pickle
 import sys
@@ -18,6 +19,7 @@ from wildfires.analysis import cube_plotting
 
 from python_inferno.ba_model import get_pred_ba
 from python_inferno.data import load_jules_lats_lons
+from python_inferno.utils import memoize
 
 NoVal = Enum("NoVal", ["NoVal"])
 
@@ -66,6 +68,9 @@ if __name__ == "__main__":
     record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
     assert record_dir.is_dir()
 
+    # To prevent memory accumulation during repeated calculations below.
+    memoize.active = False
+
     global_params = []
     global_losses = []
 
@@ -104,10 +109,14 @@ if __name__ == "__main__":
 
     df = pd.DataFrame(global_params)
     df["loss"] = global_losses
-    print(df.head())
 
-    df["dryness_method"] = df["dryness_method"].astype("int")
-    df["fuel_build_up_method"] = df["fuel_build_up_method"].astype("int")
+    cat_names = ["dryness_method", "fuel_build_up_method", "include_temperature"]
+
+    for name in cat_names:
+        df[name] = df[name].astype("int")
+
+    print(df.head())
+    print(df.groupby(cat_names).size())
 
     hist_bins = 50
 
@@ -162,9 +171,13 @@ if __name__ == "__main__":
         model_ba, scores, mon_avg_gfed_ba_1d, calc_factors = get_pred_ba(**params)
         model_ba *= calc_factors["adj_factor"]
 
+        gc.collect()
+
         model_ba_1d = get_1d_data_cube(model_ba, lats=jules_lats, lons=jules_lons)
         logger.info("Getting 2D cube")
         model_ba_2d = cube_1d_to_2d(model_ba_1d)
+
+        gc.collect()
 
         raw_data = np.ma.getdata(model_ba)[~np.ma.getmaskarray(model_ba)]
 
@@ -191,6 +204,8 @@ if __name__ == "__main__":
         )
         plt.savefig(save_dir / f"BA_map_arcsinh_{exp_key}.png")
         plt.close()
+
+        gc.collect()
 
     raw_data = np.ma.getdata(mon_avg_gfed_ba_1d)[
         ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
