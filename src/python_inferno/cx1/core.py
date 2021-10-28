@@ -22,8 +22,10 @@ from ..exceptions import NoCX1Error
 from ..utils import core_unpack_wrapped, tqdm
 
 __all__ = (
+    "get_cx1_dirs",
     "get_parsers",
     "run",
+    "run_cx1",
 )
 
 template_dir = Path(__file__).resolve().parent / "templates"
@@ -182,40 +184,73 @@ def run_local(func, batch_args, kwargs, backend="threads", n_cores=1, verbose=Fa
     return tuple(out)
 
 
-def run_cx1(func, batch_args, kwargs, cx1_kwargs, verbose):
-    if cx1_kwargs is False:
-        raise NoCX1Error("`cx1_kwargs` is `False`, but running on CX1 was requested.")
-    if cx1_kwargs is None:
-        cx1_kwargs = {}
-
-    n_args = len(batch_args)
-    # Submit either a single job (if there is only one set of arguments, or an
-    # array job for multiple arguments.
-    job_template = (
-        "array_job_script.sh.jinja2" if n_args > 1 else "job_script.sh.jinja2"
-    )
-
+def get_cx1_dirs(job_name):
     # Store temporary files, e.g. different input arguments, in the EPHEMERAL
     # directory so the jobs can access them later.
     ephemeral = Path(os.environ["EPHEMERAL"])
     if not ephemeral.is_dir():
         raise RuntimeError(f"Ephemeral directory {ephemeral} was not found.")
 
-    job_id = "".join(random.sample(string.ascii_lowercase, 8))
-    job_name = f"{func.__name__}_{job_id}"
-
     job_dir = ephemeral / job_name
     log_dir = job_dir / "pbs_output"
 
     # Create the necessary directories.
     log_dir.mkdir(parents=True, exist_ok=False)
+    return job_dir, log_dir
+
+
+def run_cx1(*, job_name, cmd, job_dir, log_dir, n_args, cx1_kwargs):
+    if cx1_kwargs is False:
+        raise NoCX1Error("`cx1_kwargs` is `False`, but running on CX1 was requested.")
+    if cx1_kwargs is None:
+        cx1_kwargs = {}
+
+    # Submit either a single job (if there is only one set of arguments, or an
+    # array job for multiple arguments.
+    job_template = (
+        "array_job_script.sh.jinja2" if n_args > 1 else "job_script.sh.jinja2"
+    )
+
+    # Render the job script template.
+    if "walltime" not in cx1_kwargs:
+        cx1_kwargs["walltime"] = "10:00:00"
+    if "ncpus" not in cx1_kwargs:
+        cx1_kwargs["ncpus"] = 1
+    if "mem" not in cx1_kwargs:
+        cx1_kwargs["mem"] = "5GB"
+
+    job_template_kwargs = dict(
+        job_name=job_name,
+        cmd=cmd,
+        job_log_dir=log_dir,
+        step=1,
+        min_index=0,
+        max_index=n_args - 1,  # This is inclusive (PBS).
+        **cx1_kwargs,
+    )
+
+    job_script = job_dir / "job_script.sh"
+    with job_script.open("w") as f:
+        f.write(
+            Environment(loader=FileSystemLoader(template_dir))
+            .get_template(job_template)
+            .render(**job_template_kwargs)
+        )
+
+    # Submit the job.
+    job_str = check_output(["qsub", str(job_script)]).decode().strip()
+    logger.info(f"Submitted job '{job_str}' with job name '{job_name}'.")
+
+
+def run_cx1_python(func, batch_args, kwargs, cx1_kwargs, verbose):
+    job_name = f"{func.__name__}_{''.join(random.sample(string.ascii_lowercase, 8))}"
+    job_dir, log_dir = get_cx1_dirs(job_name)
 
     # Store the function with arguments for later retrieval by the job.
     bound_functions = [
         partial(batched_func_calls, func, single_batch_args, kwargs)
         for single_batch_args in batch_args
     ]
-
     bound_functions_file = job_dir / "bound_functions.pkl"
     with bound_functions_file.open("wb") as f:
         cloudpickle.dump(bound_functions, f, -1)
@@ -234,35 +269,16 @@ def run_cx1(func, batch_args, kwargs, cx1_kwargs, verbose):
             .render(**python_template_kwargs)
         )
 
-    # Render the job script template.
-    if "walltime" not in cx1_kwargs:
-        cx1_kwargs["walltime"] = "10:00:00"
-    if "ncpus" not in cx1_kwargs:
-        cx1_kwargs["ncpus"] = 1
-    if "mem" not in cx1_kwargs:
-        cx1_kwargs["mem"] = "5GB"
+    cmd = f"{sys.executable} {python_script}"
 
-    job_template_kwargs = dict(
+    run_cx1(
         job_name=job_name,
-        executable=sys.executable,
-        python_script=str(python_script),
-        job_log_dir=log_dir,
-        step=1,
-        min_index=0,
-        max_index=n_args - 1,  # This is inclusive (PBS).
-        **cx1_kwargs,
+        cmd=cmd,
+        job_dir=job_dir,
+        log_dir=log_dir,
+        n_args=len(batch_args),
+        cx1_kwargs=cx1_kwargs,
     )
-
-    job_script = job_dir / "job_script.sh"
-    with job_script.open("w") as f:
-        f.write(
-            Environment(loader=FileSystemLoader(template_dir))
-            .get_template(job_template)
-            .render(**job_template_kwargs)
-        )
-
-    job_str = check_output(["qsub", str(job_script)]).decode().strip()
-    logger.info(f"Submitted job '{job_str}' with job name '{job_name}'.")
 
 
 def run(
@@ -402,7 +418,7 @@ def run(
             return args, kwargs, out
         return out
     elif cmd_args.dest == "cx1":
-        run_cx1(
+        run_cx1_python(
             func=func,
             batch_args=batch_args,
             kwargs=kwargs,
