@@ -22,11 +22,11 @@ from python_inferno.space import generate_space
 
 
 def fail_func(*args, **kwargs):
-    return {"loss": 10000.0, "status": hyperopt.STATUS_FAIL}
+    return 10000.0
 
 
 def success_func(loss, *args, **kwargs):
-    return {"loss": loss, "status": hyperopt.STATUS_OK}
+    return loss
 
 
 to_optimise = gen_to_optimise(
@@ -79,25 +79,27 @@ def main(
             # Update record in file.
             recorder.dump()
 
-    return (
-        basinhopping(
-            to_optimise_with_discrete,
-            x0=space.continuous_x0_mid,
-            disp=True,
-            minimizer_kwargs=dict(
-                method="L-BFGS-B",
-                jac=None,
-                bounds=[(0, 1)] * len(space.continuous_param_names),
-                options=dict(maxiter=50, ftol=1e-5, eps=1e-3),
-            ),
-            seed=0,
-            niter_success=5,
-            callback=basinhopping_callback,
-            take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
+    res = basinhopping(
+        to_optimise_with_discrete,
+        x0=space.continuous_x0_mid,
+        disp=True,
+        minimizer_kwargs=dict(
+            method="L-BFGS-B",
+            jac=None,
+            bounds=[(0, 1)] * len(space.continuous_param_names),
+            options=dict(maxiter=50, ftol=1e-5, eps=1e-3),
         ),
-        space,
-        discrete_params,
+        seed=0,
+        niter_success=5,
+        callback=basinhopping_callback,
+        take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
     )
+    loss = res.fun
+
+    if loss > 100.0:
+        return {"loss": 10000.0, "status": hyperopt.STATUS_FAIL}
+    else:
+        return {"loss": loss, "status": hyperopt.STATUS_OK}
 
 
 if __name__ == "__main__":
