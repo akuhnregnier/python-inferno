@@ -7,13 +7,16 @@ from functools import partial
 from itertools import product
 from pathlib import Path
 from pprint import pformat
+from time import time
 
 import hyperopt
 import numpy as np
 from hyperopt import fmin, hp, tpe
 from hyperopt.mongoexp import MongoTrials
+from hyperopt.pyll import rec_eval
 from loguru import logger
 from scipy.optimize import basinhopping
+from tqdm import tqdm
 
 from python_inferno.ba_model import gen_to_optimise
 from python_inferno.basinhopping import BoundedSteps, Recorder
@@ -36,13 +39,33 @@ to_optimise = gen_to_optimise(
 
 
 def main(
-    discrete_params,
+    expr,
+    memo,
+    ctrl,
     space,
     dryness_method,
     fuel_build_up_method,
     include_temperature,
 ):
+    discrete_params = rec_eval(expr, memo=memo)
     logger.info(f"Discrete parameters:\n{pformat(discrete_params)}")
+
+    start = time()
+
+    # NOTE: These values may differ from `discrete_params` above (but they have the same
+    # keys) if modifications like `mod_quniform` are used.
+    curr_vals = ctrl.current_trial["misc"]["vals"]
+
+    # Fetch previous trials.
+    ctrl.trials.refresh()
+    for trial in ctrl.trials.trials:
+        if (trial["misc"]["vals"] == curr_vals) and (
+            trial["result"]["status"] != "new"
+        ):
+            logger.info(f"Match found (search time: {time() - start:0.2f}).")
+            return trial["result"]
+
+    logger.info(f"No match (search time: {time() - start:0.2f}).")
 
     def to_optimise_with_discrete(x):
         opt_kwargs = {
@@ -106,7 +129,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    exp_base = "exp100"
+    exp_base = "exp101"
 
     dryness_methods = (1, 2)
     fuel_build_up_methods = (1, 2)
@@ -182,8 +205,6 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Unknown 'include_temperature' {include_temperature}.")
 
-        space = HyperoptSpace(generate_space(space_template))
-
         methods_str = "_".join(
             map(str, (dryness_method, fuel_build_up_method, include_temperature))
         )
@@ -192,12 +213,13 @@ if __name__ == "__main__":
             dryness_method=dryness_method,
             fuel_build_up_method=fuel_build_up_method,
             include_temperature=include_temperature,
-            space=space,
+            space=HyperoptSpace(generate_space(space_template)),
         )
 
     with ThreadPoolExecutor() as executor:
         futures = []
-        for methods_str, experiment_arg in experiment_args.items():
+        for (i, (methods_str, experiment_arg)) in enumerate(experiment_args.items()):
+            exp_space = experiment_arg["space"]
             trials = MongoTrials(
                 "mongo://maritimus.webredirect.org:1234/ba/jobs",
                 exp_key=f"{exp_base}_{methods_str}",
@@ -213,15 +235,17 @@ if __name__ == "__main__":
                     algo=tpe.suggest,
                     trials=trials,
                     rstate=np.random.RandomState(0),
-                    space=space.render_discrete(),
+                    space=exp_space.render_discrete(),
                     # NOTE: Sometimes the same parameters are sampled repeatedly.
-                    max_evals=min(
-                        10000, round(2 * experiment_arg["space"].n_discrete_product)
+                    max_evals=min(10000, round(2 * exp_space.n_discrete_product)),
+                    # NOTE: `leave=True` causes strange duplication of rows after
+                    # completion of a set of trials, making the output hard to read.
+                    # With `leave=False`, the progress bar of completed trials simply
+                    # disappears.
+                    show_progressbar=partial(
+                        tqdm, desc=methods_str, leave=False, position=i
                     ),
-                    verbose=False,
                     max_queue_len=100,
+                    pass_expr_memo_ctrl=True,
                 )
             )
-
-        for methods_str, f in zip(experiment_args, futures):
-            print(f"{methods_str}\n{f.result()}")
