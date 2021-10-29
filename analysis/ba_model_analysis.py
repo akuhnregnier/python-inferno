@@ -116,7 +116,11 @@ if __name__ == "__main__":
         df[name] = df[name].astype("int")
 
     print(df.head())
+    print("Number of trials")
     print(df.groupby(cat_names).size())
+
+    print("Minimum loss by parametrisation approach")
+    print(df.groupby(cat_names)["loss"].min())
 
     hist_bins = 50
 
