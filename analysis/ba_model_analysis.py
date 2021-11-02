@@ -17,11 +17,94 @@ from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
 from wildfires.analysis import cube_plotting
 
-from python_inferno.ba_model import get_pred_ba
-from python_inferno.data import load_jules_lats_lons
-from python_inferno.utils import memoize
+from python_inferno.ba_model import Status, calculate_scores, get_pred_ba
+from python_inferno.cache import cache
+from python_inferno.data import load_data, load_jules_lats_lons
+from python_inferno.utils import PartialDateTime, memoize, temporal_processing
 
 NoVal = Enum("NoVal", ["NoVal"])
+
+
+def frac_weighted_mean(*, data, frac):
+    assert len(data.shape) == 3, "Need time, PFT, and space coords."
+    assert data.shape[1] in (13, 17)
+    assert frac.shape[1] == 17
+
+    return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
+        frac[:, : data.shape[1]], axis=1
+    )
+
+
+@cache(dependencies=[load_data, temporal_processing])
+def get_processed_climatological_jules_ba():
+    logger.debug("start data")
+    (
+        _,
+        _,
+        _,
+        _,
+        frac,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        jules_ba_gb,
+        _,
+        jules_time_coord,
+        _,
+        _,
+        climatology_output,
+    ) = load_data(
+        filenames=(
+            tuple(
+                [
+                    str(Path(s).expanduser())
+                    for s in [
+                        "~/tmp/climatology6.nc",
+                    ]
+                ]
+            )
+        ),
+        N=None,
+        output_timesteps=4,
+        climatology_dates=(PartialDateTime(2000, 1), PartialDateTime(2016, 12)),
+    )
+    logger.debug("Got data")
+
+    data_dict = dict(
+        frac=frac,
+        jules_ba_gb=jules_ba_gb.data,
+    )
+
+    logger.debug("Populated data_dict")
+
+    assert jules_time_coord.cell(-1).point.month == 12
+    last_year = jules_time_coord.cell(-1).point.year
+    for start_i in range(jules_time_coord.shape[0]):
+        if jules_time_coord.cell(start_i).point.year == last_year:
+            break
+    else:
+        raise ValueError("Target year not encountered.")
+
+    # Trim the data and temporal coord such that the data spans a single year.
+    jules_time_coord = jules_time_coord[start_i:]
+    for data_name in data_dict:
+        data_dict[data_name] = data_dict[data_name][start_i:]
+
+    assert (
+        jules_time_coord.cell(0).point.year == jules_time_coord.cell(-1).point.year
+        and jules_time_coord.cell(0).point.month == 1
+        and jules_time_coord.cell(-1).point.month == 12
+        and jules_time_coord.shape[0] >= 12
+    )
+    return data_dict, jules_time_coord
 
 
 def check_params(params, key, value=NoVal.NoVal):
@@ -34,10 +117,10 @@ def check_params(params, key, value=NoVal.NoVal):
     return False
 
 
-def lin_cube_plotting(*, data, exp_name):
+def lin_cube_plotting(*, data, title):
     cube_plotting(
         data,
-        title=exp_name,
+        title=title,
         nbins=9,
         vmin_vmax_percentiles=(5, 95),
         fig=plt.figure(figsize=(12, 5)),
@@ -45,14 +128,63 @@ def lin_cube_plotting(*, data, exp_name):
     )
 
 
-def log_cube_plotting(*, data, exp_name, raw_data):
+def log_cube_plotting(*, data, title, raw_data):
     cube_plotting(
         data,
-        title=exp_name,
+        title=title,
         boundaries=np.geomspace(*np.quantile(raw_data[raw_data > 0], [0.05, 0.95]), 8),
         fig=plt.figure(figsize=(12, 5)),
         colorbar_kwargs=dict(format="%.1e"),
     )
+
+
+def plotting(
+    *,
+    exp_name,
+    exp_key=None,
+    raw_data,
+    model_ba_2d_data,
+    hist_bins,
+    arcsinh_adj_factor,
+    arcsinh_factor,
+    scores=None,
+):
+    if scores is not None:
+        arcsinh_nme = scores["arcsinh_nme"]
+        mpd = scores["mpd"]
+        total = arcsinh_nme + mpd
+        title = (
+            f"{exp_name}, arcsinh NME: {arcsinh_nme:0.2f}, MPD: {mpd:0.2f}, "
+            f"Total: {total:0.2f}"
+        )
+    else:
+        title = exp_name
+
+    if exp_key is None:
+        exp_key = exp_name.replace(" ", "_").lower()
+
+    logger.info("Plotting hist")
+    plt.figure()
+    plt.hist(raw_data, bins=hist_bins)
+    plt.yscale("log")
+    plt.title(title)
+    plt.savefig(save_dir / f"hist_{exp_key}.png")
+    plt.close()
+
+    log_cube_plotting(data=model_ba_2d_data, title=title, raw_data=raw_data)
+    plt.savefig(save_dir / f"BA_map_log_{exp_key}.png")
+    plt.close()
+
+    lin_cube_plotting(data=model_ba_2d_data, title=title)
+    plt.savefig(save_dir / f"BA_map_lin_{exp_key}.png")
+    plt.close()
+
+    lin_cube_plotting(
+        data=arcsinh_adj_factor * np.arcsinh(arcsinh_factor * model_ba_2d_data),
+        title=title,
+    )
+    plt.savefig(save_dir / f"BA_map_arcsinh_{exp_key}.png")
+    plt.close()
 
 
 if __name__ == "__main__":
@@ -116,10 +248,10 @@ if __name__ == "__main__":
         df[name] = df[name].astype("int")
 
     print(df.head())
-    print("Number of trials")
+    print("\nNumber of trials:\n")
     print(df.groupby(cat_names).size())
 
-    print("Minimum loss by parametrisation approach")
+    print("\nMinimum loss by parametrisation approach:\n")
     print(df.groupby(cat_names)["loss"].min())
 
     hist_bins = 50
@@ -135,13 +267,13 @@ if __name__ == "__main__":
         fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
 
         exp_name = f"Dry:{dryness_descr[dryness_method]}, Fuel:{fuel_descr[fuel_build_up_method]}"
-        print(exp_name)
+        logger.info(exp_name)
 
         dryness_keys = {1: "Dry_Day", 2: "VPD_Precip"}
         fuel_keys = {1: "Antec_NPP", 2: "Leaf_Litter_Pool"}
 
         exp_key = f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"
-        print(exp_key)
+        logger.info(exp_key)
 
         hist_save_dir = save_dir / exp_key
         hist_save_dir.mkdir(exist_ok=True, parents=False)
@@ -183,71 +315,52 @@ if __name__ == "__main__":
 
         gc.collect()
 
-        raw_data = np.ma.getdata(model_ba)[~np.ma.getmaskarray(model_ba)]
-
-        logger.info("Plotting hist")
-        plt.figure()
-        plt.hist(raw_data, bins=hist_bins)
-        plt.yscale("log")
-        plt.title(exp_name)
-        plt.savefig(save_dir / f"hist_{exp_key}.png")
-        plt.close()
-
-        log_cube_plotting(data=model_ba_2d.data, exp_name=exp_name, raw_data=raw_data)
-        plt.savefig(save_dir / f"BA_map_{exp_key}.png")
-        plt.close()
-
-        lin_cube_plotting(data=model_ba_2d.data, exp_name=exp_name)
-        plt.savefig(save_dir / f"BA_map_lin_{exp_key}.png")
-        plt.close()
-
-        lin_cube_plotting(
-            data=calc_factors["arcsinh_adj_factor"]
-            * np.arcsinh(calc_factors["arcsinh_factor"] * model_ba_2d.data),
+        plotting(
             exp_name=exp_name,
+            exp_key=exp_key,
+            raw_data=np.ma.getdata(model_ba)[~np.ma.getmaskarray(model_ba)],
+            model_ba_2d_data=model_ba_2d.data,
+            hist_bins=hist_bins,
+            arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
+            arcsinh_factor=calc_factors["arcsinh_factor"],
+            scores=scores,
         )
-        plt.savefig(save_dir / f"BA_map_arcsinh_{exp_key}.png")
-        plt.close()
-
         gc.collect()
 
-    raw_data = np.ma.getdata(mon_avg_gfed_ba_1d)[
-        ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
-    ]
-
-    plt.figure()
-    plt.hist(
-        raw_data,
-        bins=hist_bins,
-    )
-    plt.yscale("log")
-    plt.title("GFED4")
-    plt.savefig(save_dir / "hist_GFED4.png")
-
-    GFED_2d = cube_1d_to_2d(
-        get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
-    ).data
-
-    log_cube_plotting(
-        data=GFED_2d,
+    plotting(
         exp_name="GFED4",
-        raw_data=raw_data,
-    )
-    plt.savefig(save_dir / "BA_map_GFED4.png")
-    plt.close()
-
-    lin_cube_plotting(
-        data=GFED_2d,
-        exp_name="GFED4",
-    )
-    plt.savefig(save_dir / "BA_map_lin_GFED4.png")
-    plt.close()
-
-    lin_cube_plotting(
+        raw_data=np.ma.getdata(mon_avg_gfed_ba_1d)[
+            ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
+        ],
+        model_ba_2d_data=cube_1d_to_2d(
+            get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
+        ).data,
+        hist_bins=hist_bins,
         # NOTE: Assuming arcsinh_factor is constant across all experiments, which
         # should be true.
-        data=np.arcsinh(calc_factors["arcsinh_factor"] * GFED_2d),
-        exp_name="GFED4",
+        arcsinh_adj_factor=1.0,
+        arcsinh_factor=calc_factors["arcsinh_factor"],
     )
-    plt.savefig(save_dir / "BA_map_arcsinh_GFED4.png")
-    plt.close()
+
+    data_dict, jules_time_coord = get_processed_climatological_jules_ba()
+    jules_ba_gb = data_dict.pop("jules_ba_gb")
+    scores, status, avg_jules_ba, calc_factors = calculate_scores(
+        model_ba=jules_ba_gb,
+        jules_time_coord=jules_time_coord,
+        mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
+    )
+    assert status is Status.SUCCESS, "Score calculation failed!"
+
+    avg_jules_ba *= calc_factors["adj_factor"]
+
+    plotting(
+        exp_name="Old INFERNO BA",
+        raw_data=np.ma.getdata(avg_jules_ba)[~np.ma.getmaskarray(avg_jules_ba)],
+        model_ba_2d_data=cube_1d_to_2d(
+            get_1d_data_cube(avg_jules_ba, lats=jules_lats, lons=jules_lons)
+        ).data,
+        hist_bins=hist_bins,
+        arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
+        arcsinh_factor=calc_factors["arcsinh_factor"],
+        scores=scores,
+    )
