@@ -56,7 +56,7 @@ def process_params(*, opt_kwargs, defaults):
 
     logger.debug("Opt param arrays")
     for name, vals in expanded_opt_kwargs.items():
-        logger.debug(f" - {name}: {val}")
+        logger.debug(f" - {name}: {vals}")
 
     def extract_param(key, dtype_str, size):
         if key in expanded_opt_kwargs:
