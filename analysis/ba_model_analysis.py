@@ -5,6 +5,7 @@ import os
 import pickle
 import sys
 from enum import Enum
+from functools import partial
 from itertools import product
 from pathlib import Path
 from pprint import pprint
@@ -16,11 +17,11 @@ import pandas as pd
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
 from tqdm import tqdm
-from wildfires.analysis import cube_plotting
 
 from python_inferno.ba_model import Status, calculate_scores, get_pred_ba
 from python_inferno.cache import cache
 from python_inferno.data import load_data, load_jules_lats_lons
+from python_inferno.plotting import plotting
 from python_inferno.utils import PartialDateTime, memoize, temporal_processing
 
 NoVal = Enum("NoVal", ["NoVal"])
@@ -118,80 +119,11 @@ def check_params(params, key, value=NoVal.NoVal):
     return False
 
 
-def lin_cube_plotting(*, data, title):
-    cube_plotting(
-        data,
-        title=title,
-        nbins=9,
-        vmin_vmax_percentiles=(5, 95),
-        fig=plt.figure(figsize=(12, 5)),
-        colorbar_kwargs=dict(format="%.1e"),
-    )
-
-
-def log_cube_plotting(*, data, title, raw_data):
-    cube_plotting(
-        data,
-        title=title,
-        boundaries=np.geomspace(*np.quantile(raw_data[raw_data > 0], [0.05, 0.95]), 8),
-        fig=plt.figure(figsize=(12, 5)),
-        colorbar_kwargs=dict(format="%.1e"),
-    )
-
-
-def plotting(
-    *,
-    exp_name,
-    exp_key=None,
-    raw_data,
-    model_ba_2d_data,
-    hist_bins,
-    arcsinh_adj_factor,
-    arcsinh_factor,
-    scores=None,
-):
-    if scores is not None:
-        arcsinh_nme = scores["arcsinh_nme"]
-        mpd = scores["mpd"]
-        total = arcsinh_nme + mpd
-        title = (
-            f"{exp_name}, arcsinh NME: {arcsinh_nme:0.2f}, MPD: {mpd:0.2f}, "
-            f"Total: {total:0.2f}"
-        )
-    else:
-        title = exp_name
-
-    if exp_key is None:
-        exp_key = exp_name.replace(" ", "_").lower()
-
-    logger.info("Plotting hist")
-    plt.figure()
-    plt.hist(raw_data, bins=hist_bins)
-    plt.yscale("log")
-    plt.title(title)
-    plt.savefig(save_dir / f"hist_{exp_key}.png")
-    plt.close()
-
-    log_cube_plotting(data=model_ba_2d_data, title=title, raw_data=raw_data)
-    plt.savefig(save_dir / f"BA_map_log_{exp_key}.png")
-    plt.close()
-
-    lin_cube_plotting(data=model_ba_2d_data, title=title)
-    plt.savefig(save_dir / f"BA_map_lin_{exp_key}.png")
-    plt.close()
-
-    lin_cube_plotting(
-        data=arcsinh_adj_factor * np.arcsinh(arcsinh_factor * model_ba_2d_data),
-        title=title,
-    )
-    plt.savefig(save_dir / f"BA_map_arcsinh_{exp_key}.png")
-    plt.close()
-
-
 if __name__ == "__main__":
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     save_dir = Path("~/tmp/ba-model-analysis/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
+    plotting = partial(plotting, save_dir=save_dir)
 
     logger.remove()
     logger.add(sys.stderr, level="INFO")
