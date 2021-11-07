@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
+from tqdm import tqdm
 from wildfires.analysis import cube_plotting
 
 from python_inferno.ba_model import Status, calculate_scores, get_pred_ba
@@ -206,7 +207,7 @@ if __name__ == "__main__":
     global_params = []
     global_losses = []
 
-    for fname in record_dir.glob("*"):
+    for fname in tqdm(list(record_dir.glob("*")), desc="Reading opt_record files"):
         with fname.open("rb") as f:
             params, losses = pickle.load(f)
 
@@ -256,6 +257,9 @@ if __name__ == "__main__":
 
     hist_bins = 50
 
+    plot_data = dict()
+    plot_prog = tqdm(desc="Generating plot data", total=6)
+
     for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
         sel = (df["dryness_method"] == dryness_method) & (
             df["fuel_build_up_method"] == fuel_build_up_method
@@ -281,6 +285,8 @@ if __name__ == "__main__":
         df_sel = df[sel]
         min_index = df_sel["loss"].argmin()
         min_loss = df_sel.iloc[min_index]["loss"]
+
+        logger.info("Plotting histograms.")
 
         for col in [col for col in df_sel.columns if col != "loss"]:
             if df_sel[col].isna().all():
@@ -315,8 +321,7 @@ if __name__ == "__main__":
 
         gc.collect()
 
-        plotting(
-            exp_name=exp_name,
+        plot_data[exp_name] = dict(
             exp_key=exp_key,
             raw_data=np.ma.getdata(model_ba)[~np.ma.getmaskarray(model_ba)],
             model_ba_2d_data=model_ba_2d.data,
@@ -326,9 +331,10 @@ if __name__ == "__main__":
             scores=scores,
         )
         gc.collect()
+        plot_prog.update()
 
-    plotting(
-        exp_name="GFED4",
+    # GFED4
+    plot_data["GFED4"] = dict(
         raw_data=np.ma.getdata(mon_avg_gfed_ba_1d)[
             ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
         ],
@@ -341,7 +347,9 @@ if __name__ == "__main__":
         arcsinh_adj_factor=1.0,
         arcsinh_factor=calc_factors["arcsinh_factor"],
     )
+    plot_prog.update()
 
+    # Old INFERNO BA.
     data_dict, jules_time_coord = get_processed_climatological_jules_ba()
     jules_ba_gb = data_dict.pop("jules_ba_gb")
     scores, status, avg_jules_ba, calc_factors = calculate_scores(
@@ -353,8 +361,7 @@ if __name__ == "__main__":
 
     avg_jules_ba *= calc_factors["adj_factor"]
 
-    plotting(
-        exp_name="Old INFERNO BA",
+    plot_data["Old INFERNO BA"] = dict(
         raw_data=np.ma.getdata(avg_jules_ba)[~np.ma.getmaskarray(avg_jules_ba)],
         model_ba_2d_data=cube_1d_to_2d(
             get_1d_data_cube(avg_jules_ba, lats=jules_lats, lons=jules_lons)
@@ -364,3 +371,8 @@ if __name__ == "__main__":
         arcsinh_factor=calc_factors["arcsinh_factor"],
         scores=scores,
     )
+    plot_prog.update()
+    plot_prog.close()
+
+    for exp_name, data in tqdm(list(plot_data.items()), desc="Plotting"):
+        plotting(exp_name=exp_name, **data)
