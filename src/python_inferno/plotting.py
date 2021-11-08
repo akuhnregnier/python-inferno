@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-
 import matplotlib.pyplot as plt
 import numpy as np
 from loguru import logger
+from tqdm import tqdm
 from wildfires.analysis import cube_plotting
+
+from python_inferno.metrics import calculate_phase
 
 
 def lin_cube_plotting(*, data, title):
@@ -22,6 +24,35 @@ def log_cube_plotting(*, data, title, raw_data):
         data,
         title=title,
         boundaries=np.geomspace(*np.quantile(raw_data[raw_data > 0], [0.05, 0.95]), 8),
+        fig=plt.figure(figsize=(12, 5)),
+        colorbar_kwargs=dict(format="%.1e"),
+    )
+
+
+def plot_phase_map(*, data, title):
+    assert len(data.shape) == 3, "Need time, x, y"
+    phase = np.zeros(data.shape[1:])
+    for i in tqdm(range(data.shape[1]), desc="Calculating phase"):
+        for j in range(data.shape[2]):
+            phase[i, j] = calculate_phase(data[:, i, j].reshape(12, 1))
+
+    phase += np.pi
+    # Phase is now in [0, 2pi].
+    phase -= calculate_phase(
+        np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]).reshape(12, 1)
+    )[0]
+    phase %= 2 * np.pi
+    # Phase is now in [0, 2pi].
+    #
+    # Transform to [0.5, 12.5].
+    phase *= 12 / (2 * np.pi)
+    phase += 0.5
+
+    cube_plotting(
+        phase,
+        title=title,
+        boundaries=np.linspace(0.5, 12.5, 13),
+        cmap="twilight",
         fig=plt.figure(figsize=(12, 5)),
         colorbar_kwargs=dict(format="%.1e"),
     )
@@ -78,4 +109,12 @@ def plotting(
     )
     if save_dir is not None:
         plt.savefig(save_dir / f"BA_map_arcsinh_{exp_key}.png")
+    plt.close()
+
+    plot_phase_map(
+        data=model_ba_2d_data,
+        title=title,
+    )
+    if save_dir is not None:
+        plt.savefig(save_dir / f"Phase_map_{exp_key}.png")
     plt.close()

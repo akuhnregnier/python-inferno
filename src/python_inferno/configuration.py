@@ -63,6 +63,7 @@ for var in (
 ):
     assert len(var) == npft
 
+pft_group_names = ("Trees", "Grass", "Shrubs")
 pft_groups = ((0, 1, 2, 3, 4), (5, 6, 7, 8, 9, 10), (11, 12))
 N_pft_groups = len(pft_groups)
 
