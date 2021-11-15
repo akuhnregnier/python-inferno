@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
+from loguru import logger
+from numba import njit
+from scipy.optimize import minimize
+
+from .utils import linspace_no_endpoint
 
 
 def nme(*, obs, pred):
@@ -28,13 +33,26 @@ def nmse(*, obs, pred):
     return np.sum((pred - obs) ** 2) / np.sum((obs - np.mean(obs)) ** 2)
 
 
+@njit(nogil=True, cache=True)
 def calculate_phase(x):
     if len(x.shape) != 2 or x.shape[0] != 12:
-        raise ValueError(f"Shape should be (12, N), got {x.shape}.")
-    theta = (2 * np.pi * np.linspace(0, 1, 12, endpoint=False)).reshape(12, 1)
+        raise ValueError("Unexpected shape encountered (should be (12, N)).")
+    theta = (2 * np.pi * linspace_no_endpoint(0, 1, 12)).reshape(12, 1)
     lx = np.sum(x * np.cos(theta), axis=0)
     ly = np.sum(x * np.sin(theta), axis=0)
     return np.arctan2(lx, ly)
+
+
+@njit(nogil=True, cache=True)
+def calculate_phase_2d(data):
+    """Calculate phase of data with shape (12, M, N)."""
+    if len(data.shape) != 3 or data.shape[0] != 12:
+        raise ValueError("Unexpected shape encountered (should be (12, M, N)).")
+
+    phase = np.zeros(data.shape[1:])
+    for i in range(data.shape[1]):
+        phase[i] = calculate_phase(data[:, i])
+    return phase
 
 
 def mpd(*, obs, pred, return_ignored=False):
@@ -104,3 +122,22 @@ def loghist(*, obs, pred, edges):
     binned_pred = bin_func(pred)
 
     return np.linalg.norm(binned_obs - binned_pred) / np.linalg.norm(binned_obs)
+
+
+def calculate_factor(*, y_true, y_pred):
+    """Calculate adjustment factor to convert `y_pred` to `y_true`.
+
+    This is done by minimising the NME.
+
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    def f(factor):
+        return nme(obs=y_true, pred=factor * y_pred)
+
+    # Minimize `f`, with the initial guess being the ratio of the means.
+    guess = np.mean(y_true) / np.mean(y_pred)
+    factor = minimize(f, guess).x[0]
+    logger.debug(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
+    return factor

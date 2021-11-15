@@ -2,10 +2,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from loguru import logger
-from tqdm import tqdm
 from wildfires.analysis import cube_plotting
 
-from python_inferno.metrics import calculate_phase
+from python_inferno.metrics import calculate_phase, calculate_phase_2d
 
 
 def lin_cube_plotting(*, data, title):
@@ -31,11 +30,10 @@ def log_cube_plotting(*, data, title, raw_data):
 
 def plot_phase_map(*, data, title):
     assert len(data.shape) == 3, "Need time, x, y"
-    phase = np.zeros(data.shape[1:])
-    for i in tqdm(range(data.shape[1]), desc="Calculating phase"):
-        for j in range(data.shape[2]):
-            phase[i, j] = calculate_phase(data[:, i, j].reshape(12, 1))
-
+    phase = np.ma.MaskedArray(
+        calculate_phase_2d(np.ascontiguousarray(np.ma.getdata(data))),
+        mask=np.all(np.ma.getmaskarray(data), axis=0),
+    )
     phase += np.pi
     # Phase is now in [0, 2pi].
     phase -= calculate_phase(

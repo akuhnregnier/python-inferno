@@ -87,7 +87,9 @@ def check_params(params, key, value=NoVal.NoVal):
 if __name__ == "__main__":
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     save_dir = Path("~/tmp/gam-model-analysis/").expanduser()
+    df_data_save_dir = Path("~/tmp/gam-model-df-data/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
+    df_data_save_dir.mkdir(exist_ok=True, parents=False)
     plotting = partial(plotting, save_dir=save_dir)
 
     logger.remove()
@@ -298,6 +300,10 @@ if __name__ == "__main__":
             link="log",
             N_features=N_features,
         )
+
+        pd.DataFrame(
+            np.hstack((X, y.reshape(-1, 1))), columns=feature_names + ["response"]
+        ).to_csv(df_data_save_dir / (exp_key + ".csv"))
 
         # gam = LogisticGAM(
         #     reduce(add, (s(i) for i in range(N_features))),

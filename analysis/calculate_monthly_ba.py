@@ -24,11 +24,10 @@ from wildfires.analysis import cube_plotting
 
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data, timestep
-from python_inferno.metrics import loghist, mpd, nme, nmse
+from python_inferno.metrics import calculate_factor, loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
 from python_inferno.precip_dry_day import calculate_inferno_dry_days, filter_rain
 from python_inferno.utils import (
-    calculate_factor,
     core_unpack_wrapped,
     expand_pft_params,
     exponential_average,

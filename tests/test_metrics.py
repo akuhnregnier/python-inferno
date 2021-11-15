@@ -4,7 +4,7 @@ from functools import partial
 import numpy as np
 from numpy.testing import assert_allclose
 
-from python_inferno.metrics import loghist, mpd, nme, nmse
+from python_inferno.metrics import calculate_factor, loghist, mpd, nme, nmse
 
 
 def test_mse():
@@ -108,3 +108,10 @@ def test_loghist():
     assert err2 < err1
 
     assert_allclose(bndhist(obs=obs, pred=obs), 0)
+
+
+def test_calculate_factor():
+    y_true = np.random.default_rng(0).random(100)
+    y_pred = y_true / 2.0
+
+    assert np.isclose(calculate_factor(y_true=y_true, y_pred=y_pred), 2.0)

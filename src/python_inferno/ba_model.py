@@ -9,14 +9,9 @@ from sklearn.metrics import r2_score
 
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
-from .metrics import loghist, mpd, nme, nmse
+from .metrics import calculate_factor, loghist, mpd, nme, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
-from .utils import (
-    calculate_factor,
-    expand_pft_params,
-    monthly_average_data,
-    unpack_wrapped,
-)
+from .utils import expand_pft_params, monthly_average_data, unpack_wrapped
 
 Status = Enum("Status", ["SUCCESS", "FAIL"])
 

@@ -11,7 +11,6 @@ from iris.coord_categorisation import add_month_number, add_year
 from iris.time import PartialDateTime as IrisPartialDateTime
 from loguru import logger
 from numba import njit, prange
-from scipy.optimize import minimize
 from wildfires.cache.hashing import PartialDateTimeHasher
 from wildfires.utils import ensure_datetime
 
@@ -23,7 +22,6 @@ from .configuration import (
     pft_groups_array,
     pft_groups_lengths,
 )
-from .metrics import nme
 
 if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
@@ -357,25 +355,6 @@ def moving_sum(data, samples):
     return out
 
 
-def calculate_factor(*, y_true, y_pred):
-    """Calculate adjustment factor to convert `y_pred` to `y_true`.
-
-    This is done by minimising the NME.
-
-    """
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-
-    def f(factor):
-        return nme(obs=y_true, pred=factor * y_pred)
-
-    # Minimize `f`, with the initial guess being the ratio of the means.
-    guess = np.mean(y_true) / np.mean(y_pred)
-    factor = minimize(f, guess).x[0]
-    logger.debug(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
-    return factor
-
-
 def expand_pft_params(params, pft_groups=pft_groups, dtype=np.float64):
     """Given N values in `params`, repeat these according to `pft_groups`."""
     if len(params) != len(pft_groups):
@@ -665,3 +644,10 @@ def dict_match(a, b, rtol=1e-5, atol=1e-8):
             return False
 
     return True
+
+
+@njit(nogil=True, cache=True)
+def linspace_no_endpoint(start, stop, n):
+    """Equivalent to `np.linspace(start, stop, n, endpoint=False)`."""
+    step = (stop - start) / n
+    return start + np.arange(n) * step

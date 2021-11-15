@@ -11,11 +11,11 @@ from dateutil.relativedelta import relativedelta
 from numpy.testing import assert_allclose
 
 from python_inferno.utils import (
-    calculate_factor,
     dict_match,
     expand_pft_params,
     exponential_average,
     get_pft_group_index,
+    linspace_no_endpoint,
     memoize,
     monthly_average_data,
     moving_sum,
@@ -358,13 +358,6 @@ def test_monthly_average_data_rand():
     assert np.isclose(mon_avg_con[0, 3], np.mean(data[:2, 3]))
 
 
-def test_calculate_factor():
-    y_true = np.random.default_rng(0).random(100)
-    y_pred = y_true / 2.0
-
-    assert np.isclose(calculate_factor(y_true=y_true, y_pred=y_pred), 2.0)
-
-
 def test_dict_match():
     assert dict_match({"a": 1}, {"a": 1})
     assert dict_match({"a": 1, "b": 2.0}, {"a": 1, "b": 2.0})
@@ -406,3 +399,8 @@ def test_inactive_memoize(monkeypatch):
     monkeypatch.setattr(memoize, "active", False)
 
     assert (memo_fn_side_effects(), memo_fn_side_effects()) == (1, 2)
+
+
+@pytest.mark.parametrize("args", [(0, 1, 12), (-10, 20, 4)])
+def test_linspace_no_endpoint(args):
+    assert_allclose(np.linspace(*args, endpoint=False), linspace_no_endpoint(*args))
