@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+from concurrent.futures import Future
 from datetime import datetime
 from functools import reduce, wraps
 
@@ -659,5 +660,30 @@ def wrap_phase_diffs(x):
     Assumes phase differences (in months) for climatological are cyclical (mod 12).
 
     """
-    x = np.asarray(x)
+    x = np.ma.asarray(x)
     return ((x + 6) % 12) - 6
+
+
+class DebugExecutor:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        pass
+
+    def submit(self, fn, *args, **kwargs):
+        f = Future()
+        try:
+            result = fn(*args, **kwargs)
+        except BaseException as exc:
+            f.set_exception(exc)
+        else:
+            f.set_result(result)
+
+        return f
+
+    def shutdown(self, *args, **kwargs):
+        pass

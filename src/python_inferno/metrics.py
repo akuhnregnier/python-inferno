@@ -6,9 +6,11 @@ from numba import njit
 from scipy.optimize import minimize
 from tqdm import tqdm
 
+from .cache import cache, mark_dependency
 from .utils import linspace_no_endpoint
 
 
+@mark_dependency
 def nme(*, obs, pred):
     """Normalised mean error.
 
@@ -57,6 +59,7 @@ def calculate_phase_2d(data):
     return phase
 
 
+@mark_dependency
 def mpd(*, obs, pred, return_ignored=False):
     """Mean phase difference.
 
@@ -144,8 +147,32 @@ def calculate_factor(*, y_true, y_pred):
     return factor
 
 
-def null_model_analysis(reference_data, comp_data=None, rng=None, save_dir=None):
-    """Data should have the 3D shape (12, M, N), i.e. map data over 12 months."""
+@cache(dependencies=[nme, mpd])
+def calculate_resampled_errors(*, reference_data, valid_reference_data, total_sel, N):
+    # Error for repeated subsampling (with replacement) of the reference data
+    # (Observations).
+    nme_errors = np.zeros(N)
+    mpd_errors = np.zeros(N)
+    resampled_map = np.ma.MaskedArray(np.zeros_like(reference_data), mask=True)
+    for i in tqdm(range(N), desc="Calculating resampling errors"):
+        resampled = np.random.choice(
+            valid_reference_data, size=valid_reference_data.size
+        )
+        nme_errors[i] = nme(obs=valid_reference_data, pred=resampled)
+        resampled_map[total_sel] = resampled
+        mpd_errors[i] = mpd(obs=reference_data, pred=resampled_map)
+    return nme_errors, mpd_errors
+
+
+def null_model_analysis(
+    reference_data, comp_data=None, rng=None, save_dir=None, N=10000
+):
+    """Data should have the 3D shape (12, M, N), i.e. map data over 12 months.
+
+    Args:
+        N (int):  Number of resampling operations.
+
+    """
     total_mask = np.zeros_like(reference_data, dtype=np.bool_)
 
     if comp_data is None:
@@ -167,19 +194,12 @@ def null_model_analysis(reference_data, comp_data=None, rng=None, save_dir=None)
         key: np.ma.getdata(data)[total_sel] for key, data in comp_data.items()
     }
 
-    # Error for repeated subsampling (with replacement) of the reference data
-    # (Observations).
-    N = 100  # Number of resampling operations
-    nme_errors = np.zeros(N)
-    mpd_errors = np.zeros(N)
-    resampled_map = np.ma.MaskedArray(np.zeros_like(reference_data), mask=True)
-    for i in tqdm(range(N)):
-        resampled = np.random.choice(
-            valid_reference_data, size=valid_reference_data.size
-        )
-        nme_errors[i] = nme(obs=valid_reference_data, pred=resampled)
-        resampled_map[total_sel] = resampled
-        mpd_errors[i] = mpd(obs=reference_data, pred=resampled_map)
+    nme_errors, mpd_errors = calculate_resampled_errors(
+        reference_data=reference_data,
+        valid_reference_data=valid_reference_data,
+        total_sel=total_sel,
+        N=N,
+    )
 
     nme_error_dict = {}
     mpd_error_dict = {}

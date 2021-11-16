@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import math
+from numbers import Integral
 
 import iris
 import matplotlib.pyplot as plt
@@ -14,66 +15,72 @@ from python_inferno.metrics import calculate_phase, calculate_phase_2d
 from python_inferno.utils import memoize, wrap_phase_diffs
 
 
-def lin_cube_plotting(*, data, title):
+def lin_cube_plotting(*, data, title, label="BA"):
     cube_plotting(
         data,
         title=title,
         nbins=9,
         vmin_vmax_percentiles=(5, 95),
         fig=plt.figure(figsize=(12, 5)),
-        colorbar_kwargs=dict(format="%.1e"),
+        colorbar_kwargs=dict(format="%.1e", label=label),
     )
 
 
-def log_cube_plotting(*, data, title, raw_data):
+def log_cube_plotting(*, data, title, raw_data, label="log(BA)"):
     cube_plotting(
         data,
         title=title,
         boundaries=np.geomspace(*np.quantile(raw_data[raw_data > 0], [0.05, 0.95]), 8),
         fig=plt.figure(figsize=(12, 5)),
-        colorbar_kwargs=dict(format="%.1e"),
+        colorbar_kwargs=dict(format="%.1e", label=label),
     )
 
 
 def phase_calc(*, data):
     assert len(data.shape) == 3, "Need time, x, y"
+
+    # Calculate phase in [-pi, pi].
     phase = np.ma.MaskedArray(
         calculate_phase_2d(np.ascontiguousarray(np.ma.getdata(data))),
         mask=np.all(np.ma.getmaskarray(data), axis=0),
     )
-    phase += np.pi
-    # Phase is now in [0, 2pi].
+
+    # Shift s.t. phase=0 corresponds to point between Dec and Jan.
     phase -= calculate_phase(
         np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]).reshape(12, 1)
     )[0]
+
+    # Transform phase to [0, 2pi].
     phase %= 2 * np.pi
-    # Phase is now in [0, 2pi].
-    #
-    # Transform to [0.5, 12.5].
+
+    # Make phase monotonically increasing.
+    phase = 2 * np.pi - phase
+
+    # Transform radians [0, 2pi] to [0, 12].
     phase *= 12 / (2 * np.pi)
-    phase += 0.5
+
     return phase
 
 
-def plot_phase_map(*, phase, title):
+def plot_phase_map(*, phase, title, label="phase (month)"):
     cube_plotting(
         phase,
         title=title,
         boundaries=np.linspace(0.5, 12.5, 13),
         cmap="twilight",
         fig=plt.figure(figsize=(12, 5)),
-        colorbar_kwargs=dict(format="%.1e"),
+        colorbar_kwargs=dict(format="%.1e", label=label),
     )
 
 
-def plot_phase_diff_map(*, phase_diff, title):
+def plot_phase_diff_map(*, phase_diff, title, label):
     cube_plotting(
         phase_diff,
         title=title,
         boundaries=np.linspace(-6, 6, 10),
         cmap="RdBu",
         fig=plt.figure(figsize=(12, 5)),
-        colorbar_kwargs=dict(format="%.1e"),
+        colorbar_kwargs=dict(format="%.1e", label=label),
     )
 
 
@@ -118,6 +125,13 @@ def plotting(
     if exp_key is None:
         exp_key = exp_name.replace(" ", "_").lower()
 
+    model_phase_2d = phase_calc(data=model_ba_2d_data)
+
+    if isinstance(hist_bins, Integral):
+        ba_bins = np.linspace(np.min(raw_data), np.max(raw_data), hist_bins)
+    else:
+        ba_bins = hist_bins
+
     # Regional plotting setup.
     gfed_regions = get_gfed_regions()
     N_plots = len(gfed_regions.attributes["regions"]) - 1  # Ignore the Ocean region
@@ -128,7 +142,7 @@ def plotting(
     # Global BA histogram.
     logger.debug("Plotting hist")
     plt.figure()
-    plt.hist(raw_data, bins=hist_bins)
+    plt.hist(raw_data, bins=ba_bins)
     plt.yscale("log")
     plt.title(title)
     if save_dir is not None:
@@ -138,14 +152,14 @@ def plotting(
     plt.close()
 
     # Regional BA histograms.
-    bin_width = 0.02
-
-    fig, axes = plt.subplots(**region_nrows_ncols)
+    fig, axes = plt.subplots(
+        sharex=True, sharey=True, figsize=(4, 8), **region_nrows_ncols
+    )
     for (ax, (region_code, region_name)) in zip(
         axes.ravel(),
         {
             code: name
-            for code, name in gfed_regions.attributes["regions"].items()
+            for code, name in gfed_regions.attributes["short_regions"].items()
             # Ignore the Ocean region.
             if code != 0
         }.items(),
@@ -154,20 +168,13 @@ def plotting(
             np.ones((12, 1, 1), dtype=np.bool_)
             & (np.ma.getdata(gfed_regions.data) == region_code)[np.newaxis]
         )
-        region_data = model_ba_2d_data[region_sel]
-        reg_min = np.min(region_data)
-        reg_max = np.max(region_data)
-
-        bins = np.arange(reg_min, reg_max, bin_width)
-        bins = np.unique(np.append(bins, bins[-1] + bin_width))
-
-        ax.hist(region_data, bins=bins)
+        ax.hist(model_ba_2d_data[region_sel], bins=ba_bins)
         ax.set_yscale("log")
         # Show the region name and number of selected locations.
         ax.set_title(f"{region_name} (n={np.sum(region_sel) / 12})")
 
     fig.suptitle(title)
-    plt.tight_layout()
+    fig.tight_layout(rect=[0, 0.0, 1, 0.98])
 
     if save_dir is not None:
         ba_reg_hist_dir = save_dir / "BA_reg_hist"
@@ -195,6 +202,7 @@ def plotting(
     lin_cube_plotting(
         data=arcsinh_adj_factor * np.arcsinh(arcsinh_factor * model_ba_2d_data),
         title=title,
+        label="arcsinh(a*BA)",
     )
     if save_dir is not None:
         ba_map_arcsinh_dir = save_dir / "BA_map_arcsinh"
@@ -204,7 +212,7 @@ def plotting(
 
     # Global phase map plot.
     plot_phase_map(
-        phase=phase_calc(data=model_ba_2d_data),
+        phase=model_phase_2d,
         title=title,
     )
     if save_dir is not None:
@@ -215,18 +223,22 @@ def plotting(
 
     # Phase difference (relative to GFED4) plots.
     if ref_2d_data is not None:
-        phase_diff = wrap_phase_diffs(
-            phase_calc(data=ref_2d_data) - phase_calc(data=model_ba_2d_data)
-        )
+        phase_diff = wrap_phase_diffs(phase_calc(data=ref_2d_data) - model_phase_2d)
+        xlabel = "phase diff (obs - model)"
+        bins = np.linspace(-6, 6, 20)
+        assert not np.any(phase_diff) < bins[0]
+        assert not np.any(phase_diff) > bins[-1]
 
         # Global phase difference histogram.
         plt.figure()
         plt.title(title)
         plt.hist(
             np.ma.getdata(phase_diff)[~np.ma.getmaskarray(phase_diff)],
-            bins=np.linspace(-12, 12, 50),
+            bins=bins,
             density=True,
         )
+        plt.yscale("log")
+        plt.xlabel(xlabel)
         if save_dir is not None:
             phase_diff_hist_dir = save_dir / "phase_diff_hist"
             phase_diff_hist_dir.mkdir(exist_ok=True, parents=False)
@@ -234,25 +246,29 @@ def plotting(
         plt.close()
 
         # Regional phase difference histograms.
-        bins = np.linspace(-6, 6, 10)
 
-        fig, axes = plt.subplots(**region_nrows_ncols)
+        fig, axes = plt.subplots(
+            sharex=True, sharey=True, figsize=(4, 8), **region_nrows_ncols
+        )
         for (ax, (region_code, region_name)) in zip(
             axes.ravel(),
             {
                 code: name
-                for code, name in gfed_regions.attributes["regions"].items()
+                for code, name in gfed_regions.attributes["short_regions"].items()
                 # Ignore the Ocean region.
                 if code != 0
             }.items(),
         ):
             region_sel = np.ma.getdata(gfed_regions.data) == region_code
-            ax.hist(phase_diff[region_sel])
+            ax.hist(phase_diff[region_sel], bins=bins, density=True)
             # Show the region name and number of selected locations.
             ax.set_title(f"{region_name} (n={np.sum(region_sel)})")
 
+        for ax in axes[-1, :]:
+            ax.set_xlabel(xlabel)
+
         fig.suptitle(title)
-        plt.tight_layout()
+        fig.tight_layout(rect=[0, 0.0, 1, 0.98])
 
         if save_dir is not None:
             reg_phase_diff_hist_dir = save_dir / "reg_phase_diff_hist"
@@ -261,7 +277,7 @@ def plotting(
         plt.close()
 
         # Global phase difference map.
-        plot_phase_diff_map(phase_diff=phase_diff, title=title)
+        plot_phase_diff_map(phase_diff=phase_diff, title=title, label=xlabel)
         if save_dir is not None:
             phase_diff_map_dir = save_dir / "phase_diff_map"
             phase_diff_map_dir.mkdir(exist_ok=True, parents=False)

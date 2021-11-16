@@ -157,7 +157,7 @@ if __name__ == "__main__":
     global_params = []
     global_losses = []
 
-    for fname in tqdm(list(record_dir.glob("*")), desc="Reading opt_record files"):
+    for fname in record_dir.glob("*"):
         with fname.open("rb") as f:
             params, losses = pickle.load(f)
 
@@ -317,7 +317,7 @@ if __name__ == "__main__":
     plot_prog.update()
     plot_prog.close()
 
-    for exp_name, data in tqdm(list(plot_data.items()), desc="Plotting"):
+    for exp_name, data in plot_data.items():
         futures.append(
             executor.submit(
                 plotting,
