@@ -651,3 +651,13 @@ def linspace_no_endpoint(start, stop, n):
     """Equivalent to `np.linspace(start, stop, n, endpoint=False)`."""
     step = (stop - start) / n
     return start + np.arange(n) * step
+
+
+def wrap_phase_diffs(x):
+    """Wrap phase differences.
+
+    Assumes phase differences (in months) for climatological are cyclical (mod 12).
+
+    """
+    x = np.asarray(x)
+    return ((x + 6) % 12) - 6

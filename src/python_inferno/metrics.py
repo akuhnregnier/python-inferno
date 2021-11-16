@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+import matplotlib.pyplot as plt
 import numpy as np
 from loguru import logger
 from numba import njit
 from scipy.optimize import minimize
+from tqdm import tqdm
 
 from .utils import linspace_no_endpoint
 
@@ -64,34 +66,33 @@ def mpd(*, obs, pred, return_ignored=False):
         return_ignored (bool): If True, return the number of ignored samples.
 
     """
-    if (
-        len(obs.shape) != 2
-        or obs.shape[0] != 12
-        or len(pred.shape) != 2
-        or pred.shape[0] != 12
-    ):
+    if len(obs.shape) == 2 and len(pred.shape) == 2:
+        phase_func = calculate_phase
+    elif len(obs.shape) == 3 and len(pred.shape) == 3:
+        phase_func = calculate_phase_2d
+    else:
+        raise ValueError(f"Shape should be (12, N), got {obs.shape} and {pred.shape}.")
+    if obs.shape[0] != 12 or pred.shape[0] != 12:
         raise ValueError(f"Shape should be (12, N), got {obs.shape} and {pred.shape}.")
 
     # Ignore those locations with all 0s in either `obs` or `pred`.
     def close_func(a, b):
         return np.all(np.isclose(a, b, rtol=0, atol=1e-15), axis=0)
 
-    ignore_mask = np.ones((12, 1), dtype=np.bool_) & (
-        (close_func(obs, 0) | close_func(pred, 0)).reshape(1, -1)
+    ignore_mask = np.ones((12, *((1,) * (len(obs.shape) - 1))), dtype=np.bool_) & (
+        (
+            close_func(np.ma.getdata(obs), 0) | close_func(np.ma.getdata(pred), 0)
+        ).reshape(1, *(obs.shape[1:]))
     )
 
     def add_mask(arr):
-        if np.ma.isMaskedArray(arr):
-            carr = arr.copy()
-            carr.mask |= ignore_mask
-            return carr
-        return np.ma.MaskedArray(arr, mask=ignore_mask)
+        return np.ma.MaskedArray(
+            np.ma.getdata(arr), mask=(np.ma.getmaskarray(arr) | ignore_mask)
+        )
 
     mpd_val = np.mean(
         (1 / np.pi)
-        * np.arccos(
-            np.cos(calculate_phase(add_mask(pred)) - calculate_phase(add_mask(obs)))
-        )
+        * np.arccos(np.cos(phase_func(add_mask(pred)) - phase_func(add_mask(obs))))
     )
     if return_ignored:
         return mpd_val, np.sum(np.all(ignore_mask, axis=0))
@@ -141,3 +142,91 @@ def calculate_factor(*, y_true, y_pred):
     factor = minimize(f, guess).x[0]
     logger.debug(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
     return factor
+
+
+def null_model_analysis(reference_data, comp_data=None, rng=None, save_dir=None):
+    """Data should have the 3D shape (12, M, N), i.e. map data over 12 months."""
+    total_mask = np.zeros_like(reference_data, dtype=np.bool_)
+
+    if comp_data is None:
+        comp_data = {}
+    else:
+        for data in comp_data.values():
+            assert len(data.shape) == 3
+            total_mask |= np.ma.getmaskarray(data)
+
+    assert reference_data.ndim == 3
+    total_mask |= np.ma.getmaskarray(reference_data)
+    total_sel = ~total_mask
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    valid_reference_data = np.ma.getdata(reference_data)[total_sel]
+    valid_comp_data = {
+        key: np.ma.getdata(data)[total_sel] for key, data in comp_data.items()
+    }
+
+    # Error for repeated subsampling (with replacement) of the reference data
+    # (Observations).
+    N = 100  # Number of resampling operations
+    nme_errors = np.zeros(N)
+    mpd_errors = np.zeros(N)
+    resampled_map = np.ma.MaskedArray(np.zeros_like(reference_data), mask=True)
+    for i in tqdm(range(N)):
+        resampled = np.random.choice(
+            valid_reference_data, size=valid_reference_data.size
+        )
+        nme_errors[i] = nme(obs=valid_reference_data, pred=resampled)
+        resampled_map[total_sel] = resampled
+        mpd_errors[i] = mpd(obs=reference_data, pred=resampled_map)
+
+    nme_error_dict = {}
+    mpd_error_dict = {}
+
+    # Error given just the mean state.
+    nme_error_dict["mean_state"] = nme(
+        obs=valid_reference_data,
+        pred=np.zeros_like(valid_reference_data) + np.mean(valid_reference_data),
+    )
+    mpd_error_dict["mean_state"] = mpd(
+        obs=reference_data,
+        pred=np.zeros_like(reference_data) + np.mean(valid_reference_data),
+    )
+
+    # Errors for the other data.
+    for key, data in valid_comp_data.items():
+        nme_error_dict[key] = nme(obs=valid_reference_data, pred=data)
+    for key, data in comp_data.items():
+        mpd_error_dict[key] = mpd(obs=reference_data, pred=data)
+
+    def error_hist(*, errors, title, error_dict, filename):
+        plt.figure()
+        plt.hist(errors, bins="auto", density=True)
+        plt.title(title)
+
+        # Indicate other errors.
+        prev_ylim = plt.ylim()
+        for (i, (key, err)) in enumerate(error_dict.items()):
+            plt.vlines(err, *prev_ylim, color=f"C{i+1}", label=key)
+        plt.ylim(*prev_ylim)
+        plt.legend(loc="best")
+        if save_dir is not None:
+            plt.savefig(save_dir / filename)
+            plt.close()
+
+    # NME Errors.
+    error_hist(
+        errors=nme_errors,
+        title="NME errors",
+        error_dict=nme_error_dict,
+        filename="nme_errors.png",
+    )
+
+    # MPD Errors.
+    error_hist(
+        errors=mpd_errors,
+        title="MPD errors",
+        error_dict=mpd_error_dict,
+        filename="mpd_errors.png",
+    )

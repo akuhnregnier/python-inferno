@@ -21,6 +21,7 @@ from python_inferno.utils import (
     moving_sum,
     temporal_nearest_neighbour_interp,
     temporal_processing,
+    wrap_phase_diffs,
 )
 
 
@@ -404,3 +405,10 @@ def test_inactive_memoize(monkeypatch):
 @pytest.mark.parametrize("args", [(0, 1, 12), (-10, 20, 4)])
 def test_linspace_no_endpoint(args):
     assert_allclose(np.linspace(*args, endpoint=False), linspace_no_endpoint(*args))
+
+
+def test_wrap_phase_diffs():
+    assert_allclose(
+        wrap_phase_diffs([-12, 12, 0, -6, 6, -10, 10, 8, -8, -4, 4]),
+        [0, 0, 0, -6, -6, 2, -2, -4, 4, -4, 4],
+    )

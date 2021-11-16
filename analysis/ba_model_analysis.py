@@ -21,6 +21,7 @@ from tqdm import tqdm
 from python_inferno.ba_model import Status, calculate_scores, get_pred_ba
 from python_inferno.cache import cache
 from python_inferno.data import load_data, load_jules_lats_lons
+from python_inferno.metrics import null_model_analysis
 from python_inferno.plotting import plotting
 from python_inferno.utils import PartialDateTime, memoize, temporal_processing
 
@@ -211,8 +212,8 @@ if __name__ == "__main__":
         exp_key = f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"
         logger.info(exp_key)
 
-        hist_save_dir = save_dir / exp_key
-        hist_save_dir.mkdir(exist_ok=True, parents=False)
+        hist_save_dir = save_dir / "parameter_histograms" / exp_key
+        hist_save_dir.mkdir(exist_ok=True, parents=True)
 
         df_sel = df[sel]
         min_index = df_sel["loss"].argmin()
@@ -266,13 +267,14 @@ if __name__ == "__main__":
         plot_prog.update()
 
     # GFED4
+    reference_obs = cube_1d_to_2d(
+        get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
+    ).data
     plot_data["GFED4"] = dict(
         raw_data=np.ma.getdata(mon_avg_gfed_ba_1d)[
             ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
         ],
-        model_ba_2d_data=cube_1d_to_2d(
-            get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
-        ).data,
+        model_ba_2d_data=reference_obs,
         hist_bins=hist_bins,
         # NOTE: Assuming arcsinh_factor is constant across all experiments, which
         # should be true.
@@ -307,4 +309,19 @@ if __name__ == "__main__":
     plot_prog.close()
 
     for exp_name, data in tqdm(list(plot_data.items()), desc="Plotting"):
-        plotting(exp_name=exp_name, **data)
+        plotting(
+            exp_name=exp_name,
+            ref_2d_data=(reference_obs if exp_name != "GFED4" else None),
+            **data,
+        )
+
+    null_model_analysis(
+        reference_data=reference_obs,
+        comp_data={
+            key: vals["model_ba_2d_data"]
+            for key, vals in plot_data.items()
+            if key != "GFED4"
+        },
+        rng=np.random.default_rng(0),
+        save_dir=save_dir,
+    )
