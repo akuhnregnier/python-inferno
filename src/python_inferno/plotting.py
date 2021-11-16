@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import math
-from warnings import warn
 
 import iris
 import matplotlib.pyplot as plt
@@ -127,7 +126,7 @@ def plotting(
     # Plotting.
 
     # Global BA histogram.
-    logger.info("Plotting hist")
+    logger.debug("Plotting hist")
     plt.figure()
     plt.hist(raw_data, bins=hist_bins)
     plt.yscale("log")
@@ -269,4 +268,4 @@ def plotting(
             plt.savefig(phase_diff_map_dir / f"phase_diff_map_{exp_key}.png")
         plt.close()
     else:
-        warn("'ref_2d_data' not given.")
+        logger.debug("'ref_2d_data' not given.")

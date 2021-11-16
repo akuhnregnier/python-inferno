@@ -4,6 +4,7 @@ import gc
 import os
 import pickle
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from enum import Enum
 from functools import partial
 from itertools import product
@@ -120,6 +121,22 @@ def check_params(params, key, value=NoVal.NoVal):
     return False
 
 
+def plot_param_histograms(df_sel, exp_name, hist_save_dir):
+    for col in [col for col in df_sel.columns if col != "loss"]:
+        if df_sel[col].isna().all():
+            continue
+
+        plt.figure()
+        plt.plot(df_sel[col], df_sel["loss"], linestyle="", marker="o", alpha=0.6)
+        plt.xlabel(col)
+        plt.ylabel("loss")
+        plt.title(exp_name)
+        if col in ("rain_f", "vpd_f", "litter_tc", "leaf_f"):
+            plt.xscale("log")
+        plt.savefig(hist_save_dir / f"{col}.png")
+        plt.close()
+
+
 if __name__ == "__main__":
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     save_dir = Path("~/tmp/ba-model-analysis/").expanduser()
@@ -193,6 +210,9 @@ if __name__ == "__main__":
     plot_data = dict()
     plot_prog = tqdm(desc="Generating plot data", total=6)
 
+    executor = ProcessPoolExecutor(max_workers=10)
+    futures = []
+
     for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
         sel = (df["dryness_method"] == dryness_method) & (
             df["fuel_build_up_method"] == fuel_build_up_method
@@ -220,20 +240,9 @@ if __name__ == "__main__":
         min_loss = df_sel.iloc[min_index]["loss"]
 
         logger.info("Plotting histograms.")
-
-        for col in [col for col in df_sel.columns if col != "loss"]:
-            if df_sel[col].isna().all():
-                continue
-
-            plt.figure()
-            plt.plot(df_sel[col], df_sel["loss"], linestyle="", marker="o", alpha=0.6)
-            plt.xlabel(col)
-            plt.ylabel("loss")
-            plt.title(exp_name)
-            if col in ("rain_f", "vpd_f", "litter_tc", "leaf_f"):
-                plt.xscale("log")
-            plt.savefig(hist_save_dir / f"{col}.png")
-            plt.close()
+        futures.append(
+            executor.submit(plot_param_histograms, df_sel, exp_name, hist_save_dir)
+        )
 
         params = {
             key: val
@@ -309,10 +318,13 @@ if __name__ == "__main__":
     plot_prog.close()
 
     for exp_name, data in tqdm(list(plot_data.items()), desc="Plotting"):
-        plotting(
-            exp_name=exp_name,
-            ref_2d_data=(reference_obs if exp_name != "GFED4" else None),
-            **data,
+        futures.append(
+            executor.submit(
+                plotting,
+                exp_name=exp_name,
+                ref_2d_data=(reference_obs if exp_name != "GFED4" else None),
+                **data,
+            )
         )
 
     null_model_analysis(
@@ -325,3 +337,10 @@ if __name__ == "__main__":
         rng=np.random.default_rng(0),
         save_dir=save_dir,
     )
+
+    for _ in tqdm(
+        as_completed(futures), total=len(futures), desc="Waiting for executor"
+    ):
+        pass
+
+    executor.shutdown()
