@@ -29,7 +29,7 @@ fit_gam = function(label, df_data, stdout_file, image_dir) {
     indep = names(df_data)[!(names(df_data) %in% c("response"))]
     gam_formula = as.formula(paste("response ~", paste(map(indep, wrap_s), collapse="+")))
 
-    fitted_gam = gam(gam_formula, method="REML", family=binomial(link="logit"), data=df_data)
+    fitted_gam = gam(gam_formula, method="REML", family=quasibinomial(link="logit"), data=df_data)
     file_append(paste("Index:", label), stdout_file)
     file_append(capture.output(print(summary(fitted_gam))), stdout_file)
 
