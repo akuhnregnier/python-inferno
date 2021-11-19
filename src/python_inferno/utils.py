@@ -12,6 +12,7 @@ from iris.coord_categorisation import add_month_number, add_year
 from iris.time import PartialDateTime as IrisPartialDateTime
 from loguru import logger
 from numba import njit, prange
+from tqdm import tqdm
 from wildfires.cache.hashing import PartialDateTimeHasher
 from wildfires.utils import ensure_datetime
 
@@ -687,3 +688,117 @@ class DebugExecutor:
 
     def shutdown(self, *args, **kwargs):
         pass
+
+
+def get_distinct_params(
+    fn, min_val, max_val, N, seed_N=1000, min_std=0.1, verbose=False
+):
+    """Get results of maximally distinct parameter values according to `fn`.
+
+    `N` values in [`min_val`, `max_val`] will be returned according to a numerical
+    algorithm.
+
+    `fn` will be called like `fn(param)`, where param is to be estimated.
+    It is assumed that `fn` always returns 1D numpy arrays of the same size.
+
+    A minimum standard deviation threshold can be used via `min_std`.
+
+    """
+    test_out = fn(min_val)
+    all_results = np.zeros((seed_N, test_out.size), dtype=test_out.dtype)
+
+    all_params = np.linspace(min_val, max_val, seed_N)
+
+    for i, val in enumerate(
+        tqdm(
+            all_params,
+            desc="Evaluating fn",
+            disable=not verbose,
+        )
+    ):
+        all_results[i] = fn(val)
+
+    if min_std is not None:
+        sel = np.std(all_results, axis=1) > min_std
+        all_results = all_results[sel]
+        all_params = all_params[sel]
+
+        if all_results.shape[0] < N:
+            raise ValueError(
+                f"min_std threshold of '{min_std}' removed too many results "
+                f"({all_results.shape[0]} left)."
+            )
+
+    N_results = all_results.shape[0]
+    norm_thres = np.mean(
+        [
+            np.linalg.norm(all_results[0] - all_results[N_results // 2]),
+            np.linalg.norm(all_results[N // 2] - all_results[-1]),
+        ]
+    )
+
+    prior_ns = []
+    prior_thres = []
+
+    counter = 0
+    prog = tqdm(desc="Determining parameters", disable=not verbose)
+    while True:
+        if counter > 1000:
+            raise RuntimeError(f"Too many iterations ({counter}). Aborting.")
+        counter += 1
+
+        prior_ns_arr = np.asarray(prior_ns)
+        if np.any(prior_ns_arr < N) and np.any(prior_ns_arr > N):
+            # Choose new threshold based on existing thresholds.
+            thres_val_arr = np.asarray(prior_thres)
+
+            unique_n_vals = np.unique(prior_ns_arr)
+            low_n = unique_n_vals[unique_n_vals < N][-1]
+            high_n = unique_n_vals[unique_n_vals > N][0]
+
+            # Choose the smallest possible threshold for the lower bound N.
+            low_thres = np.min(thres_val_arr[np.isclose(prior_ns_arr, low_n)])
+            # Vice versa for the upper bound N.
+            high_thres = np.max(thres_val_arr[np.isclose(prior_ns_arr, high_n)])
+
+            # Choose midpoint threshold.
+            norm_thres = (low_thres + high_thres) / 2.0
+
+        last_result = all_results[0]
+        params = [all_params[0]]
+        for i in range(1, all_results.shape[0]):
+            if np.linalg.norm(last_result - all_results[i]) > norm_thres:
+                last_result = all_results[i]
+                params.append(all_params[i])
+
+            if len(params) > N:
+                # Record params (scale by remaining results to query since we are
+                # aborting early).
+                prior_ns.append(len(params) * all_results.shape[0] / i)
+                prior_thres.append(norm_thres)
+
+                # Increase `norm_thres` to get fewer params next time.
+                norm_thres *= 2
+                break
+        else:
+            # Reached if no break, i.e. too few or the exact right number of params.
+            if len(params) == N:
+                # Desired target reached.
+                return params
+
+            # Record params.
+            prior_ns.append(len(params))
+            prior_thres.append(norm_thres)
+
+            # Decrease `norm_thres` to get more params the next time.
+            norm_thres /= 2
+
+        prog.set_postfix(
+            {
+                "closest n": np.asarray(prior_ns)[
+                    np.argmin(np.abs(np.asarray(prior_ns) - N))
+                ],
+                "norm_thres": f"{prior_thres[-1]:0.4e}",
+            }
+        )
+        prog.update()

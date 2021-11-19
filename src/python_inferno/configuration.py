@@ -66,6 +66,7 @@ for var in (
 pft_group_names = ("Trees", "Grass", "Shrubs")
 pft_groups = ((0, 1, 2, 3, 4), (5, 6, 7, 8, 9, 10), (11, 12))
 N_pft_groups = len(pft_groups)
+assert len(pft_group_names) == N_pft_groups
 
 pft_groups_array = np.zeros((N_pft_groups, npft), dtype=np.int64)
 pft_groups_lengths = np.zeros((N_pft_groups,), dtype=np.int64)
