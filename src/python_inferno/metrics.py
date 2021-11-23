@@ -82,21 +82,23 @@ def mpd(*, obs, pred, return_ignored=False):
     def close_func(a, b):
         return np.all(np.isclose(a, b, rtol=0, atol=1e-15), axis=0)
 
-    ignore_mask = np.ones((12, *((1,) * (len(obs.shape) - 1))), dtype=np.bool_) & (
-        (
-            close_func(np.ma.getdata(obs), 0) | close_func(np.ma.getdata(pred), 0)
-        ).reshape(1, *(obs.shape[1:]))
+    ignore_mask = (
+        close_func(np.ma.getdata(obs), 0) | close_func(np.ma.getdata(pred), 0)
+    ).reshape(1, *(obs.shape[1:]))
+
+    combined_mask = (
+        np.any(np.ma.getmaskarray(pred), axis=0)
+        | np.any(np.ma.getmaskarray(obs), axis=0)
+        | ignore_mask
     )
 
     def add_mask(arr):
-        return np.ma.MaskedArray(
-            np.ma.getdata(arr), mask=(np.ma.getmaskarray(arr) | ignore_mask)
-        )
+        return np.ma.MaskedArray(np.ma.getdata(arr), mask=combined_mask)
 
-    mpd_val = np.mean(
-        (1 / np.pi)
-        * np.arccos(np.cos(phase_func(add_mask(pred)) - phase_func(add_mask(obs))))
+    mpd_val = np.ma.mean(
+        (1 / np.pi) * add_mask(np.arccos(np.cos(phase_func(pred) - phase_func(obs))))
     )
+
     if return_ignored:
         return mpd_val, np.sum(np.all(ignore_mask, axis=0))
     return mpd_val

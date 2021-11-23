@@ -198,6 +198,7 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
         loghist=loghist(obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)),
         # Temporal stats.
         mpd=mpd_val,
+        mpd_ignored=ignored,
     )
 
     if any(np.ma.is_masked(val) for val in scores.values()):
