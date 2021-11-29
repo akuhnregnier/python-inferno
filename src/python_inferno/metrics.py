@@ -11,7 +11,7 @@ from .utils import linspace_no_endpoint
 
 
 @mark_dependency
-def nme(*, obs, pred):
+def nme(*, obs, pred, return_std=False):
     """Normalised mean error.
 
     Args:
@@ -21,7 +21,11 @@ def nme(*, obs, pred):
     """
     obs = np.asarray(obs)
     pred = np.asarray(pred)
-    return np.sum(np.abs(pred - obs)) / np.sum(np.abs(obs - np.mean(obs)))
+    denom = np.mean(np.abs(obs - np.mean(obs)))
+    err = np.mean(np.abs(pred - obs)) / denom
+    if return_std:
+        return err, np.mean(np.abs(pred - obs)) / denom
+    return err
 
 
 def nmse(*, obs, pred):
@@ -60,7 +64,7 @@ def calculate_phase_2d(data):
 
 
 @mark_dependency
-def mpd(*, obs, pred, return_ignored=False):
+def mpd(*, obs, pred, return_ignored=False, return_std=False):
     """Mean phase difference.
 
     Args:
@@ -95,13 +99,17 @@ def mpd(*, obs, pred, return_ignored=False):
     def add_mask(arr):
         return np.ma.MaskedArray(np.ma.getdata(arr), mask=combined_mask)
 
-    mpd_val = np.ma.mean(
-        (1 / np.pi) * add_mask(np.arccos(np.cos(phase_func(pred) - phase_func(obs))))
-    )
+    vals = (1 / np.pi) * add_mask(np.arccos(np.cos(phase_func(pred) - phase_func(obs))))
+    mpd_val = np.ma.mean(vals)
 
+    to_return = [mpd_val]
     if return_ignored:
-        return mpd_val, np.sum(np.all(ignore_mask, axis=0))
-    return mpd_val
+        to_return.append(np.sum(np.all(ignore_mask, axis=0)))
+    if return_std:
+        to_return.append(np.ma.std(vals))
+    if return_ignored or return_std:
+        return tuple(to_return)
+    return to_return[0]
 
 
 def loghist(*, obs, pred, edges):
@@ -210,27 +218,41 @@ def null_model_analysis(
     nme_error_dict["mean_state"] = nme(
         obs=valid_reference_data,
         pred=np.zeros_like(valid_reference_data) + np.mean(valid_reference_data),
+        return_std=True,
     )
     mpd_error_dict["mean_state"] = mpd(
         obs=reference_data,
         pred=np.zeros_like(reference_data) + np.mean(valid_reference_data),
+        return_std=True,
     )
 
     # Errors for the other data.
     for key, data in valid_comp_data.items():
-        nme_error_dict[key] = nme(obs=valid_reference_data, pred=data)
+        nme_error_dict[key] = nme(obs=valid_reference_data, pred=data, return_std=True)
     for key, data in comp_data.items():
-        mpd_error_dict[key] = mpd(obs=reference_data, pred=data)
+        mpd_error_dict[key] = mpd(obs=reference_data, pred=data, return_std=True)
 
     def error_hist(*, errors, title, error_dict, filename):
         plt.figure()
         plt.hist(errors, bins="auto", density=True)
         plt.title(title)
 
+        ax2 = plt.gca().twinx()
+
         # Indicate other errors.
         prev_ylim = plt.ylim()
-        for (i, (key, err)) in enumerate(error_dict.items()):
+        for (i, (key, (err, std))) in enumerate(error_dict.items()):
             plt.vlines(err, *prev_ylim, color=f"C{i+1}", label=key)
+            plt.vlines(err - std, *prev_ylim, color=f"C{i+1}", alpha=0.2)
+            plt.vlines(err + std, *prev_ylim, color=f"C{i+1}", alpha=0.2)
+
+            xs = np.linspace(0, 2, 100)
+            ax2.plot(
+                xs,
+                (1 / np.sqrt(2 * np.pi * std ** 2))
+                * np.exp(-((xs - err) ** 2) / (2 * std ** 2)),
+                c=f"C{i+1}",
+            )
         plt.ylim(*prev_ylim)
         plt.legend(loc="best")
         if save_dir is not None:
