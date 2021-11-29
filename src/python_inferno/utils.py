@@ -802,3 +802,24 @@ def get_distinct_params(
             }
         )
         prog.update()
+
+
+def get_apply_mask(mask):
+    def _apply_mask(arr):
+        """Apply `mask` to `arr`."""
+        if (arr.ndim > 1) and (mask.shape == arr.shape[1:]):
+            # Broadcast mask.
+            apply_mask = mask & np.ones(
+                (arr.shape[0], *([1] * (arr.ndim - 1))), dtype=np.bool_
+            )
+        else:
+            apply_mask = mask
+        return np.ma.MaskedArray(
+            np.ma.getdata(arr), mask=np.ma.getmaskarray(arr) | apply_mask
+        )
+
+    return _apply_mask
+
+
+def get_ba_mask(ba):
+    return np.mean(ba, axis=0) < 1e-10

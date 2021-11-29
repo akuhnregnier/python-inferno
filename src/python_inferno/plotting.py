@@ -42,7 +42,7 @@ def phase_calc(*, data):
     # Calculate phase in [-pi, pi].
     phase = np.ma.MaskedArray(
         calculate_phase_2d(np.ascontiguousarray(np.ma.getdata(data))),
-        mask=np.all(np.ma.getmaskarray(data), axis=0),
+        mask=np.any(np.ma.getmaskarray(data), axis=0),
     )
 
     # Shift s.t. phase=0 corresponds to point between Dec and Jan.

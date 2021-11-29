@@ -24,7 +24,13 @@ from python_inferno.cache import cache
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.metrics import null_model_analysis
 from python_inferno.plotting import plotting
-from python_inferno.utils import PartialDateTime, memoize, temporal_processing
+from python_inferno.utils import (
+    PartialDateTime,
+    get_apply_mask,
+    get_ba_mask,
+    memoize,
+    temporal_processing,
+)
 
 NoVal = Enum("NoVal", ["NoVal"])
 
@@ -255,6 +261,13 @@ if __name__ == "__main__":
         model_ba, scores, mon_avg_gfed_ba_1d, calc_factors = get_pred_ba(**params)
         model_ba *= calc_factors["adj_factor"]
 
+        ba_mask_1d = get_ba_mask(mon_avg_gfed_ba_1d)
+        apply_ba_mask_1d = get_apply_mask(ba_mask_1d)
+
+        orig_mon_avg_gfed_ba_1d = mon_avg_gfed_ba_1d
+        mon_avg_gfed_ba_1d = apply_ba_mask_1d(mon_avg_gfed_ba_1d)
+        model_ba = apply_ba_mask_1d(model_ba)
+
         gc.collect()
 
         model_ba_1d = get_1d_data_cube(model_ba, lats=jules_lats, lons=jules_lons)
@@ -274,6 +287,11 @@ if __name__ == "__main__":
         )
         gc.collect()
         plot_prog.update()
+
+    # TODO The use of `mon_avg_gfed_ba_1d` here makes the results dependent on the
+    # averaging used to derive it (depends on `average_samples`). This should also be
+    # true for other scripts following a similar structure, e.g.
+    # `multi_gam_analysis.py`!
 
     # GFED4
     reference_obs = cube_1d_to_2d(
@@ -306,9 +324,11 @@ if __name__ == "__main__":
 
     plot_data["Old INFERNO BA"] = dict(
         raw_data=np.ma.getdata(avg_jules_ba)[~np.ma.getmaskarray(avg_jules_ba)],
-        model_ba_2d_data=cube_1d_to_2d(
-            get_1d_data_cube(avg_jules_ba, lats=jules_lats, lons=jules_lons)
-        ).data,
+        model_ba_2d_data=get_apply_mask(reference_obs.mask)(
+            cube_1d_to_2d(
+                get_1d_data_cube(avg_jules_ba, lats=jules_lats, lons=jules_lons)
+            ).data
+        ),
         hist_bins=hist_bins,
         arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
         arcsinh_factor=calc_factors["arcsinh_factor"],
@@ -327,8 +347,12 @@ if __name__ == "__main__":
             )
         )
 
+    # TODO For error calculations, do not use the version with the low BA mask?
+    orig_reference_obs = cube_1d_to_2d(
+        get_1d_data_cube(orig_mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
+    ).data
     null_model_analysis(
-        reference_data=reference_obs,
+        reference_data=orig_reference_obs,
         comp_data={
             key: vals["model_ba_2d_data"]
             for key, vals in plot_data.items()
@@ -338,9 +362,10 @@ if __name__ == "__main__":
         save_dir=save_dir,
     )
 
-    for _ in tqdm(
+    for f in tqdm(
         as_completed(futures), total=len(futures), desc="Waiting for executor"
     ):
-        pass
+        # Get result here to be notified of any exceptions.
+        f.result()
 
     executor.shutdown()
