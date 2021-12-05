@@ -22,9 +22,14 @@ def nme(*, obs, pred, return_std=False):
     obs = np.asarray(obs)
     pred = np.asarray(pred)
     denom = np.mean(np.abs(obs - np.mean(obs)))
-    err = np.mean(np.abs(pred - obs)) / denom
+
+    abs_diff = np.abs(pred - obs)
+    err = np.mean(abs_diff) / denom
+
     if return_std:
-        return err, np.mean(np.abs(pred - obs)) / denom
+        N = np.ma.getdata(abs_diff)[~np.ma.getmaskarray(abs_diff)].size
+        # Return the standard deviation of the mean.
+        return err, (np.mean(np.abs(pred - obs)) / denom) / (N ** 0.5)
     return err
 
 
@@ -106,7 +111,9 @@ def mpd(*, obs, pred, return_ignored=False, return_std=False):
     if return_ignored:
         to_return.append(np.sum(np.all(ignore_mask, axis=0)))
     if return_std:
-        to_return.append(np.ma.std(vals))
+        N = np.ma.getdata(vals)[~np.ma.getmaskarray(vals)].size
+        # Return the standard deviation of the mean.
+        to_return.append(np.ma.std(vals) / (N ** 0.5))
     if return_ignored or return_std:
         return tuple(to_return)
     return to_return[0]
@@ -237,23 +244,32 @@ def null_model_analysis(
         plt.hist(errors, bins="auto", density=True)
         plt.title(title)
 
+        xmins = [np.min(errors)]
+        xmaxs = [np.max(errors)]
+
         ax2 = plt.gca().twinx()
 
         # Indicate other errors.
         prev_ylim = plt.ylim()
         for (i, (key, (err, std))) in enumerate(error_dict.items()):
             plt.vlines(err, *prev_ylim, color=f"C{i+1}", label=key)
-            plt.vlines(err - std, *prev_ylim, color=f"C{i+1}", alpha=0.2)
-            plt.vlines(err + std, *prev_ylim, color=f"C{i+1}", alpha=0.2)
 
-            xs = np.linspace(0, 2, 100)
+            xs = np.linspace(err - std, err + std, 100)
             ax2.plot(
                 xs,
                 (1 / np.sqrt(2 * np.pi * std ** 2))
                 * np.exp(-((xs - err) ** 2) / (2 * std ** 2)),
                 c=f"C{i+1}",
+                linestyle="--",
+                alpha=0.2,
             )
+
+            xmins.append(err - std)
+            xmaxs.append(err + std)
+
         plt.ylim(*prev_ylim)
+        plt.xlim(np.min(xmins), np.max(xmaxs))
+
         plt.legend(loc="best")
         if save_dir is not None:
             plt.savefig(save_dir / filename)
@@ -262,7 +278,7 @@ def null_model_analysis(
     # NME Errors.
     error_hist(
         errors=nme_errors,
-        title="NME errors",
+        title="NME errors (with std of mean)",
         error_dict=nme_error_dict,
         filename="nme_errors.png",
     )
@@ -270,7 +286,7 @@ def null_model_analysis(
     # MPD Errors.
     error_hist(
         errors=mpd_errors,
-        title="MPD errors",
+        title="MPD errors (with std of mean)",
         error_dict=mpd_error_dict,
         filename="mpd_errors.png",
     )
