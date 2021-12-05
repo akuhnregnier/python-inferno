@@ -147,7 +147,7 @@ if __name__ == "__main__":
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     save_dir = Path("~/tmp/ba-model-analysis/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
-    plotting = partial(plotting, save_dir=save_dir)
+    plotting = partial(plotting, save_dir=save_dir, regions="PNV")
 
     logger.remove()
     logger.add(sys.stderr, level="INFO")

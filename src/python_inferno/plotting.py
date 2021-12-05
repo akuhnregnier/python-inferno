@@ -12,6 +12,7 @@ from wildfires.data import regions_GFED, regrid
 
 from python_inferno.cache import cache
 from python_inferno.metrics import calculate_phase, calculate_phase_2d
+from python_inferno.pnv import get_pnv_mega_regions
 from python_inferno.utils import memoize, wrap_phase_diffs
 
 
@@ -95,7 +96,15 @@ def get_gfed_regions():
     )
     assert gfed_regions.attributes["regions"][0] == "Ocean"
     gfed_regions.data.mask |= np.ma.getdata(gfed_regions.data) == 0
-    return gfed_regions
+    return (
+        gfed_regions,
+        len(gfed_regions.attributes["regions"]) - 1,
+    )  # Ignore the Ocean region
+
+
+def get_pnv_mega_plot_data():
+    pnv_mega_regions = get_pnv_mega_regions()
+    return pnv_mega_regions, len(pnv_mega_regions.attributes["regions"])
 
 
 def plotting(
@@ -110,6 +119,7 @@ def plotting(
     scores=None,
     save_dir=None,
     ref_2d_data=None,
+    regions="GFED",
 ):
     if scores is not None:
         arcsinh_nme = scores["arcsinh_nme"]
@@ -133,8 +143,14 @@ def plotting(
         ba_bins = hist_bins
 
     # Regional plotting setup.
-    gfed_regions = get_gfed_regions()
-    N_plots = len(gfed_regions.attributes["regions"]) - 1  # Ignore the Ocean region
+    if regions == "GFED":
+        regions_cube, N_plots = get_gfed_regions()
+    elif regions == "PNV":
+        regions_cube, N_plots = get_pnv_mega_plot_data()
+    else:
+        raise ValueError(f"Unknown regions: '{regions}'.")
+    regions_cube.data.mask |= np.any(model_ba_2d_data.mask, axis=0)
+
     region_nrows_ncols = dict(nrows=math.ceil(N_plots / 2), ncols=2)
 
     # Plotting.
@@ -153,25 +169,41 @@ def plotting(
 
     # Regional BA histograms.
     fig, axes = plt.subplots(
-        sharex=True, sharey=True, figsize=(4, 8), **region_nrows_ncols
+        sharex=True, sharey=True, figsize=(5, 8), **region_nrows_ncols
     )
-    for (ax, (region_code, region_name)) in zip(
-        axes.ravel(),
-        {
-            code: name
-            for code, name in gfed_regions.attributes["short_regions"].items()
-            # Ignore the Ocean region.
-            if code != 0
-        }.items(),
+    global_max_count = 0
+    for (ax_i, (ax, (region_code, region_name))) in enumerate(
+        zip(
+            axes.ravel(),
+            {
+                code: name
+                for code, name in regions_cube.attributes["short_regions"].items()
+                # Ignore the Ocean region.
+                if code != 0
+            }.items(),
+        )
     ):
         region_sel = (
             np.ones((12, 1, 1), dtype=np.bool_)
-            & (np.ma.getdata(gfed_regions.data) == region_code)[np.newaxis]
+            & (np.ma.getdata(regions_cube.data) == region_code)[np.newaxis]
         )
+        # NOTE hist() does not seem to handle masked arrays, so ensure that only valid
+        # entries are passed to it.
+        region_sel &= ~np.ma.getmaskarray(model_ba_2d_data)
         ax.hist(model_ba_2d_data[region_sel], bins=ba_bins)
         ax.set_yscale("log")
         # Show the region name and number of selected locations.
         ax.set_title(f"{region_name} (n={np.sum(region_sel) / 12})")
+
+        max_count = np.histogram(model_ba_2d_data[region_sel], bins=ba_bins)[0].max()
+        if max_count > global_max_count:
+            global_max_count = max_count
+
+    # Set on one axis - since the y-axes are shared, this affects all axes.
+    ax.set_ylim(bottom=0.9, top=global_max_count * 1.5)
+
+    for ax in axes.ravel()[ax_i + 1 :]:
+        ax.axis("off")
 
     fig.suptitle(title)
     fig.tight_layout(rect=[0, 0.0, 1, 0.98])
@@ -254,12 +286,12 @@ def plotting(
             axes.ravel(),
             {
                 code: name
-                for code, name in gfed_regions.attributes["short_regions"].items()
+                for code, name in regions_cube.attributes["short_regions"].items()
                 # Ignore the Ocean region.
                 if code != 0
             }.items(),
         ):
-            region_sel = np.ma.getdata(gfed_regions.data) == region_code
+            region_sel = np.ma.getdata(regions_cube.data) == region_code
             ax.hist(phase_diff[region_sel], bins=bins, density=True)
             # Show the region name and number of selected locations.
             ax.set_title(f"{region_name} (n={np.sum(region_sel)})")
