@@ -2,6 +2,7 @@
 import shlex
 import shutil
 import subprocess
+from itertools import product
 from multiprocessing import Process
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -148,7 +149,7 @@ def dask_pnv_mega_biomes(*, in_file, out_file):
         dask_pnv_mega_biomes,
     ]
 )
-def get_pnv_mega_regions():
+def get_pnv_mega_regions(combine_tundra_dry_tundra=True):
     """Get a cube that represents PNV regions aggregated to MEGA biomes.
 
     See also:
@@ -226,4 +227,19 @@ def get_pnv_mega_regions():
     mega_pnv_cube.attributes["regions_codes"] = {
         value: key for key, value in mega_pnv_cube.attributes["short_regions"].items()
     }
+
+    if combine_tundra_dry_tundra:
+        # Combine tundra and dry tundra regions.
+        for key, index in product(("regions", "short_regions"), (3, 8)):
+            del mega_pnv_cube.attributes[key][index]
+        for name in ("tundra", "dry tundra"):
+            del mega_pnv_cube.attributes["regions_codes"][name]
+
+        # The new '(dry) tundra' region will have the code 10.
+        mega_pnv_cube.attributes["regions"][10] = "(dry) tundra"
+        mega_pnv_cube.attributes["short_regions"][10] = "(dry) tundra"
+        mega_pnv_cube.attributes["regions_codes"]["(dry) tundra"] = 10
+
+        mega_pnv_cube.data[(mega_pnv_cube.data == 3) | (mega_pnv_cube.data == 8)] = 10
+
     return mega_pnv_cube
