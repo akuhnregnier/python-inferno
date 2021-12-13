@@ -2,18 +2,14 @@
 import math
 from numbers import Integral
 
-import iris
 import matplotlib.pyplot as plt
 import numpy as np
-from jules_output_analysis.data import n96e_lats, n96e_lons
 from loguru import logger
 from wildfires.analysis import cube_plotting
-from wildfires.data import regions_GFED, regrid
 
-from python_inferno.cache import cache
-from python_inferno.metrics import calculate_phase, calculate_phase_2d
-from python_inferno.pnv import get_pnv_mega_regions
-from python_inferno.utils import memoize, wrap_phase_diffs
+from .data import get_gfed_regions, get_pnv_mega_plot_data
+from .metrics import calculate_phase, calculate_phase_2d
+from .utils import wrap_phase_diffs
 
 
 def lin_cube_plotting(*, data, title, label="BA"):
@@ -85,28 +81,6 @@ def plot_phase_diff_map(*, phase_diff, title, label):
     )
 
 
-@memoize
-@cache
-def get_gfed_regions():
-    gfed_regions = regrid(
-        regions_GFED(),
-        new_latitudes=n96e_lats,
-        new_longitudes=n96e_lons,
-        scheme=iris.analysis.Nearest(),
-    )
-    assert gfed_regions.attributes["regions"][0] == "Ocean"
-    gfed_regions.data.mask |= np.ma.getdata(gfed_regions.data) == 0
-    return (
-        gfed_regions,
-        len(gfed_regions.attributes["regions"]) - 1,
-    )  # Ignore the Ocean region
-
-
-def get_pnv_mega_plot_data():
-    pnv_mega_regions = get_pnv_mega_regions()
-    return pnv_mega_regions, len(pnv_mega_regions.attributes["regions"])
-
-
 def plotting(
     *,
     exp_name,
@@ -172,16 +146,14 @@ def plotting(
         sharex=True, sharey=True, figsize=(5, 8), **region_nrows_ncols
     )
     global_max_count = 0
-    for (ax_i, (ax, (region_code, region_name))) in enumerate(
-        zip(
-            axes.ravel(),
-            {
-                code: name
-                for code, name in regions_cube.attributes["short_regions"].items()
-                # Ignore the Ocean region.
-                if code != 0
-            }.items(),
-        )
+    for (ax, (region_code, region_name)) in zip(
+        axes.ravel(),
+        {
+            code: name
+            for code, name in regions_cube.attributes["short_regions"].items()
+            # Ignore the Ocean region.
+            if code != 0
+        }.items(),
     ):
         region_sel = (
             np.ones((12, 1, 1), dtype=np.bool_)
@@ -202,7 +174,7 @@ def plotting(
     # Set on one axis - since the y-axes are shared, this affects all axes.
     ax.set_ylim(bottom=0.9, top=global_max_count * 1.5)
 
-    for ax in axes.ravel()[ax_i + 1 :]:
+    for ax in axes.ravel()[N_plots + 1 :]:
         ax.axis("off")
 
     fig.suptitle(title)

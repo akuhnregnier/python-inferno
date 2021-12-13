@@ -16,7 +16,11 @@ from wildfires.data import (
     Ext_MOD15A2H_fPAR,
     GFEDv4,
     homogenise_time_coordinate,
+    regions_GFED,
+    regrid,
 )
+
+from python_inferno.pnv import get_pnv_mega_regions
 
 from .cache import cache, mark_dependency
 from .configuration import N_pft_groups, land_pts, npft
@@ -678,3 +682,25 @@ def load_jules_lats_lons(filename=str(Path("~/tmp/climatology6.nc").expanduser()
     jules_lats = pstar.coord("latitude")
     jules_lons = pstar.coord("longitude")
     return jules_lats, jules_lons
+
+
+@memoize
+@cache
+def get_gfed_regions():
+    gfed_regions = regrid(
+        regions_GFED(),
+        new_latitudes=n96e_lats,
+        new_longitudes=n96e_lons,
+        scheme=iris.analysis.Nearest(),
+    )
+    assert gfed_regions.attributes["regions"][0] == "Ocean"
+    gfed_regions.data.mask |= np.ma.getdata(gfed_regions.data) == 0
+    return (
+        gfed_regions,
+        len(gfed_regions.attributes["regions"]) - 1,
+    )  # Ignore the Ocean region
+
+
+def get_pnv_mega_plot_data():
+    pnv_mega_regions = get_pnv_mega_regions()
+    return pnv_mega_regions, len(pnv_mega_regions.attributes["regions"])
