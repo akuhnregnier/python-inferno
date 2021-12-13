@@ -823,3 +823,24 @@ def get_apply_mask(mask):
 
 def get_ba_mask(ba):
     return np.mean(ba, axis=0) < 1e-10
+
+
+def get_grouped_average(data):
+    if len(data.shape) != 3:
+        raise ValueError("Expected 3 dims.")
+
+    grouped_data = np.ma.MaskedArray(
+        np.zeros((data.shape[0], N_pft_groups, data.shape[2]), dtype=data.dtype),
+        mask=False,
+    )
+
+    for pft_i in range(data.shape[1]):
+        group_index = get_pft_group_index(pft_i)
+        if group_index == -1:
+            raise ValueError(f"Unexpected pft index: {pft_i}.")
+        grouped_data[:, group_index] += data[:, pft_i]
+
+    for pft_group_index in range(N_pft_groups):
+        grouped_data[:, pft_group_index] /= pft_groups_lengths[pft_group_index]
+
+    return grouped_data

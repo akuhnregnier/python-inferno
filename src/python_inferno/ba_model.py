@@ -213,7 +213,7 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
     return scores, Status.SUCCESS, avg_ba, calc_factors
 
 
-def get_pred_ba(
+def get_pred_ba_prep(
     *,
     defaults=dict(
         rain_f=0.3,
@@ -228,6 +228,11 @@ def get_pred_ba(
     include_temperature=1,
     **opt_kwargs,
 ):
+    """
+
+    Note: Signature should match the below.
+
+    """
     (
         data_params,
         single_opt_kwargs,
@@ -266,6 +271,51 @@ def get_pred_ba(
     # proportion of cropland never burns, even though this may be the case in
     # given the weather conditions).
     model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
+
+    return (
+        model_ba,
+        data_params,
+        obs_pftcrop_1d,
+        jules_time_coord,
+        mon_avg_gfed_ba_1d,
+        data_dict,
+    )
+
+
+def get_pred_ba(
+    *,
+    defaults=dict(
+        rain_f=0.3,
+        vpd_f=400,
+        crop_f=0.5,
+        fuel_build_up_n_samples=0,
+        litter_tc=1e-9,
+        leaf_f=1e-3,
+    ),
+    dryness_method=2,
+    fuel_build_up_method=1,
+    include_temperature=1,
+    **opt_kwargs,
+):
+    """
+
+    Note: Signature should match the above.
+
+    """
+    (
+        model_ba,
+        data_params,
+        obs_pftcrop_1d,
+        jules_time_coord,
+        mon_avg_gfed_ba_1d,
+        _,
+    ) = get_pred_ba_prep(
+        defaults=defaults,
+        dryness_method=dryness_method,
+        fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
+        **opt_kwargs,
+    )
 
     scores, status, avg_ba, calc_factors = calculate_scores(
         model_ba=model_ba,
