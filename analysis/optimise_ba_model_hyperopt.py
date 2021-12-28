@@ -221,7 +221,7 @@ if __name__ == "__main__":
         for (i, (methods_str, experiment_arg)) in enumerate(experiment_args.items()):
             exp_space = experiment_arg["space"]
             trials = MongoTrials(
-                "mongo://maritimus.webredirect.org:1234/ba/jobs",
+                "mongo://localhost:1234/ba/jobs",
                 exp_key=f"{exp_base}_{methods_str}",
             )
 

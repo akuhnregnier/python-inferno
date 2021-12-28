@@ -154,7 +154,8 @@ if __name__ == "__main__":
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
+    # XXX - 'opt_record_bak' - check which is the right one?
+    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
     assert record_dir.is_dir()
 
     # To prevent memory accumulation during repeated calculations below.
