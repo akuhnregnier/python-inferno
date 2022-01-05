@@ -1,4 +1,12 @@
 # -*- coding: utf-8 -*-
+"""
+
+Note that this should only be run in a single thread at a time!
+I.e. run the cached functions separately before calling them in a parallel context
+(cache retrieval is fine in multiple processes/threads).
+
+"""
+import os
 import shlex
 import shutil
 import subprocess
@@ -26,7 +34,10 @@ pnv_csv_file = (
     Path("~/tmp/pnv_map_1km")
     / "pnv_biome.type_biome00k_c_1km_s0..0cm_2000..2017_v0.1.tif.csv"
 )
-GDAL_BIN = "/home/alexander/.pyenv/versions/miniconda3-latest/envs/python-inferno/bin"
+GDAL_BIN = str(
+    Path(os.environ["PYENV_ROOT"])
+    / "versions/miniconda3-latest/envs/python-inferno/bin"
+)
 
 
 @mark_dependency
@@ -180,6 +191,8 @@ def get_pnv_mega_regions(combine_tundra_dry_tundra=True):
     if pnv_nc_1km.is_file():
         logger.info(f"nc_1km file: '{pnv_nc_1km}' already exists, deleting.")
         pnv_nc_1km.unlink()
+    else:
+        pnv_nc_1km.parent.mkdir(exist_ok=True, parents=False)
 
     # Create netCDF version of tif file.
     gdal_to_nc(in_file=pnv_tif_1km, out_file=pnv_nc_1km)
