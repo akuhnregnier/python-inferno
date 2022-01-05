@@ -3,52 +3,50 @@
 from collections import defaultdict
 from time import time
 
-import numpy as np
-
-from python_inferno.configuration import land_pts
-from python_inferno.data import get_processed_climatological_data, timestep
-from python_inferno.multi_timestep_inferno import multi_timestep_inferno
+from python_inferno.ba_model import get_pred_ba_prep
+from python_inferno.data import timestep
 from python_inferno.utils import unpack_wrapped
 
 if __name__ == "__main__":
-    data_dict, mon_avg_gfed_ba_1d, jules_time_coord = get_processed_climatological_data(
-        n_samples_pft=np.array([20] * 13, dtype=np.int64), average_samples=20
-    )
-
     # Model kwargs.
     kwargs = dict(
+        # Data args.
+        litter_tc=1e-9,
+        leaf_f=1e-4,
+        fuel_build_up_n_samples=20,
+        average_samples=40,
+        rain_f=0.5,
+        vpd_f=50,
+        # Model args.
         ignition_method=1,
         timestep=timestep,
         flammability_method=2,
         dryness_method=2,
-        fapar_factor=-4.83e1,
-        fapar_centre=4.0e-1,
-        fuel_build_up_factor=1.01e1,
-        fuel_build_up_centre=3.76e-1,
-        temperature_factor=8.01e-2,
-        temperature_centre=2.82e2,
-        dry_day_factor=0.0,
-        dry_day_centre=0.0,
-        # TODO - calculation of dry_bal is carried out during data loading/processing
-        # now
-        # rain_f=0.5,
-        # vpd_f=2500,
-        dry_bal_factor=1,
-        dry_bal_centre=0,
-        # These are not used for ignition mode 1, nor do they contain a temporal
-        # coordinate.
-        pop_den=np.zeros((land_pts,)) - 1,
-        flash_rate=np.zeros((land_pts,)) - 1,
+        fuel_build_up_method=2,
+        include_temperature=1,
+        crop_f=0.5,
+        dry_bal_centre=0.14,
+        dry_bal_factor=-54,
+        dry_bal_shape=10,
+        fapar_centre=0.8,
+        fapar_factor=-22,
+        fapar_shape=9.2,
+        litter_pool_centre=2000,
+        litter_pool_factor=0.05,
+        litter_pool_shape=9.2,
+        temperature_centre=299,
+        temperature_factor=0.23,
+        temperature_shape=10,
     )
 
     outputs = dict()
     times = defaultdict(list)
     for name, function in [
-        ("python", multi_timestep_inferno),
+        ("python", get_pred_ba_prep),
     ]:
-        for i in range(2):
+        for i in range(10):
             start = time()
-            outputs[name] = unpack_wrapped(function)(**{**kwargs, **data_dict})
+            outputs[name] = unpack_wrapped(function)(**kwargs)
             times[name].append(time() - start)
 
     for name, time_vals in times.items():
