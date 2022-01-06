@@ -7,7 +7,6 @@ from wildfires.qstat import get_ncpus
 from .calc_c_comps_triffid import calc_c_comps_triffid
 from .configuration import N_pft_groups, avg_ba, land_pts, npft
 from .inferno import calc_burnt_area, calc_flam, calc_ignitions
-from .precip_dry_day import precip_moving_sum
 from .qsat_wat import qsat_wat
 from .utils import get_pft_group_index
 
@@ -113,9 +112,6 @@ def multi_timestep_inferno(
         dry_days=dry_days,
         flammability_method=flammability_method,
         dryness_method=dryness_method,
-        cum_rain=precip_moving_sum(
-            ls_rain=ls_rain, con_rain=con_rain, timestep=timestep
-        ),
         litter_pool=litter_pool,
         fuel_build_up_method=fuel_build_up_method,
         include_temperature=include_temperature,
@@ -165,7 +161,6 @@ def _multi_timestep_inferno(
     dry_bal_factor,
     dry_bal_centre,
     dry_bal_shape,
-    cum_rain,
     litter_pool,
     include_temperature,
 ):
@@ -183,7 +178,6 @@ def _multi_timestep_inferno(
         == con_rain.shape[0]
         == fuel_build_up.shape[0]
         == fapar_diag_pft.shape[0]
-        == cum_rain.shape[0]
     ):
         raise ValueError("All arrays need to have the same time dimension.")
 
@@ -286,7 +280,6 @@ def _multi_timestep_inferno(
                     fuel_l=inferno_fuel,
                     sm_l=inferno_sm[ti, l],
                     rain_l=inferno_rain,
-                    cum_rain_l=cum_rain[ti, l],
                     fuel_build_up=fuel_build_up[ti, i, l],
                     fapar=fapar_diag_pft[ti, i, l],
                     dry_days=dry_days[ti, l],

@@ -88,7 +88,6 @@ def calc_flam(
     fuel_l,
     sm_l,
     rain_l,
-    cum_rain_l,
     fuel_build_up,
     fapar,
     dry_days,
