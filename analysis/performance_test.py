@@ -44,7 +44,7 @@ if __name__ == "__main__":
     for name, function in [
         ("python", get_pred_ba_prep),
     ]:
-        for i in range(10):
+        for i in range(1):
             start = time()
             outputs[name] = unpack_wrapped(function)(**kwargs)
             times[name].append(time() - start)

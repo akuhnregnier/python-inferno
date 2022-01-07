@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import pickle
+
 import numpy as np
 from loguru import logger
 from numba import njit, prange, set_num_threads
@@ -92,6 +94,39 @@ def multi_timestep_inferno(
 
     # Call the below using normal, non-numba Python to enable features like
     # keyword-only arguments with default arguments as above.
+
+    # XXX
+    # Cache input arguments.
+    vals = dict(
+        t1p5m_tile=t1p5m_tile,
+        q1p5m_tile=q1p5m_tile,
+        pstar=pstar,
+        sthu_soilt=sthu_soilt,
+        frac=frac,
+        c_soil_dpm_gb=c_soil_dpm_gb,
+        c_soil_rpm_gb=c_soil_rpm_gb,
+        canht=canht,
+        ls_rain=ls_rain,
+        con_rain=con_rain,
+        pop_den=pop_den,
+        flash_rate=flash_rate,
+        ignition_method=ignition_method,
+        fuel_build_up=fuel_build_up,
+        fapar_diag_pft=fapar_diag_pft,
+        grouped_dry_bal=grouped_dry_bal,
+        dry_days=dry_days,
+        flammability_method=flammability_method,
+        dryness_method=dryness_method,
+        litter_pool=litter_pool,
+        fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
+        **transformed_param_vars,
+    )
+    with open("/tmp/inputs.pkl", "wb") as f:
+        pickle.dump(vals, f, -1)
+    print("Dumped input arguments to /tmp/inputs.pkl")
+    # XXX
+
     ba = _multi_timestep_inferno(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
