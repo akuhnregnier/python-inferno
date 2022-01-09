@@ -19,6 +19,10 @@ from wildfires.utils import ensure_datetime
 from .cache import mark_dependency
 from .configuration import (
     N_pft_groups,
+    dryness_descr,
+    dryness_keys,
+    fuel_descr,
+    fuel_keys,
     npft,
     pft_groups,
     pft_groups_array,
@@ -666,8 +670,8 @@ def wrap_phase_diffs(x):
 
 
 class DebugExecutor:
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, *args, raise_immediately=True, **kwargs):
+        self.raise_immediately = raise_immediately
 
     def __enter__(self):
         return self
@@ -677,12 +681,17 @@ class DebugExecutor:
 
     def submit(self, fn, *args, **kwargs):
         f = Future()
-        try:
+
+        if self.raise_immediately:
             result = fn(*args, **kwargs)
-        except BaseException as exc:
-            f.set_exception(exc)
-        else:
             f.set_result(result)
+        else:
+            try:
+                result = fn(*args, **kwargs)
+            except BaseException as exc:
+                f.set_exception(exc)
+            else:
+                f.set_result(result)
 
         return f
 
@@ -844,3 +853,13 @@ def get_grouped_average(data):
         grouped_data[:, pft_group_index] /= pft_groups_lengths[pft_group_index]
 
     return grouped_data
+
+
+def get_exp_name(*, dryness_method, fuel_build_up_method):
+    return (
+        f"Dry:{dryness_descr[dryness_method]}, Fuel:{fuel_descr[fuel_build_up_method]}"
+    )
+
+
+def get_exp_key(*, dryness_method, fuel_build_up_method):
+    return f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"

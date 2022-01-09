@@ -2,19 +2,14 @@
 # -*- coding: utf-8 -*-
 import gc
 import os
-import pickle
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from enum import Enum
 from functools import partial
-from itertools import product
 from pathlib import Path
-from pprint import pprint
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
 from tqdm import tqdm
@@ -23,6 +18,7 @@ from python_inferno.ba_model import Status, calculate_scores, get_pred_ba
 from python_inferno.cache import cache
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.metrics import null_model_analysis
+from python_inferno.model_params import get_model_params
 from python_inferno.plotting import plotting
 from python_inferno.utils import (
     PartialDateTime,
@@ -31,8 +27,6 @@ from python_inferno.utils import (
     memoize,
     temporal_processing,
 )
-
-NoVal = Enum("NoVal", ["NoVal"])
 
 
 def frac_weighted_mean(*, data, frac):
@@ -117,16 +111,6 @@ def get_processed_climatological_jules_ba():
     return data_dict, jules_time_coord
 
 
-def check_params(params, key, value=NoVal.NoVal):
-    if all(key in p for p in params):
-        if value is not NoVal.NoVal:
-            if all(p[key] == value for p in params):
-                return True
-        else:
-            return True
-    return False
-
-
 def plot_param_histograms(df_sel, exp_name, hist_save_dir):
     for col in [col for col in df_sel.columns if col != "loss"]:
         if df_sel[col].isna().all():
@@ -154,63 +138,14 @@ if __name__ == "__main__":
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
-    # XXX - 'opt_record_bak' vs. 'opt_record'
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
-    assert record_dir.is_dir()
-
     # To prevent memory accumulation during repeated calculations below.
     memoize.active = False
 
-    global_params = []
-    global_losses = []
-
-    for fname in record_dir.glob("*"):
-        with fname.open("rb") as f:
-            params, losses = pickle.load(f)
-
-        if check_params(params, "dryness_method", 1):
-            assert check_params(params, "dry_day_factor")
-        elif check_params(params, "dryness_method", 2):
-            assert check_params(params, "dry_bal_factor")
-        else:
-            raise ValueError("dryness_method")
-
-        if check_params(params, "fuel_build_up_method", 1):
-            assert check_params(params, "fuel_build_up_factor")
-        elif check_params(params, "fuel_build_up_method", 2):
-            assert check_params(params, "litter_pool_factor")
-        else:
-            raise ValueError("fuel_build_up_method")
-
-        if check_params(params, "include_temperature", 1):
-            assert check_params(params, "temperature_factor")
-        elif check_params(params, "include_temperature", 0):
-            assert not check_params(params, "temperature_factor")
-        else:
-            raise ValueError("include_temperature")
-
-        for ps, loss in zip(params, losses):
-            if loss > 0.95:
-                # Skip poor samples.
-                continue
-
-            global_params.append(ps)
-            global_losses.append(loss)
-
-    df = pd.DataFrame(global_params)
-    df["loss"] = global_losses
-
-    cat_names = ["dryness_method", "fuel_build_up_method", "include_temperature"]
-
-    for name in cat_names:
-        df[name] = df[name].astype("int")
-
-    print(df.head())
-    print("\nNumber of trials:\n")
-    print(df.groupby(cat_names).size())
-
-    print("\nMinimum loss by parametrisation approach:\n")
-    print(df.groupby(cat_names)["loss"].min())
+    # XXX - 'opt_record_bak' vs. 'opt_record'
+    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
+    df, method_iter = get_model_params(
+        record_dir=record_dir, progress=True, verbose=True
+    )
 
     hist_bins = 50
 
@@ -220,43 +155,26 @@ if __name__ == "__main__":
     executor = ProcessPoolExecutor(max_workers=10)
     futures = []
 
-    for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
-        sel = (df["dryness_method"] == dryness_method) & (
-            df["fuel_build_up_method"] == fuel_build_up_method
-        )
-        if not np.any(sel):
-            continue
-
-        dryness_descr = {1: "Dry Day", 2: "VPD & Precip"}
-        fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
-
-        exp_name = f"Dry:{dryness_descr[dryness_method]}, Fuel:{fuel_descr[fuel_build_up_method]}"
+    for (
+        dryness_method,
+        fuel_build_up_method,
+        df_sel,
+        min_index,
+        min_loss,
+        params,
+        exp_name,
+        exp_key,
+    ) in method_iter():
         logger.info(exp_name)
-
-        dryness_keys = {1: "Dry_Day", 2: "VPD_Precip"}
-        fuel_keys = {1: "Antec_NPP", 2: "Leaf_Litter_Pool"}
-
-        exp_key = f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"
         logger.info(exp_key)
 
         hist_save_dir = save_dir / "parameter_histograms" / exp_key
         hist_save_dir.mkdir(exist_ok=True, parents=True)
 
-        df_sel = df[sel]
-        min_index = df_sel["loss"].argmin()
-        min_loss = df_sel.iloc[min_index]["loss"]
-
         logger.info("Plotting histograms.")
         futures.append(
             executor.submit(plot_param_histograms, df_sel, exp_name, hist_save_dir)
         )
-
-        params = {
-            key: val
-            for key, val in df_sel.iloc[min_index].to_dict().items()
-            if not pd.isna(val) and key not in ("loss",)
-        }
-        pprint(params)
 
         logger.info("Predicting BA")
         model_ba, scores, mon_avg_gfed_ba_1d, calc_factors = get_pred_ba(**params)

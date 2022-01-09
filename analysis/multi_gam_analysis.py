@@ -43,7 +43,7 @@ from python_inferno.data import get_processed_climatological_data, load_jules_la
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics import null_model_analysis
 from python_inferno.plotting import plotting
-from python_inferno.utils import get_distinct_params, memoize
+from python_inferno.utils import get_distinct_params, get_exp_key, get_exp_name, memoize
 
 NoVal = Enum("NoVal", ["NoVal"])
 
@@ -477,12 +477,6 @@ if __name__ == "__main__":
         "litter_pool": "litter_pool",
     }
 
-    dryness_descr = {1: "Dry Day", 2: "VPD & Precip"}
-    fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
-
-    dryness_keys = {1: "Dry_Day", 2: "VPD_Precip"}
-    fuel_keys = {1: "Antec_NPP", 2: "Leaf_Litter_Pool"}
-
     executor = ProcessPoolExecutor(max_workers=10)
     futures = []
 
@@ -504,10 +498,14 @@ if __name__ == "__main__":
         if not np.any(sel):
             continue
 
-        exp_name = f"Dry:{dryness_descr[dryness_method]}, Fuel:{fuel_descr[fuel_build_up_method]}"
+        exp_name = get_exp_name(
+            dryness_method=dryness_method, fuel_build_up_method=fuel_build_up_method
+        )
         logger.info(exp_name)
 
-        exp_key = f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"
+        exp_key = get_exp_key(
+            dryness_method=dryness_method, fuel_build_up_method=fuel_build_up_method
+        )
         logger.info(exp_key)
 
         df_sel = df[sel]

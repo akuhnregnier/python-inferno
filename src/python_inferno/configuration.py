@@ -74,3 +74,9 @@ pft_groups_lengths = np.zeros((N_pft_groups,), dtype=np.int64)
 for i, indices in enumerate(pft_groups):
     pft_groups_array[i][: len(indices)] = indices
     pft_groups_lengths[i] = len(indices)
+
+dryness_descr = {1: "Dry Day", 2: "VPD & Precip"}
+fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
+
+dryness_keys = {1: "Dry_Day", 2: "VPD_Precip"}
+fuel_keys = {1: "Antec_NPP", 2: "Leaf_Litter_Pool"}
