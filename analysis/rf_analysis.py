@@ -151,6 +151,15 @@ def get_processed_inferno_ba(*, average_samples):
     return data_dict["jules_ba_gb"], jules_time_coord
 
 
+def get_half_boundaries(minval, maxval):
+    if minval <= 0 and maxval > 0:
+        return [minval, minval / 2, 0, maxval / 2, maxval]
+    elif minval >= 0:
+        return [0, maxval / 2, maxval]
+    elif maxval <= 0:
+        return [minval, minval / 2, 0]
+
+
 def ale_analysis(
     *,
     ale_dir,
@@ -182,7 +191,6 @@ def shap_analysis(
     old_inferno_key,
 ):
     """SHAP values."""
-
     exp_shap_map_dir = shap_map_dir / f"{exp_key}_{old_inferno_key}"
     exp_shap_map_dir.mkdir(exist_ok=True, parents=False)
 
@@ -201,7 +209,7 @@ def shap_analysis(
         cube_plotting(
             shaps_2d,
             title=f"SHAP {col}",
-            boundaries=[minval, minval / 2, 0, maxval / 2, maxval],
+            boundaries=get_half_boundaries(minval, maxval),
             fig=fig,
             cmap="RdBu",
             cmap_midpoint=0,
@@ -254,18 +262,11 @@ def ice_analysis(
         minval = np.min(grads_1d.data)
         maxval = np.max(grads_1d.data)
 
-        if minval <= 0 and maxval > 0:
-            boundaries = [minval, minval / 2, 0, maxval / 2, maxval]
-        elif minval >= 0:
-            boundaries = [0, maxval / 2, maxval]
-        elif maxval <= 0:
-            boundaries = [minval, minval / 2, 0]
-
         fig = plt.figure(figsize=(7, 3))
         cube_plotting(
             grads_2d,
             title=f"ICE Gradient {col}",
-            boundaries=boundaries,
+            boundaries=get_half_boundaries(minval, maxval),
             fig=fig,
             cmap="RdBu",
             cmap_midpoint=0,
