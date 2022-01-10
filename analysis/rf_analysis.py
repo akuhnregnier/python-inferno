@@ -179,6 +179,16 @@ def ale_analysis(
         plt.close(fig)
 
 
+def get_max_abs_shaps(raw_shaps):
+    argmax_out = np.argmax(np.abs(raw_shaps), axis=0)
+    max_abs_shaps = np.take_along_axis(raw_shaps, argmax_out[None, :], axis=0)[0]
+    return max_abs_shaps
+
+
+def get_mean_shaps(raw_shaps):
+    return np.mean(raw_shaps, axis=0)
+
+
 def shap_analysis(
     *,
     shap_map_dir,
@@ -198,26 +208,33 @@ def shap_analysis(
 
     for i, col in enumerate(tqdm(df_X.columns, desc="SHAP")):
         raw_shaps = shap_values_X[:, i].reshape(*flat_shape)
-        argmax_out = np.argmax(np.abs(raw_shaps), axis=0)
-        max_abs_shaps = np.take_along_axis(raw_shaps, argmax_out[None, :], axis=0)[0]
-        shaps_1d = get_1d_data_cube(max_abs_shaps, lats=jules_lats, lons=jules_lons)
-        shaps_2d = cube_1d_to_2d(shaps_1d)
-        minval = np.min(shaps_1d.data)
-        maxval = np.max(shaps_1d.data)
 
-        fig = plt.figure(figsize=(7, 3))
-        cube_plotting(
-            shaps_2d,
-            title=f"SHAP {col}",
-            boundaries=get_half_boundaries(minval, maxval),
-            fig=fig,
-            cmap="RdBu",
-            cmap_midpoint=0,
-            cmap_symmetric=True,
-        )
+        for key, name, proc_func in [
+            ("max_abs", "Max Abs", get_max_abs_shaps),
+            ("mean", "Mean", get_mean_shaps),
+        ]:
+            shaps_1d = get_1d_data_cube(
+                proc_func(raw_shaps), lats=jules_lats, lons=jules_lons
+            )
+            shaps_2d = cube_1d_to_2d(shaps_1d)
+            minval = np.min(shaps_1d.data)
+            maxval = np.max(shaps_1d.data)
 
-        fig.savefig(exp_shap_map_dir / f"{col}.png")
-        plt.close(fig)
+            fig = plt.figure(figsize=(7, 3))
+            cube_plotting(
+                shaps_2d,
+                title=f"{name} SHAP {col}",
+                boundaries=get_half_boundaries(minval, maxval),
+                fig=fig,
+                cmap="RdBu",
+                cmap_midpoint=0,
+                cmap_symmetric=True,
+            )
+
+            sub_dir = exp_shap_map_dir / key
+            sub_dir.mkdir(exist_ok=True, parents=False)
+            fig.savefig(sub_dir / f"{key}_shap_{col}.png")
+            plt.close(fig)
 
 
 def ice_analysis(
