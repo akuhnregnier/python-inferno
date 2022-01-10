@@ -151,6 +151,131 @@ def get_processed_inferno_ba(*, average_samples):
     return data_dict["jules_ba_gb"], jules_time_coord
 
 
+def ale_analysis(
+    *,
+    ale_dir,
+    exp_key,
+    old_inferno_key,
+    df_X,
+    rf,
+):
+    """ALE plotting."""
+    exp_ale_dir = ale_dir / f"{exp_key}_{old_inferno_key}"
+    exp_ale_dir.mkdir(exist_ok=True, parents=False)
+
+    for column in tqdm(df_X.columns, desc="ALE plotting"):
+        fig = plt.figure()
+        ale_plot(rf, df_X, column, bins=15, fig=fig)
+        fig.savefig(exp_ale_dir / f"{column}.png")
+        plt.close(fig)
+
+
+def shap_analysis(
+    *,
+    shap_map_dir,
+    rf,
+    df_X,
+    flat_shape,
+    jules_lats,
+    jules_lons,
+    exp_key,
+    old_inferno_key,
+):
+    """SHAP values."""
+
+    exp_shap_map_dir = shap_map_dir / f"{exp_key}_{old_inferno_key}"
+    exp_shap_map_dir.mkdir(exist_ok=True, parents=False)
+
+    shap_values_X = get_shap_values(rf, df_X)
+
+    for i, col in enumerate(tqdm(df_X.columns, desc="SHAP")):
+        raw_shaps = shap_values_X[:, i].reshape(*flat_shape)
+        argmax_out = np.argmax(np.abs(raw_shaps), axis=0)
+        max_abs_shaps = np.take_along_axis(raw_shaps, argmax_out[None, :], axis=0)[0]
+        shaps_1d = get_1d_data_cube(max_abs_shaps, lats=jules_lats, lons=jules_lons)
+        shaps_2d = cube_1d_to_2d(shaps_1d)
+        minval = np.min(shaps_1d.data)
+        maxval = np.max(shaps_1d.data)
+
+        fig = plt.figure(figsize=(7, 3))
+        cube_plotting(
+            shaps_2d,
+            title=f"SHAP {col}",
+            boundaries=[minval, minval / 2, 0, maxval / 2, maxval],
+            fig=fig,
+            cmap="RdBu",
+            cmap_midpoint=0,
+            cmap_symmetric=True,
+        )
+
+        fig.savefig(exp_shap_map_dir / f"{col}.png")
+        plt.close(fig)
+
+
+def ice_analysis(
+    *,
+    ice_map_dir,
+    exp_key,
+    old_inferno_key,
+    rf,
+    df_X,
+    flat_shape,
+    jules_lats,
+    jules_lons,
+):
+    """ICE gradient maps."""
+    exp_ice_map_dir = ice_map_dir / f"{exp_key}_{old_inferno_key}"
+    exp_ice_map_dir.mkdir(exist_ok=True, parents=False)
+
+    for i, col in enumerate(tqdm(df_X.columns, desc="ICE")):
+        ices = cache(partial_dependence)(
+            rf,
+            df_X,
+            [i],
+            percentiles=(0.05, 0.95),
+            grid_resolution=20,
+            kind="individual",
+        )["individual"]
+        # Get average ICE across time periods for each grid cell.
+        grid_cell_ices = np.mean(ices[0].reshape(*(*flat_shape, 20)), axis=0)
+        # Get regression target - all in [0, 1] to remove effect of different
+        # variable ranges.
+        xs = np.linspace(0, 1, 20)
+
+        reg = linear_model.LinearRegression()
+        reg.fit(xs.reshape(-1, 1), grid_cell_ices.T)
+
+        grid_cell_gradients = reg.coef_[:, 0]
+
+        grads_1d = get_1d_data_cube(
+            grid_cell_gradients, lats=jules_lats, lons=jules_lons
+        )
+        grads_2d = cube_1d_to_2d(grads_1d)
+        minval = np.min(grads_1d.data)
+        maxval = np.max(grads_1d.data)
+
+        if minval <= 0 and maxval > 0:
+            boundaries = [minval, minval / 2, 0, maxval / 2, maxval]
+        elif minval >= 0:
+            boundaries = [0, maxval / 2, maxval]
+        elif maxval <= 0:
+            boundaries = [minval, minval / 2, 0]
+
+        fig = plt.figure(figsize=(7, 3))
+        cube_plotting(
+            grads_2d,
+            title=f"ICE Gradient {col}",
+            boundaries=boundaries,
+            fig=fig,
+            cmap="RdBu",
+            cmap_midpoint=0,
+            cmap_symmetric=True,
+        )
+
+        fig.savefig(exp_ice_map_dir / f"{col}.png")
+        plt.close(fig)
+
+
 def analysis(
     *,
     model_ba,
@@ -229,99 +354,35 @@ def analysis(
 
     old_inferno_key = "old_inferno" if old_inferno else "new_inferno"
 
-    # ALE plotting.
+    ale_analysis(
+        ale_dir=ale_dir,
+        exp_key=exp_key,
+        old_inferno_key=old_inferno_key,
+        df_X=df_X,
+        rf=rf,
+    )
 
-    exp_ale_dir = ale_dir / f"{exp_key}_{old_inferno_key}"
-    exp_ale_dir.mkdir(exist_ok=True, parents=False)
+    shap_analysis(
+        shap_map_dir=shap_map_dir,
+        rf=rf,
+        df_X=df_X,
+        flat_shape=flat_shape,
+        jules_lats=jules_lats,
+        jules_lons=jules_lons,
+        exp_key=exp_key,
+        old_inferno_key=old_inferno_key,
+    )
 
-    for column in tqdm(df_X.columns, desc="ALE plotting"):
-        fig = plt.figure()
-        ale_plot(rf, df_X, column, bins=15, fig=fig)
-        fig.savefig(exp_ale_dir / f"{column}.png")
-        plt.close(fig)
-
-    # SHAP values.
-
-    exp_shap_map_dir = shap_map_dir / f"{exp_key}_{old_inferno_key}"
-    exp_shap_map_dir.mkdir(exist_ok=True, parents=False)
-
-    shap_values_X = get_shap_values(rf, df_X)
-
-    for i, col in enumerate(tqdm(df_X.columns, desc="SHAP")):
-        raw_shaps = shap_values_X[:, i].reshape(*flat_shape)
-        argmax_out = np.argmax(np.abs(raw_shaps), axis=0)
-        max_abs_shaps = np.take_along_axis(raw_shaps, argmax_out[None, :], axis=0)[0]
-        shaps_1d = get_1d_data_cube(max_abs_shaps, lats=jules_lats, lons=jules_lons)
-        shaps_2d = cube_1d_to_2d(shaps_1d)
-        minval = np.min(shaps_1d.data)
-        maxval = np.max(shaps_1d.data)
-
-        fig = plt.figure(figsize=(7, 3))
-        cube_plotting(
-            shaps_2d,
-            title=f"SHAP {col}",
-            boundaries=[minval, minval / 2, 0, maxval / 2, maxval],
-            fig=fig,
-            cmap="RdBu",
-            cmap_midpoint=0,
-            cmap_symmetric=True,
-        )
-
-        fig.savefig(exp_shap_map_dir / f"{col}.png")
-        plt.close(fig)
-
-    # ICE gradient maps.
-
-    exp_ice_map_dir = ice_map_dir / f"{exp_key}_{old_inferno_key}"
-    exp_ice_map_dir.mkdir(exist_ok=True, parents=False)
-
-    for i, col in enumerate(tqdm(df_X.columns, desc="ICE")):
-        ices = cache(partial_dependence)(
-            rf,
-            df_X,
-            [i],
-            percentiles=(0.05, 0.95),
-            grid_resolution=20,
-            kind="individual",
-        )["individual"]
-        # Get average ICE across time periods for each grid cell.
-        grid_cell_ices = np.mean(ices[0].reshape(*(*flat_shape, 20)), axis=0)
-        # Get regression target - all in [0, 1] to remove effect of different
-        # variable ranges.
-        xs = np.linspace(0, 1, 20)
-
-        reg = linear_model.LinearRegression()
-        reg.fit(xs.reshape(-1, 1), grid_cell_ices.T)
-
-        grid_cell_gradients = reg.coef_[:, 0]
-
-        grads_1d = get_1d_data_cube(
-            grid_cell_gradients, lats=jules_lats, lons=jules_lons
-        )
-        grads_2d = cube_1d_to_2d(grads_1d)
-        minval = np.min(grads_1d.data)
-        maxval = np.max(grads_1d.data)
-
-        if minval <= 0 and maxval > 0:
-            boundaries = [minval, minval / 2, 0, maxval / 2, maxval]
-        elif minval >= 0:
-            boundaries = [0, maxval / 2, maxval]
-        elif maxval <= 0:
-            boundaries = [minval, minval / 2, 0]
-
-        fig = plt.figure(figsize=(7, 3))
-        cube_plotting(
-            grads_2d,
-            title=f"ICE Gradient {col}",
-            boundaries=boundaries,
-            fig=fig,
-            cmap="RdBu",
-            cmap_midpoint=0,
-            cmap_symmetric=True,
-        )
-
-        fig.savefig(exp_ice_map_dir / f"{col}.png")
-        plt.close(fig)
+    ice_analysis(
+        ice_map_dir=ice_map_dir,
+        exp_key=exp_key,
+        old_inferno_key=old_inferno_key,
+        rf=rf,
+        df_X=df_X,
+        flat_shape=flat_shape,
+        jules_lats=jules_lats,
+        jules_lons=jules_lons,
+    )
 
 
 def main():
