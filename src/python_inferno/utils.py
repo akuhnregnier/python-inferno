@@ -5,6 +5,7 @@ from datetime import datetime
 from functools import reduce, wraps
 
 import iris
+import iris.analysis
 import joblib
 import numpy as np
 from dateutil.relativedelta import relativedelta
