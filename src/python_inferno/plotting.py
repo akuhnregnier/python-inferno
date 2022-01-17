@@ -2,9 +2,12 @@
 import math
 from numbers import Integral
 
+import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import numpy as np
+from jules_output_analysis.data import n96e_lats, n96e_lons
 from loguru import logger
+from matplotlib.transforms import offset_copy
 from wildfires.analysis import cube_plotting
 
 from .data import get_gfed_regions, get_pnv_mega_plot_data
@@ -71,14 +74,86 @@ def plot_phase_map(*, phase, title, label="phase (month)"):
 
 
 def plot_phase_diff_map(*, phase_diff, title, label):
+    fig, ax = plt.subplots(figsize=(12, 5), subplot_kw=dict(projection=ccrs.Robinson()))
     cube_plotting(
         phase_diff,
         title=title,
         boundaries=np.linspace(-6, 6, 10),
-        cmap="RdBu",
-        fig=plt.figure(figsize=(12, 5)),
+        cmap="twilight_shifted",
+        fig=fig,
+        ax=ax,
         colorbar_kwargs=dict(format="%.1e", label=label),
     )
+    return fig, ax
+
+
+def plot_phase_diff_locs(
+    *,
+    model_ba_2d_data,
+    ref_2d_data,
+    phase_diff,
+    title,
+    label,
+    save_dir,
+    exp_key,
+):
+    if save_dir is not None:
+        save_dir.mkdir(exist_ok=True, parents=False)
+        save_dir = save_dir / exp_key
+        save_dir.mkdir(exist_ok=True, parents=False)
+
+    fig, ax = plot_phase_diff_map(phase_diff=phase_diff, title=title, label=label)
+
+    valid_phase_diffs = np.ma.getdata(phase_diff)[~np.ma.getmaskarray(phase_diff)]
+    unique_phase_diffs = list(np.unique(valid_phase_diffs))
+
+    for i in range(10):
+        target_phase_diff = unique_phase_diffs[-i]
+        lat_indices, lon_indices = np.where(phase_diff == target_phase_diff)
+
+        for lat_i, lon_i in zip(lat_indices, lon_indices):
+            lat = n96e_lats[lat_i]
+            lon = n96e_lons[lon_i]
+            ax.plot(
+                lon,
+                lat,
+                marker="o",
+                markerfacecolor="None",
+                markeredgecolor="red",
+                markersize=8,
+                transform=ccrs.PlateCarree(),
+                alpha=0.7,
+            )
+            text_transform = offset_copy(
+                ccrs.PlateCarree()._as_mpl_transform(ax), units="dots", x=40
+            )
+            ax.text(
+                lon,
+                lat,
+                i,
+                horizontalalignment="left",
+                transform=text_transform,
+                bbox=dict(
+                    boxstyle="square,pad=0", facecolor="white", alpha=0.7, ec="grey"
+                ),
+            )
+
+            loc_fig, loc_ax = plt.subplots(1, 1, figsize=(5, 4))
+            loc_ax.plot(model_ba_2d_data[:, lat_i, lon_i], label="model")
+            loc_ax.plot(ref_2d_data[:, lat_i, lon_i], label="ref")
+            loc_ax.legend()
+
+            # TODO - plot additional data, e.g. fapar, rain, etc...
+            # Can combine such plots with plots of the model response to individual
+            # variables, e.g. as aggregated as part of the GAM analysis scripts.
+
+            if save_dir is not None:
+                loc_fig.savefig(save_dir / f"{i}_{exp_key}.png")
+            plt.close(loc_fig)
+
+    if save_dir is not None:
+        fig.savefig(save_dir / f"phase_diff_locs_{exp_key}.png")
+    plt.close(fig)
 
 
 def plotting(
@@ -95,6 +170,8 @@ def plotting(
     ref_2d_data=None,
     regions="GFED",
 ):
+    # Prep.
+
     if scores is not None:
         arcsinh_nme = scores["arcsinh_nme"]
         mpd = scores["mpd"]
@@ -287,5 +364,16 @@ def plotting(
             phase_diff_map_dir.mkdir(exist_ok=True, parents=False)
             plt.savefig(phase_diff_map_dir / f"phase_diff_map_{exp_key}.png")
         plt.close()
+
+        # Global phase difference map with focus on individual locations.
+        plot_phase_diff_locs(
+            model_ba_2d_data=model_ba_2d_data,
+            ref_2d_data=ref_2d_data,
+            phase_diff=phase_diff,
+            title=title,
+            label=xlabel,
+            save_dir=save_dir / "phase_diff_locs",
+            exp_key=exp_key,
+        )
     else:
         logger.debug("'ref_2d_data' not given.")
