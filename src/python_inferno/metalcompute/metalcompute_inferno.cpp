@@ -14,6 +14,7 @@ constant float rsec_per_day = 86400.0;
 constant float s_in_day = 86400.0;
 
 constant int npft = 13;
+constant int n_pft_groups = 3;
 constant int n_total_pft = 17;
 constant int land_pts = 7771;
 
@@ -51,6 +52,38 @@ constant float avg_ba[13] = { 1.7e6, 1.7e6, 1.7e6, 1.7e6, 1.7e6, 3.2e6, 0.4e6, 3
 // cdef float[13] fuel_build_up_alpha = tuple(
 //     1.0 - np.exp(-1.0 / (np.array(n_day_fuel_build_up) * rsec_per_day))
 // )
+
+// NOTE Ignition method 1.
+//
+// Assume a multi-year annual mean of 2.7/km2/yr
+// (Huntrieser et al. 2007) 75% are Cloud to Ground flashes
+// (Prentice and Mackerras 1977)
+constant float nat_ign_l = 2.7 / s_in_month / m2_in_km2 / 12.0 * 0.75;
+
+// We parameterised 1.5 ignitions/km2/month globally from GFED
+constant float man_ign_l = 1.5 / s_in_month / m2_in_km2;
+
+// Total
+constant float total_ignition_1 = man_ign_l + nat_ign_l;
+
+// Flammability calculation internal constants.
+
+// These are variables to the Goff-Gratch equation
+constant float a = -7.90298;
+constant float d = 11.344;
+constant float c = -1.3816e-07;
+constant float b = 5.02808;
+constant float f = 8.1328e-03;
+constant float h = -3.49149;
+
+// Water saturation temperature
+constant float Ts = 373.16;
+// Precipitation factor (-2(day/mm)*(kg/m2/s))
+constant float cr = -2.0 * s_in_day;
+// Upper boundary to the relative humidity
+constant float rhum_up = 90.0;
+// Lower boundary to the relative humidity
+constant float rhum_low = 10.0;
 
 constant float es[1553] = {
     0.966483e-02, 0.966483e-02, 0.984279e-02, 0.100240e-01, 0.102082e-01,
@@ -519,40 +552,32 @@ float calc_ignitions(
     // non_sup_frac_l
     // Fraction of fire ignition non suppressed by humans
 
-    float tune_MODIS = 7.7;
+    const float tune_MODIS = 7.7;
     // Parameter originally used by P&S (2009) to match MODIS
 
-    float nat_ign_l, man_ign_l, non_sup_frac_l, ignitions_l;
+    float non_sup_frac_l, ignitions_l, nat_ign_l2, man_ign_l2;
 
     if (ignition_method == 1) {
-        // Assume a multi-year annual mean of 2.7/km2/yr
-        // (Huntrieser et al. 2007) 75% are Cloud to Ground flashes
-        // (Prentice and Mackerras 1977)
-        nat_ign_l = 2.7 / s_in_month / m2_in_km2 / 12.0 * 0.75;
-
-        // We parameterised 1.5 ignitions/km2/month globally from GFED
-        man_ign_l = 1.5 / s_in_month / m2_in_km2;
-
-        return man_ign_l + nat_ign_l;
+        return total_ignition_1;
     }
     else if (ignition_method == 2) {
         // Flash Rate (Cloud to Ground) always lead to one fire
-        nat_ign_l = min(max(flash_rate_l / m2_in_km2 / s_in_day, 0.0), 1.0);
+        nat_ign_l2 = min(max(flash_rate_l / m2_in_km2 / s_in_day, 0.0), 1.0);
 
         // We parameterised 1.5 ignitions/km2/month globally from GFED
-        man_ign_l = 1.5 / s_in_month / m2_in_km2;
+        man_ign_l2 = 1.5 / s_in_month / m2_in_km2;
 
-        return man_ign_l + nat_ign_l;
+        return man_ign_l2 + nat_ign_l2;
     }
     else if (ignition_method == 3) {
         // Flash Rate (Cloud to Ground) always lead to one fire
-        nat_ign_l = flash_rate_l / m2_in_km2 / s_in_day;
+        nat_ign_l2 = flash_rate_l / m2_in_km2 / s_in_day;
 
-        man_ign_l = 0.2 * pow(pop_den_l, 0.4) / m2_in_km2 / s_in_month;
+        man_ign_l2 = 0.2 * pow(pop_den_l, 0.4) / m2_in_km2 / s_in_month;
 
         non_sup_frac_l = 0.05 + 0.9 * exp(-0.05 * pop_den_l);
 
-        ignitions_l = (nat_ign_l + man_ign_l) * non_sup_frac_l;
+        ignitions_l = (nat_ign_l2 + man_ign_l2) * non_sup_frac_l;
 
         // Tune ignitions to MODIS data (see Pechony and Shindell, 2009)
         return ignitions_l * tune_MODIS;
@@ -563,41 +588,48 @@ float calc_ignitions(
 }
 
 
-inline float fuel_param(float x, float factor, float centre) {
-    // Description:
-    // Takes the value to be transformed, `x`, and applies a simple linear
-    // transformation about `centre` with a slope determined by `factor`
-    // (+ve or -ve). The result is in [0, 1].
-    return 1.0 / (1.0 + exp(-factor * (x - centre)));
+// XXX The sigmoid function here does not behave exactly like the python / numba equivalent, with small output values, e.g. 1e-13 being truncated.
+
+inline float sigmoid(float x, float factor, float centre, float shape) {
+    // Apply generalised sigmoid with slope determine by `factor`, position by
+    // `centre`, and shape by `shape`, with the result being in [0, 1].
+    return pow((1.0 + exp(factor * shape * (centre - x))), (-1.0 / shape));
 }
 
 
-void calc_flam(
+float calc_flam(
     float temp_l,
     float rhum_l,
     float fuel_l,
     float sm_l,
     float rain_l,
-    float cum_rain_l,
     float fuel_build_up,
     float fapar,
     float dry_days,
     int flammability_method,
     int dryness_method,
+    int fuel_build_up_method,
     float fapar_factor,
     float fapar_centre,
+    float fapar_shape,
     float fuel_build_up_factor,
     float fuel_build_up_centre,
+    float fuel_build_up_shape,
     float temperature_factor,
     float temperature_centre,
+    float temperature_shape,
     float dry_day_factor,
     float dry_day_centre,
+    float dry_day_shape,
     float dry_bal,
-    float rain_f,
-    float vpd_f,
     float dry_bal_factor,
     float dry_bal_centre,
-    thread float* out
+    float dry_bal_shape,
+    float litter_pool,
+    float litter_pool_factor,
+    float litter_pool_centre,
+    float litter_pool_shape,
+    int include_temperature
 ) {
     // Description:
     //   Performs the calculation of the flammibility
@@ -620,24 +652,8 @@ void calc_flam(
     // flam_l
     //   // The flammability of the cell
 
-    // These are variables to the Goff-Gratch equation
-    float a = -7.90298;
-    float d = 11.344;
-    float c = -1.3816e-07;
-    float b = 5.02808;
-    float f = 8.1328e-03;
-    float h = -3.49149;
-
-    // Water saturation temperature
-    float Ts = 373.16;
-    // Precipitation factor (-2(day/mm)*(kg/m2/s))
-    float cr = -2.0 * s_in_day;
-    // Upper boundary to the relative humidity
-    float rhum_up = 90.0;
-    // Lower boundary to the relative humidity
-    float rhum_low = 10.0;
-
-    float TsbyT_l, Z_l, f_rhum_l, rain_rate, flammability, dry_factor, vpd, f_sm_l;
+    float TsbyT_l, Z_l, f_rhum_l, rain_rate, flammability, dry_factor,
+        f_sm_l, fuel_factor, temperature_f;
 
     // Z_l,
     //   // Component of the Goff-Gratch saturation vapor pressure
@@ -649,35 +665,37 @@ void calc_flam(
     //   // The factor dependence on soil moisture
     // rain_rate
 
-    TsbyT_l = Ts / temp_l;
-
-    Z_l = (
-        a * (TsbyT_l - 1.0)
-        + b * log10(TsbyT_l)
-        + c * (pow(10.0, (d * (1.0 - TsbyT_l))) - 1.0)
-        + f * (pow(10.0, (h * (TsbyT_l - 1.0))) - 1.0)
-    );
-
-    f_rhum_l = (rhum_up - rhum_l) / (rhum_up - rhum_low);
-
-    // Create boundary limits
-    // First for relative humidity
-    if (rhum_l < rhum_low) {
-        // Always fires for RH < 10%
-        f_rhum_l = 1.0;
-    }
-    if (rhum_l > rhum_up) {
-        // No fires for RH > 90%
-        f_rhum_l = 0.0;
-    }
-
-    // The flammability goes down linearly with soil moisture
-    f_sm_l = 1.0 - sm_l;
-
-    // convert rain rate from kg/m2/s to mm/day
-    rain_rate = rain_l * s_in_day;
-
     if (flammability_method == 1) {
+        // Old flammability calculation.
+
+        TsbyT_l = Ts / temp_l;
+
+        Z_l = (
+            a * (TsbyT_l - 1.0)
+            + b * log10(TsbyT_l)
+            + c * (pow(10.0, (d * (1.0 - TsbyT_l))) - 1.0)
+            + f * (pow(10.0, (h * (TsbyT_l - 1.0))) - 1.0)
+        );
+
+        f_rhum_l = (rhum_up - rhum_l) / (rhum_up - rhum_low);
+
+        // Create boundary limits
+        // First for relative humidity
+        if (rhum_l < rhum_low) {
+            // Always fires for RH < 10%
+            f_rhum_l = 1.0;
+        }
+        if (rhum_l > rhum_up) {
+            // No fires for RH > 90%
+            f_rhum_l = 0.0;
+        }
+
+        // The flammability goes down linearly with soil moisture
+        f_sm_l = 1.0 - sm_l;
+
+        // convert rain rate from kg/m2/s to mm/day
+        rain_rate = rain_l * s_in_day;
+
         // Old flammability calculation.
         flammability = max(
             min(pow(10.0, Z_l) * f_rhum_l * fuel_l * f_sm_l * exp(cr * rain_rate), 1.0),
@@ -688,41 +706,61 @@ void calc_flam(
         // New calculation, based on FAPAR (and derived fuel_build_up).
 
         if (dryness_method == 1) {
-            dry_factor = fuel_param(dry_days, dry_day_factor, dry_day_centre);
+            dry_factor = sigmoid(dry_days, dry_day_factor, dry_day_centre, dry_day_shape);
         }
         else if (dryness_method == 2) {
-            // Evolve the `dry_bal` variable.
-            // Clamp to [-1, 1].
-            // TODO Scale depending on timestep.
-            vpd = pow(10.0, Z_l) * f_rhum_l;
-            dry_bal += max(
-                min(rain_f * cum_rain_l - (1 - exp(-vpd_f * vpd)), 1.0), -1.0
-            );
-            dry_factor = fuel_param(dry_bal, dry_bal_factor, dry_bal_centre);
+            dry_factor = sigmoid(dry_bal, dry_bal_factor, dry_bal_centre, dry_bal_shape);
         }
         else {
             // raise ValueError("Unknown 'dryness_method'.");
-            flammability = -1;
-            dry_bal = -1;
             dry_factor = -1;
+        }
+
+        if (fuel_build_up_method == 1) {
+            fuel_factor = sigmoid(
+                fuel_build_up,
+                fuel_build_up_factor,
+                fuel_build_up_centre,
+                fuel_build_up_shape
+            );
+        }
+        else if (fuel_build_up_method == 2) {
+            fuel_factor = sigmoid(
+                litter_pool, litter_pool_factor, litter_pool_centre, litter_pool_shape
+            );
+        }
+        else {
+            // raise ValueError("Unknown 'fuel_build_up_method'.")
+            fuel_factor = -1.0;
+        }
+
+        if (include_temperature == 1) {
+            temperature_f = sigmoid(
+                temp_l, temperature_factor, temperature_centre, temperature_shape
+            );
+        }
+        else if (include_temperature == 0) {
+            temperature_f = 1.0;
+        }
+        else {
+            // raise ValueError("Unknown 'include_temperature'.")
+            temperature_f = -1.0;
         }
 
         // Convert fuel build-up index to flammability factor.
         flammability = (
             dry_factor
-            * fuel_param(temp_l, temperature_factor, temperature_centre)
-            * fuel_param(fuel_build_up, fuel_build_up_factor, fuel_build_up_centre)
-            * fuel_param(fapar, fapar_factor, fapar_centre)
+            * temperature_f
+            * fuel_factor
+            * sigmoid(fapar, fapar_factor, fapar_centre, fapar_shape)
         );
     }
     else {
         // raise ValueError("Unknown 'flammability_method'.")
         flammability = -1;
-        dry_bal = -1;
     }
 
-    out[0] = flammability;
-    out[1] = dry_bal;
+    return flammability;
 }
 
 
@@ -748,65 +786,18 @@ inline float calc_burnt_area(float flam_l, float ignitions_l, float avg_ba_i) {
 }
 
 
-    // const device float* t1p5m_tile [[ buffer(0) ]],
-    // const device float* q1p5m_tile [[ buffer(1) ]],
-    // const device float* pstar [[ buffer(2) ]],
-    // const device float* sthu_soilt_single [[ buffer(3) ]],
-    // const device float* frac [[ buffer(4) ]],
-    // const device float* c_soil_dpm_gb [[ buffer(5) ]],
-    // const device float* c_soil_rpm_gb [[ buffer(6) ]],
-    // const device float* canht [[ buffer(7) ]],
-    // const device float* ls_rain [[ buffer(8) ]],
-    // const device float* con_rain [[ buffer(9) ]],
-    // const device float* fuel_build_up [[ buffer(10) ]],
-    // const device float* fapar_diag_pft [[ buffer(11) ]],
-    // const device float* dry_bal [[ buffer(12) ]],
-    // const device float* fapar_factor [[ buffer(13) ]],
-    // const device float* fapar_centre [[ buffer(14) ]],
-    // const device float* fuel_build_up_factor [[ buffer(15) ]],
-    // const device float* fuel_build_up_centre [[ buffer(16) ]],
-    // const device float* temperature_factor [[ buffer(17) ]],
-    // const device float* temperature_centre [[ buffer(18) ]],
-    // const device float* dry_days [[ buffer(19) ]],
-    // const device float* dry_day_factor [[ buffer(20) ]],
-    // const device float* dry_day_centre [[ buffer(21) ]],
-    // const device float* rain_f [[ buffer(22) ]],
-    // const device float* vpd_f [[ buffer(23) ]],
-    // const device float* dry_bal_factor [[ buffer(24) ]],
-    // const device float* dry_bal_centre [[ buffer(25) ]],
-    // const device float* cum_rain [[ buffer(26) ]],
-    // const device int* method_params [[ buffer(27) ]],
-
-    // float[:, :, ::1] t1p5m_tile,
-    // float[:, :, ::1] q1p5m_tile,
-    // float[:, ::1] pstar,
-    // float[:, :, :, ::1] sthu_soilt_single,
-    // float[:, :, ::1] frac,
-    // float[:, ::1] c_soil_dpm_gb,
-    // float[:, ::1] c_soil_rpm_gb,
-    // float[:, :, ::1] canht,
-    // float[:, ::1] ls_rain,
-    // float[:, ::1] con_rain,
-    // int ignition_method,
-    // float[:, :, ::1] fuel_build_up,
-    // float[:, :, ::1] fapar_diag_pft,
-    // float[:, :, ::1] dry_bal,
-    // int flammability_method,
-    // float[::1] fapar_factor,
-    // float[::1] fapar_centre,
-    // float[::1] fuel_build_up_factor,
-    // float[::1] fuel_build_up_centre,
-    // float[::1] temperature_factor,
-    // float[::1] temperature_centre,
-    // int dryness_method,
-    // float[:, ::1] dry_days,
-    // float[::1] dry_day_factor,
-    // float[::1] dry_day_centre,
-    // float[::1] rain_f,
-    // float[::1] vpd_f,
-    // float[::1] dry_bal_factor,
-    // float[::1] dry_bal_centre,
-    // float[:, ::1] cum_rain,
+int get_pft_group_index(int pft_i) {
+    if (pft_i <= 4) {
+        return 0;
+    }
+    else if (pft_i <= 10) {
+        return 1;
+    }
+    else {
+        // 11, 12
+        return 2;
+    }
+}
 
 inline void set_element_3d(
     device float* arr,
@@ -815,8 +806,8 @@ inline void set_element_3d(
     float value
 ) {
     int flat_index = (
-        indices_3d[0] * shape_3d[1] * shape_3d[2]
-        + indices_3d[1] * shape_3d[2]
+        (indices_3d[0] * shape_3d[1] * shape_3d[2])
+        + (indices_3d[1] * shape_3d[2])
         + indices_3d[2]
     );
     arr[flat_index] = value;
@@ -852,7 +843,7 @@ inline float get_element_2d(
 
 kernel void multi_timestep_inferno(
     const device float* in [[ buffer(0) ]],
-    device float* out [[ buffer(1) ]],  // contains burnt_area and dry_bal
+    device float* out [[ buffer(1) ]],  // contains burnt_area
     uint id [[ thread_position_in_grid ]]
 ) {
     // id in range [0, land_pts * npft]
@@ -929,24 +920,36 @@ kernel void multi_timestep_inferno(
     // - burnt_area(:)
     // - burnt_area_ft(:,:)
 
+    // XXX
+    return;
+
+    if (id >= (npft * land_pts)) {
+        // Don't do anything in this case, because these are extraneous threads.
+        return;
+    }
+
     // Params are at the start of the input buffer.
     const device float* method_params = in;
 
     const int ignition_method = static_cast<int>(method_params[0]);
     const int flammability_method = static_cast<int>(method_params[1]);
     const int dryness_method = static_cast<int>(method_params[2]);
-    const int Nt = static_cast<int>(method_params[3]);  // i.e. <data>.shape[0].
+    const int fuel_build_up_method = static_cast<int>(method_params[3]);
+    const int include_temperature = static_cast<int>(method_params[4]);
+    const int Nt = static_cast<int>(method_params[5]);  // i.e. <data>.shape[0].
 
     const int shape_2d[2] = { Nt, land_pts };
     const int total_pft_shape_3d[3] = { Nt, n_total_pft, land_pts };
     const int nat_pft_shape_3d[3] = { Nt, npft, land_pts };
+    const int grouped_pft_shape_3d[3] = { Nt, n_pft_groups, land_pts };
 
     const int size_2d = shape_2d[0] * shape_2d[1];
     const int total_pft_size_3d = total_pft_shape_3d[0] * total_pft_shape_3d[1] * total_pft_shape_3d[2];
     const int nat_pft_size_3d = nat_pft_shape_3d[0] * nat_pft_shape_3d[1] * nat_pft_shape_3d[2];
+    const int grouped_pft_size_3d = grouped_pft_shape_3d[0] * grouped_pft_shape_3d[1] * grouped_pft_shape_3d[2];
 
     // Array sizes.
-    const int method_params_size = 4;
+    const int method_params_size = 6;
     const int t1p5m_tile_size = total_pft_size_3d;
     const int q1p5m_tile_size = total_pft_size_3d;
     const int pstar_size = size_2d;
@@ -958,23 +961,31 @@ kernel void multi_timestep_inferno(
     const int canht_size = nat_pft_size_3d;
     const int ls_rain_size = size_2d;
     const int con_rain_size = size_2d;
+    const int pop_den_size = land_pts;
+    const int flash_rate_size = land_pts;
     const int fuel_build_up_size = nat_pft_size_3d;
     const int fapar_diag_pft_size = nat_pft_size_3d;
-    const int dry_bal_size = nat_pft_size_3d;
-    const int fapar_factor_size = npft;
-    const int fapar_centre_size = npft;
-    const int fuel_build_up_factor_size = npft;
-    const int fuel_build_up_centre_size = npft;
-    const int temperature_factor_size = npft;
-    const int temperature_centre_size = npft;
+    const int grouped_dry_bal_size = grouped_pft_size_3d;
     const int dry_days_size = size_2d;
-    const int dry_day_factor_size = npft;
-    const int dry_day_centre_size = npft;
-    const int rain_f_size = npft;
-    const int vpd_f_size = npft;
-    const int dry_bal_factor_size = npft;
-    const int dry_bal_centre_size = npft;
-    const int cum_rain_size = size_2d;
+    const int litter_pool_size = nat_pft_size_3d;
+    const int fapar_factor_size = n_pft_groups;
+    const int fapar_centre_size = n_pft_groups;
+    const int fapar_shape_size = n_pft_groups;
+    const int fuel_build_up_factor_size = n_pft_groups;
+    const int fuel_build_up_centre_size = n_pft_groups;
+    const int fuel_build_up_shape_size = n_pft_groups;
+    const int temperature_factor_size = n_pft_groups;
+    const int temperature_centre_size = n_pft_groups;
+    const int temperature_shape_size = n_pft_groups;
+    const int dry_day_factor_size = n_pft_groups;
+    const int dry_day_centre_size = n_pft_groups;
+    const int dry_day_shape_size = n_pft_groups;
+    const int dry_bal_factor_size = n_pft_groups;
+    const int dry_bal_centre_size = n_pft_groups;
+    const int dry_bal_shape_size = n_pft_groups;
+    const int litter_pool_factor_size = n_pft_groups;
+    const int litter_pool_centre_size = n_pft_groups;
+    const int litter_pool_shape_size = n_pft_groups;
 
     // Input arrays.
 
@@ -989,92 +1000,84 @@ kernel void multi_timestep_inferno(
     const device float* canht = c_soil_rpm_gb + c_soil_rpm_gb_size;
     const device float* ls_rain = canht + canht_size;
     const device float* con_rain = ls_rain + ls_rain_size;
-    const device float* fuel_build_up = con_rain + con_rain_size;
+    const device float* pop_den = con_rain + con_rain_size;
+    const device float* flash_rate = pop_den + pop_den_size;
+    const device float* fuel_build_up = flash_rate + flash_rate_size;
     const device float* fapar_diag_pft = fuel_build_up + fuel_build_up_size;
-    const device float* dry_bal = fapar_diag_pft + fapar_diag_pft_size;
-    const device float* fapar_factor = dry_bal + dry_bal_size;
+    const device float* grouped_dry_bal = fapar_diag_pft + fapar_diag_pft_size;
+    const device float* litter_pool = grouped_dry_bal + grouped_dry_bal_size;
+    const device float* dry_days = litter_pool + litter_pool_size;
+    const device float* fapar_factor = dry_days + dry_days_size;
     const device float* fapar_centre = fapar_factor + fapar_factor_size;
-    const device float* fuel_build_up_factor = fapar_centre + fapar_centre_size;
+    const device float* fapar_shape = fapar_centre + fapar_centre_size;
+    const device float* fuel_build_up_factor = fapar_shape + fapar_shape_size;
     const device float* fuel_build_up_centre = fuel_build_up_factor + fuel_build_up_factor_size;
-    const device float* temperature_factor = fuel_build_up_centre + fuel_build_up_centre_size;
+    const device float* fuel_build_up_shape = fuel_build_up_centre + fuel_build_up_centre_size;
+    const device float* temperature_factor = fuel_build_up_shape + fuel_build_up_shape_size;
     const device float* temperature_centre = temperature_factor + temperature_factor_size;
-    const device float* dry_days = temperature_centre + temperature_centre_size;
-    const device float* dry_day_factor = dry_days + dry_days_size;
+    const device float* temperature_shape = temperature_centre + temperature_centre_size;
+    const device float* dry_day_factor = temperature_shape + temperature_shape_size;
     const device float* dry_day_centre = dry_day_factor + dry_day_factor_size;
-    const device float* rain_f = dry_day_centre + dry_day_centre_size;
-    const device float* vpd_f = rain_f + rain_f_size;
-    const device float* dry_bal_factor = vpd_f + vpd_f_size;
+    const device float* dry_day_shape = dry_day_centre + dry_day_centre_size;
+    const device float* dry_bal_factor = dry_day_shape + dry_day_shape_size;
     const device float* dry_bal_centre = dry_bal_factor + dry_bal_factor_size;
-    const device float* cum_rain = dry_bal_centre + dry_bal_centre_size;
+    const device float* dry_bal_shape = dry_bal_centre + dry_bal_centre_size;
+    const device float* litter_pool_factor = dry_bal_shape + dry_bal_shape_size;
+    const device float* litter_pool_centre = litter_pool_factor + litter_pool_factor_size;
+    const device float* litter_pool_shape = litter_pool_centre + litter_pool_centre_size;
 
-    // Output arrays.
-
-    const int full_burnt_area_size = nat_pft_size_3d;
-
-    device float* nat_pft_burnt_area_out = out;
-    device float* nat_pft_dry_bal_out = out + full_burnt_area_size;
+    // Other variable declarations.
 
     int indices_2d[2];
     int indices_3d[3];
-    int past_dry_bal_indices_3d[3];
-    float inferno_fuel_l, inferno_rhum_l, qsat_l, inferno_rain_l;
-    float ls_rain_l_filtered, con_rain_l_filtered, burnt_area_ft_i_l;
-    float leaf_inf_i_l, dpm_fuel_l, ignitions_l, flammability_ft_i_l;
-    float temperature, ls_rain_val, con_rain_val, sthu_soilt_single_val;
-    float pstar_val, q1p5m_tile_val, cum_rain_val, fuel_build_up_val;
-    float fapar_diag_pft_val, dry_days_val, dry_bal_val;
-    float new_dry_bal_val, past_dry_bal_val;
-    thread float flam_out[2];
+    int grouped_indices_3d[3];
+    float flam_out[2];
+
+    float inferno_fuel_l, inferno_rhum_l, qsat_l, inferno_rain_l,
+          burnt_area_ft_i_l,
+          leaf_inf_i_l, dpm_fuel_l, ignitions_l, flammability_ft_i_l,
+          temperature, ls_rain_val, con_rain_val, sthu_soilt_single_val,
+          pstar_val, q1p5m_tile_val, fuel_build_up_val, c_soil_dpm_gb_val,
+          fapar_diag_pft_val, dry_days_val, dry_bal_val, grouped_dry_bal_val,
+          past_dry_bal_val, litter_pool_val, canht_val;
 
     // Plant Material that is available as fuel (on the surface)
-    float pmtofuel = 0.7;
+    const float pmtofuel = 0.7;
 
     // Fuel availability high/low threshold
-    float fuel_low = 0.02;
-    float fuel_high = 0.2;
-    float fuel_diff = fuel_high - fuel_low;
+    const float fuel_low = 0.02;
+    const float fuel_high = 0.2;
+    const float fuel_diff = fuel_high - fuel_low;
 
     // Tolerance number to filter non-physical rain values
-    float rain_tolerance = 1.0e-18;  // kg/m2/s
-
-    // Update antecedent fuel load.
-    // TODO
-    // fuel_build_up = fuel_build_up + fuel_build_up_alpha * (
-    //     fapar_diag_pft - fuel_build_up
-    // )
-
-    // rpm_fuel = pmtofuel * c_soil_rpm_gb
-
-    // Get the inferno meteorological variables for the whole gridbox
-
-    // Soil Humidity (inferno_sm)
-    // XXX What does selecting one of the 4 layers change here?
-    // inferno_sm = sthu_soilt[0, 0, :]
-
-    // Rainfall (inferno_rain)
-
-    // Rain fall values have a significant impact in the calculation of flammability.
-    // In some cases we may be presented with values that have no significant meaning -
-    // e.g in the UM context negative values or very small values can often be found/
+    const float rain_tolerance = 1.0e-18;  // kg/m2/s
 
     // Get l and i from the thread id.
     const int i = (id / land_pts);
     const int l = id - (i * land_pts);
 
-    for (int ti = 0; ti < (Nt * 100); ti++) {
+    // Time, land.
+    indices_2d[1] = l;
+    // Time, PFT, land.
+    indices_3d[1] = i;
+    indices_3d[2] = l;
+
+    // PFT group index.
+    const int pft_group_i = get_pft_group_index(i);
+
+    // Time, PFT group index, land.
+    grouped_indices_3d[1] = pft_group_i;
+    grouped_indices_3d[2] = l;
+
+    // TODO experiment with making each thread do more work by moving PFT loop into the kernel.
+
+    for (int ti = 0; ti < Nt; ti++) {
         // Time, land.
         indices_2d[0] = ti;
-        indices_2d[1] = l;
         // Time, PFT, land.
         indices_3d[0] = ti;
-        indices_3d[1] = i;
-        indices_3d[2] = l;
-
-        // NOTE Don't need to do this becuase of the if statement checking `ti` below.
-        // past_dry_bal_indices_3d[0] = max(ti - 1, 0);
-        past_dry_bal_indices_3d[0] = ti - 1;
-        past_dry_bal_indices_3d[1] = i;
-        past_dry_bal_indices_3d[2] = l;
+        // Time, PFT group index, land.
+        grouped_indices_3d[0] = ti;
 
         temperature = get_element_3d(t1p5m_tile, indices_3d, total_pft_shape_3d);
         // TODO skip calculations that are not necessarily needed at this point?
@@ -1083,36 +1086,23 @@ kernel void multi_timestep_inferno(
         sthu_soilt_single_val = get_element_2d(sthu_soilt_single, indices_2d, shape_2d);
         pstar_val = get_element_2d(pstar, indices_2d, shape_2d);
         q1p5m_tile_val = get_element_3d(q1p5m_tile, indices_3d, total_pft_shape_3d);
-        cum_rain_val = get_element_2d(cum_rain, indices_2d, shape_2d);
         fuel_build_up_val = get_element_3d(fuel_build_up, indices_3d, nat_pft_shape_3d);
         fapar_diag_pft_val = get_element_3d(fapar_diag_pft, indices_3d, nat_pft_shape_3d);
         dry_days_val = get_element_2d(dry_days, indices_2d, shape_2d);
-        if (ti > 0) {
-            past_dry_bal_val = get_element_3d(nat_pft_dry_bal_out, past_dry_bal_indices_3d, nat_pft_shape_3d);
-        }
-        else {
-            past_dry_bal_val = get_element_3d(dry_bal, indices_3d, nat_pft_shape_3d);
-        }
+        c_soil_dpm_gb_val = get_element_2d(c_soil_dpm_gb, indices_2d, shape_2d);
+        canht_val = get_element_3d(canht, indices_3d, nat_pft_shape_3d);
+        litter_pool_val = get_element_3d(litter_pool, indices_3d, nat_pft_shape_3d);
+        grouped_dry_bal_val = get_element_3d(grouped_dry_bal, grouped_indices_3d, grouped_pft_shape_3d);
 
         // Diagnose the balanced-growth leaf area index and the carbon
         // contents of leaves and wood.
-        leaf_inf_i_l = calc_c_comps_triffid_leaf(i, get_element_3d(canht, indices_3d, nat_pft_shape_3d));
+        leaf_inf_i_l = calc_c_comps_triffid_leaf(i, canht_val);
 
         // Calculate the fuel density
         // We use normalised Leaf Carbon + the available DPM
 
         // Get the available DPM and RPM using a scaling parameter
-        dpm_fuel_l = pmtofuel * get_element_2d(c_soil_dpm_gb, indices_2d, shape_2d);
-
-        inferno_fuel_l = (
-            (leaf_inf_i_l + dpm_fuel_l - fuel_low) / fuel_diff
-        );
-        if (inferno_fuel_l < 0.0) {
-            inferno_fuel_l = 0.0;
-        }
-        else if (inferno_fuel_l > 1.0) {
-            inferno_fuel_l = 1.0;
-        }
+        dpm_fuel_l = pmtofuel * c_soil_dpm_gb_val;
 
         // Conditional statements to make sure we are dealing with
         // reasonable weather. Note initialisation to 0 already done.
@@ -1121,33 +1111,6 @@ kernel void multi_timestep_inferno(
 
         // Temperatures constrained akin to qsat (from the WMO)
         if ((temperature > 338.15) || (temperature < 183.15)) {
-            continue;
-        }
-
-        ls_rain_l_filtered = ls_rain_val;
-        con_rain_l_filtered = con_rain_val;
-        if (ls_rain_l_filtered < rain_tolerance) {
-            ls_rain_l_filtered = 0.0;
-        }
-        if (con_rain_l_filtered < rain_tolerance) {
-            con_rain_l_filtered = 0.0;
-        }
-
-        inferno_rain_l = ls_rain_l_filtered + con_rain_l_filtered;
-
-        // The maximum rain rate ever observed is 38mm in one minute,
-        // here we assume 0.5mm/s stops fires altogether
-        if ((inferno_rain_l > 0.5) || (inferno_rain_l < 0.0)) {
-            continue;
-        }
-
-        // Fuel Density is an index constrained to 0-1
-        if ((inferno_fuel_l > 1.0) || (inferno_fuel_l < 0.0)) {
-            continue;
-        }
-
-        // Soil moisture is a fraction of saturation
-        if ((sthu_soilt_single_val > 1.0) || (sthu_soilt_single_val < 0.0)) {
             continue;
         }
 
@@ -1161,43 +1124,82 @@ kernel void multi_timestep_inferno(
             continue;
         }
 
+        if (ls_rain_val < rain_tolerance) {
+            ls_rain_val = 0.0;
+        }
+        if (con_rain_val < rain_tolerance) {
+            con_rain_val = 0.0;
+        }
+
+        inferno_rain_l = ls_rain_val + con_rain_val;
+
+        // The maximum rain rate ever observed is 38mm in one minute,
+        // here we assume 0.5mm/s stops fires altogether
+        if ((inferno_rain_l > 0.5) || (inferno_rain_l < 0.0)) {
+            continue;
+        }
+
+        inferno_fuel_l = (
+            (leaf_inf_i_l + dpm_fuel_l - fuel_low) / fuel_diff
+        );
+        // Fuel Density is an index constrained to 0-1
+        if (inferno_fuel_l < 0.0) {
+            inferno_fuel_l = 0.0;
+        }
+        else if (inferno_fuel_l > 1.0) {
+            inferno_fuel_l = 1.0;
+        }
+
+        // Soil moisture is a fraction of saturation
+        if ((sthu_soilt_single_val > 1.0) || (sthu_soilt_single_val < 0.0)) {
+            continue;
+        }
+
         // If all these checks are passes, start fire calculations
 
         ignitions_l = calc_ignitions(
+            // NOTE - pop_den and flash_rate should be used here, but this can
+            // be omitted to optimise performance, since we do not use them in
+            // practice.
             0.0,
             0.0,
             ignition_method
         );
 
-        calc_flam(
+        flammability_ft_i_l = calc_flam(
             temperature,
             inferno_rhum_l,
             inferno_fuel_l,
             sthu_soilt_single_val,
             inferno_rain_l,
-            cum_rain_val,
             fuel_build_up_val,
             fapar_diag_pft_val,
             dry_days_val,
             flammability_method,
             dryness_method,
-            fapar_factor[i],
-            fapar_centre[i],
-            fuel_build_up_factor[i],
-            fuel_build_up_centre[i],
-            temperature_factor[i],
-            temperature_centre[i],
-            dry_day_factor[i],
-            dry_day_centre[i],
-            past_dry_bal_val,
-            rain_f[i],
-            vpd_f[i],
-            dry_bal_factor[i],
-            dry_bal_centre[i],
-            flam_out
+            fuel_build_up_method,
+            fapar_factor[pft_group_i],
+            fapar_centre[pft_group_i],
+            fapar_shape[pft_group_i],
+            fuel_build_up_factor[pft_group_i],
+            fuel_build_up_centre[pft_group_i],
+            fuel_build_up_shape[pft_group_i],
+            temperature_factor[pft_group_i],
+            temperature_centre[pft_group_i],
+            temperature_shape[pft_group_i],
+            dry_day_factor[pft_group_i],
+            dry_day_centre[pft_group_i],
+            dry_day_shape[pft_group_i],
+            grouped_dry_bal_val,
+            dry_bal_factor[pft_group_i],
+            dry_bal_centre[pft_group_i],
+            dry_bal_shape[pft_group_i],
+            litter_pool_val,
+            litter_pool_factor[pft_group_i],
+            litter_pool_centre[pft_group_i],
+            litter_pool_shape[pft_group_i],
+            include_temperature
         );
-        flammability_ft_i_l = flam_out[0];
-        new_dry_bal_val = flam_out[1];
 
         burnt_area_ft_i_l = calc_burnt_area(
             flammability_ft_i_l, ignitions_l, avg_ba[i]
@@ -1206,8 +1208,7 @@ kernel void multi_timestep_inferno(
         // XXX (We add pft-specific variables to the gridbox totals) -- see below
         // Simply record the pft-specific variables, calculate gridbox totals later.
         set_element_3d(
-            // Set element in `out`.
-            nat_pft_burnt_area_out,
+            out,
             // Select using 3d indices.
             indices_3d,
             // Shape.
@@ -1215,15 +1216,5 @@ kernel void multi_timestep_inferno(
             // PFT burnt area to record.
             burnt_area_ft_i_l
         );
-
-        // Ditto for dry_bal (output), with offset to account for burnt_area data before.
-        set_element_3d(
-            nat_pft_dry_bal_out,
-            indices_3d,
-            nat_pft_shape_3d,
-            new_dry_bal_val
-        );
     }
 }
-
-

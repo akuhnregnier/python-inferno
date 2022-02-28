@@ -92,7 +92,7 @@ def multi_timestep_inferno(
 
     # Call the below using normal, non-numba Python to enable features like
     # keyword-only arguments with default arguments as above.
-    ba = _multi_timestep_inferno(
+    all_kwargs = dict(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,
@@ -117,6 +117,16 @@ def multi_timestep_inferno(
         include_temperature=include_temperature,
         **transformed_param_vars,
     )
+    # XXX DEBUG
+    for name, val in all_kwargs.items():
+        if hasattr(val, "shape"):
+            print(name, val.shape)
+    import pickle
+
+    with open("/tmp/output.pkl", "wb") as f:
+        pickle.dump(all_kwargs, f, -1)
+    # XXX DEBUG
+    ba = _multi_timestep_inferno(**all_kwargs)
     return ba
 
 

@@ -6,10 +6,10 @@ import numpy as np
 from python_inferno.inferno import sigmoid
 
 if __name__ == "__main__":
-    factor = -1.1
-    centre = -0.98
-    shape = 1.2
-    x = np.linspace(-1, 1, 100)
+    factor = 0.05
+    centre = 2000
+    shape = 9.2
+    x = np.linspace(0, 1422, 400, dtype=np.float32)
     plt.figure()
     plt.plot(x, sigmoid(x, factor, centre, shape))
     plt.show()
