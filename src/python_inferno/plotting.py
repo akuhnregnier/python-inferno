@@ -6,11 +6,19 @@ import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import n96e_lats, n96e_lons
+from jules_output_analysis.utils import PFTs, pft_acronyms
 from loguru import logger
 from matplotlib.transforms import offset_copy
 from wildfires.analysis import cube_plotting
 
-from .data import get_gfed_regions, get_pnv_mega_plot_data
+from .ba_model import get_pred_ba_prep
+from .configuration import pft_group_names
+from .data import (
+    get_2d_cubes,
+    get_gfed_regions,
+    get_pnv_mega_plot_data,
+    subset_sthu_soilt,
+)
 from .metrics import calculate_phase, calculate_phase_2d
 from .utils import wrap_phase_diffs
 
@@ -96,6 +104,7 @@ def plot_phase_diff_locs(
     label,
     save_dir,
     exp_key,
+    data_2d_cubes,
 ):
     if save_dir is not None:
         save_dir.mkdir(exist_ok=True, parents=False)
@@ -138,13 +147,43 @@ def plot_phase_diff_locs(
                 ),
             )
 
-            loc_fig, loc_ax = plt.subplots(1, 1, figsize=(5, 4))
-            loc_ax.plot(model_ba_2d_data[:, lat_i, lon_i], label="model")
-            loc_ax.plot(ref_2d_data[:, lat_i, lon_i], label="ref")
-            loc_ax.legend()
+            N_plots = len(data_2d_cubes) + 1  # +1 for the BA plots.
+            ncols = 5
+            nrows = math.ceil(N_plots / ncols)
 
-            # TODO - plot additional data, e.g. fapar, rain, etc...
-            # Can combine such plots with plots of the model response to individual
+            loc_fig, loc_axes = plt.subplots(
+                nrows, ncols, figsize=(3 * ncols, 3 * nrows)
+            )
+            loc_axes.ravel()[0].plot(model_ba_2d_data[:, lat_i, lon_i], label="model")
+            loc_axes.ravel()[0].plot(ref_2d_data[:, lat_i, lon_i], label="ref")
+            loc_axes.ravel()[0].set_title("BA")
+            loc_axes.ravel()[0].legend()
+
+            for (j, (name, cube)) in enumerate(data_2d_cubes.items()):
+                loc_ax = loc_axes.ravel()[j + 1]
+                loc_ax.set_title(name)
+
+                if len(cube.shape) == 3:
+                    loc_ax.plot(cube[:, lat_i, lon_i].data)
+                elif len(cube.shape) == 4:
+                    if cube.shape[1] == 3:
+                        labels = pft_group_names
+                        colors = plt.get_cmap("tab10").colors
+                    else:
+                        labels = pft_acronyms[PFTs.VEG13]
+                        colors = plt.get_cmap("tab20").colors
+                    for k in range(min(13, cube.shape[1])):
+                        loc_ax.plot(
+                            cube[:, k, lat_i, lon_i].data, label=labels[k], c=colors[k]
+                        )
+                    loc_ax.legend()
+                else:
+                    print(f"Unsupported shape: {cube.shape}")
+
+            for loc_ax in loc_axes.ravel()[N_plots:]:
+                loc_ax.set_axis_off()
+
+            # TODO Maybe combine plots with plots of the model response to individual
             # variables, e.g. as aggregated as part of the GAM analysis scripts.
 
             if save_dir is not None:
@@ -169,6 +208,7 @@ def plotting(
     save_dir=None,
     ref_2d_data=None,
     regions="GFED",
+    data_params=None,
 ):
     # Prep.
 
@@ -203,6 +243,13 @@ def plotting(
     regions_cube.data.mask |= np.any(model_ba_2d_data.mask, axis=0)
 
     region_nrows_ncols = dict(nrows=math.ceil(N_plots / 2), ncols=2)
+
+    if data_params is not None:
+        (_, _, _, _, _, data_dict) = get_pred_ba_prep(**data_params)
+        data_dict = subset_sthu_soilt(data_dict)
+        data_2d_cubes = get_2d_cubes(data_dict=data_dict)
+    else:
+        data_2d_cubes = None
 
     # Plotting.
 
@@ -374,6 +421,7 @@ def plotting(
             label=xlabel,
             save_dir=save_dir / "phase_diff_locs",
             exp_key=exp_key,
+            data_2d_cubes=data_2d_cubes,
         )
     else:
         logger.debug("'ref_2d_data' not given.")

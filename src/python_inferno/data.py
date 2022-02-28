@@ -6,7 +6,13 @@ from pathlib import Path
 import iris
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from jules_output_analysis.data import get_1d_to_2d_indices, n96e_lats, n96e_lons
+from jules_output_analysis.data import (
+    cube_1d_to_2d,
+    get_1d_data_cube,
+    get_1d_to_2d_indices,
+    n96e_lats,
+    n96e_lons,
+)
 from jules_output_analysis.utils import convert_longitudes
 from loguru import logger
 from tqdm import tqdm
@@ -704,3 +710,18 @@ def get_gfed_regions():
 def get_pnv_mega_plot_data():
     pnv_mega_regions = get_pnv_mega_regions()
     return pnv_mega_regions, len(pnv_mega_regions.attributes["regions"])
+
+
+@cache
+def get_2d_cubes(*, data_dict):
+    jules_lats, jules_lons = load_jules_lats_lons()
+    return {
+        name: cube_1d_to_2d(get_1d_data_cube(data, lats=jules_lats, lons=jules_lons))
+        for name, data in data_dict.items()
+    }
+
+
+@cache
+def subset_sthu_soilt(data_dict):
+    data_dict["sthu_soilt"] = data_dict["sthu_soilt"][:, 0, 0]
+    return data_dict

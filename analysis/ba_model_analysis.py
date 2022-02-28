@@ -203,6 +203,7 @@ if __name__ == "__main__":
             arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
             arcsinh_factor=calc_factors["arcsinh_factor"],
             scores=scores,
+            data_params=params,
         )
         gc.collect()
         plot_prog.update()
@@ -252,6 +253,9 @@ if __name__ == "__main__":
         arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
         arcsinh_factor=calc_factors["arcsinh_factor"],
         scores=scores,
+        # TODO Which params to use (combination of all?) - call again with actual
+        # old INFERNO params to get corresponding data - is this supported?
+        data_params=params,
     )
     plot_prog.update()
     plot_prog.close()
