@@ -43,8 +43,8 @@ def precip_moving_sum(ls_rain, con_rain, timestep):
         timestep (int): Timestep between samples in seconds.
 
     Returns:
-        dry_day_period (array with shape (timesteps, land_pts)): Dry-day period in
-            units of days.
+        rain_mov_sum (array with shape (timesteps, land_pts)): Moving sum of
+            precipitation.
 
     Raises:
         ValueError: If a day is not divisible by the timestep.
@@ -68,6 +68,8 @@ def precip_moving_sum(ls_rain, con_rain, timestep):
 @mark_dependency
 def calculate_inferno_dry_days(ls_rain, con_rain, threshold, timestep):
     """INFERNO dry-day period calculation across timesteps for comparison.
+
+    Calculation uses the daily cumulative moving sum of precipitation.
 
     This calculation assumes that the first timestep is the first timestep of a day.
 

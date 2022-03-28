@@ -81,8 +81,8 @@ def plot_phase_map(*, phase, title, label="phase (month)"):
     )
 
 
-def plot_phase_diff_map(*, phase_diff, title, label):
-    fig, ax = plt.subplots(figsize=(12, 5), subplot_kw=dict(projection=ccrs.Robinson()))
+def plot_phase_diff_map(*, phase_diff, title, label, figsize=(12, 5)):
+    fig, ax = plt.subplots(figsize=figsize, subplot_kw=dict(projection=ccrs.Robinson()))
     cube_plotting(
         phase_diff,
         title=title,
@@ -111,18 +111,38 @@ def plot_phase_diff_locs(
         save_dir = save_dir / exp_key
         save_dir.mkdir(exist_ok=True, parents=False)
 
-    fig, ax = plot_phase_diff_map(phase_diff=phase_diff, title=title, label=label)
+    fig, ax = plot_phase_diff_map(
+        phase_diff=phase_diff, title=title, label=label, figsize=(24, 10)
+    )
 
     valid_phase_diffs = np.ma.getdata(phase_diff)[~np.ma.getmaskarray(phase_diff)]
     unique_phase_diffs = list(np.unique(valid_phase_diffs))
 
-    for i in range(10):
+    plotted_coord_indices = []
+
+    for i in range(40):
         target_phase_diff = unique_phase_diffs[-i]
         lat_indices, lon_indices = np.where(phase_diff == target_phase_diff)
 
         for lat_i, lon_i in zip(lat_indices, lon_indices):
             lat = n96e_lats[lat_i]
             lon = n96e_lons[lon_i]
+
+            if plotted_coord_indices and (
+                np.min(
+                    np.sum(
+                        np.abs(
+                            np.array(plotted_coord_indices) - np.array([lat_i, lon_i])
+                        ),
+                        axis=1,
+                    )
+                )
+                <= 3
+            ):
+                continue
+
+            plotted_coord_indices.append((lat_i, lon_i))
+
             ax.plot(
                 lon,
                 lat,

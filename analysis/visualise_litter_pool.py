@@ -1,38 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import matplotlib.pyplot as plt
+import numpy as np
+from tqdm import tqdm
 
 from python_inferno.data import calc_litter_pool
 
 if __name__ == "__main__":
-    # litter_tcs = np.geomspace(1e-10, 10, 20)
-    # leaf_fs = np.geomspace(1e-10, 10, 18)
+    litter_tcs = np.geomspace(0.5e-10, 1e-7, 8)
+    leaf_fs = np.geomspace(1e-10, 10, 8)
 
-    # stds = np.zeros((litter_tcs.size, leaf_fs.size))
+    stds = np.zeros((litter_tcs.size, leaf_fs.size))
 
-    # for i, litter_tc in enumerate(tqdm(litter_tcs)):
-    #     for j, leaf_f in enumerate(leaf_fs):
-    #         litter_pool = calc_litter_pool(
-    #             litter_tc=litter_tc, leaf_f=leaf_f, verbose=False,
-    #             Nt=100
-    #         )
-    #         stds[i, j] = np.mean(np.std(litter_pool, axis=0))
+    for i, litter_tc in enumerate(tqdm(litter_tcs)):
+        for j, leaf_f in enumerate(leaf_fs):
+            litter_pool = calc_litter_pool(
+                litter_tc=litter_tc, leaf_f=leaf_f, verbose=False, Nt=100
+            )
+            stds[i, j] = np.mean(np.std(litter_pool, axis=0))
 
-    # plt.figure()
-    # plt.imshow(stds.T)
-    # plt.xticks(
-    #     ticks=np.arange(litter_tcs.size),
-    #     labels=[format(x, '0.1e') for x in litter_tcs],
-    #     rotation=45,
-    # )
-    # plt.xlabel('litter_tc')
-    # plt.yticks(
-    #     ticks=np.arange(leaf_fs.size),
-    #     labels=[format(x, '0.1e') for x in leaf_fs],
-    # )
-    # plt.ylabel('leaf_fs')
-    # plt.colorbar()
-    # plt.show()
+    plt.figure()
+    plt.imshow(stds.T)
+    plt.xticks(
+        ticks=np.arange(litter_tcs.size),
+        labels=[format(x, "0.1e") for x in litter_tcs],
+        rotation=45,
+    )
+    plt.xlabel("litter_tc")
+    plt.yticks(
+        ticks=np.arange(leaf_fs.size),
+        labels=[format(x, "0.1e") for x in leaf_fs],
+    )
+    plt.ylabel("leaf_fs")
+    plt.colorbar()
+    plt.show()
 
     ####
 
@@ -73,14 +74,16 @@ if __name__ == "__main__":
     #             )
 
     # plt.show()
+    #
+    ######
 
-    land_index = 0
-    pft_index = 0
+    # land_index = 0
+    # pft_index = 0
 
-    plt.figure()
-    plt.plot(
-        calc_litter_pool(litter_tc=1e-8, leaf_f=1e-3, verbose=False, Nt=None)[
-            :, pft_index, land_index
-        ]
-    )
-    plt.show()
+    # plt.figure()
+    # plt.plot(
+    #     calc_litter_pool(litter_tc=1e-8, leaf_f=1e-3, verbose=False, Nt=None)[
+    #         :, pft_index, land_index
+    #     ]
+    # )
+    # plt.show()
