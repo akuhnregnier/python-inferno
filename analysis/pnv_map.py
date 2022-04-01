@@ -34,7 +34,7 @@ if __name__ == "__main__":
         mega_pnv_cube,
         fig=fig,
         ax=ax,
-        title="Mega PNV",
+        title="",
         colorbar_kwargs=False,
         cmap=cmap,
         norm=norm,

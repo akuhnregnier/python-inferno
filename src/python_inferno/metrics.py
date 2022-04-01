@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import math
+from string import ascii_lowercase
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -184,7 +185,9 @@ def calculate_resampled_errors(*, reference_data, valid_reference_data, total_se
     return nme_errors, mpd_errors
 
 
-def error_hist(*, errors, title, error_dict, save_path, fig=None, ax=None):
+def error_hist(
+    *, errors, title, error_dict, save_path, title_label=None, fig=None, ax=None
+):
     if fig is None and ax is None:
         fig = plt.figure()
     elif fig is None:
@@ -193,6 +196,9 @@ def error_hist(*, errors, title, error_dict, save_path, fig=None, ax=None):
         ax = plt.axes()
 
     ax.set_title(title)
+
+    if title_label is not None:
+        ax.text(-0.01, 1.05, title_label, transform=ax.transAxes)
 
     if errors is not None:
         ax.hist(errors, bins="auto", density=True)
@@ -380,10 +386,13 @@ def null_model_analysis(
                     obs=reg_reference_data, pred=data, return_std=True
                 )
 
+            title_label = f"({ascii_lowercase[plot_i]})"
+
             error_hist(
                 errors=None,
                 # Show the region name and number of selected locations.
                 title=f"{region_name} (n={np.sum(region_sel) / 12})",
+                title_label=title_label,
                 error_dict=reg_nme_error_dict,
                 save_path=None,
                 fig=nme_fig,
@@ -394,6 +403,7 @@ def null_model_analysis(
                 errors=None,
                 # Show the region name and number of selected locations.
                 title=f"{region_name} (n={np.sum(region_sel) / 12})",
+                title_label=title_label,
                 error_dict=reg_mpd_error_dict,
                 save_path=None,
                 fig=mpd_fig,
