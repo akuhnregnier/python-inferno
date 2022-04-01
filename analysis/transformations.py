@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from functools import partial
+from pathlib import Path
+from string import ascii_lowercase
 from warnings import filterwarnings
 
 import matplotlib as mpl
@@ -9,6 +11,11 @@ import numpy as np
 from jules_output_analysis.data import regrid_to_n96e
 from wildfires.data import GFEDv4
 from wildfires.utils import get_land_mask, match_shape
+
+
+def arcsinh_func(data, factor):
+    return np.arcsinh(factor * data)
+
 
 if __name__ == "__main__":
     filterwarnings("ignore", ".*divide by zero.*")
@@ -30,29 +37,42 @@ if __name__ == "__main__":
     valid = data.data[~data.mask]
 
     xs = np.geomspace(1e-9, 1e10, 1000)
-    plt.plot(xs, np.arcsinh(xs), label="arcsinh")
-    plt.plot(xs, np.log(xs), label="log")
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.legend()
 
-    def arcsinh_func(data, factor):
-        return np.arcsinh(factor * data)
+    plt.ioff()
+    fig, axes = plt.subplots(3, 2, figsize=(6, 8))
+    axes = axes.ravel()
 
-    for transformation, title in [
-        (lambda data: data, "Raw BA Data (GFED4 Clim)"),
-        (lambda data: np.log(data[data > 1e-9]), "Log (BA>1e-9)"),
-        *(
-            (
-                partial(arcsinh_func, factor=factor),
-                f"Inverse Hyperbolic Sine (data x {factor:0.1e})",
-            )
-            for factor in np.geomspace(1e4, 1e8, 3)
-        ),
-    ]:
-        plt.figure()
-        plt.hist(transformation(valid), bins="auto")
-        plt.title(title)
-        plt.yscale("log")
+    axes[0].plot(xs, arcsinh_func(xs, factor=1), label="arcsinh")
+    axes[0].plot(xs, arcsinh_func(xs, factor=1e4), label="arcsinh(data x 1e4)")
+    axes[0].plot(xs, arcsinh_func(xs, factor=1e8), label="arcsinh(data x 1e8)")
+    axes[0].plot(xs, np.log(xs), label="log")
+    axes[0].set_xscale("log")
+    axes[0].set_yscale("log")
+    axes[0].legend()
 
-    plt.show()
+    for (ax, (transformation, title, xlabel)) in zip(
+        axes[1:],
+        [
+            (lambda data: data, "Raw BA Data (GFED4 Clim)", "raw BA"),
+            (lambda data: np.log(data[data > 1e-9]), "Log (BA>1e-9)", "BA"),
+            *(
+                (
+                    partial(arcsinh_func, factor=factor),
+                    "Inverse Hyperbolic Sine",
+                    f"(BA x {factor:0.1e})",
+                )
+                for factor in np.geomspace(1e4, 1e8, 3)
+            ),
+        ],
+    ):
+        ax.hist(transformation(valid), bins="auto")
+        ax.set_title(title)
+        ax.set_yscale("log")
+        ax.set_xlabel(xlabel)
+
+    for ax, letter in zip(axes, ascii_lowercase):
+        ax.text(-0.01, 1.05, f"({letter})", transform=ax.transAxes)
+
+    plt.tight_layout()
+    fig.savefig(Path("~/tmp/ba_transformations.png").expanduser())
+    plt.close(fig)
