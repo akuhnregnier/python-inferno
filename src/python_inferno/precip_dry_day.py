@@ -32,7 +32,7 @@ def filter_rain(ls_rain, con_rain):
 @njit(nogil=True, cache=True)
 @mark_dependency
 def precip_moving_sum(ls_rain, con_rain, timestep):
-    """Calculate a moving sum of precipitation.
+    """Calculate a daily moving sum of precipitation.
 
     Note that the precipitation rate is converted to total precipitation by
     multiplying by the timestep.
