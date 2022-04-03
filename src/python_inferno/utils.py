@@ -216,7 +216,9 @@ def _cons_avg(Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weigh
 
 
 @mark_dependency
-def monthly_average_data(data, time_coord=None, trim_single=True, conservative=False):
+def monthly_average_data(
+    data, time_coord=None, trim_single=True, conservative=False, agg_name="MEAN"
+):
     """Calculate monthly average of data.
 
     If `trim_single` is True, a single day e.g. (01/01/2000) at the end of the input
@@ -254,10 +256,21 @@ def monthly_average_data(data, time_coord=None, trim_single=True, conservative=F
         add_year(dummy_cube, "time")
         add_month_number(dummy_cube, "time")
 
+        # Use strings as an intermediary here to enable caching of function input values
+        # (iris aggregators are not easily hashable).
+        aggregators_map = {
+            "MAX": iris.analysis.MAX,
+            "MEAN": iris.analysis.MEAN,
+            "MEDIAN": iris.analysis.MEDIAN,
+            "MIN": iris.analysis.MIN,
+        }
+
         avg_cube = dummy_cube.aggregated_by(
-            ("year", "month_number"), iris.analysis.MEAN
+            ("year", "month_number"), aggregators_map[agg_name]
         )
         return avg_cube.data
+    elif agg_name != "MEAN":
+        raise ValueError("Conservative averaging is only supported for 'MEAN'.")
 
     logger.debug("Starting conservative temporal averaging.")
 

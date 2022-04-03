@@ -7,6 +7,7 @@ import numpy as np
 from loguru import logger
 from numba import njit
 from scipy.optimize import minimize
+from sklearn.metrics import r2_score
 from tqdm import tqdm
 
 from .cache import cache, mark_dependency
@@ -160,6 +161,25 @@ def calculate_factor(*, y_true, y_pred):
 
     def f(factor):
         return nme(obs=y_true, pred=factor * y_pred)
+
+    # Minimize `f`, with the initial guess being the ratio of the means.
+    guess = np.mean(y_true) / np.mean(y_pred)
+    factor = minimize(f, guess).x[0]
+    logger.debug(f"Initial guess: {guess:0.1e}, final factor: {factor:0.1e}.")
+    return factor
+
+
+def calculate_factor_r2(*, y_true, y_pred):
+    """Calculate adjustment factor to convert `y_pred` to `y_true`.
+
+    This is done by maximising the R2 (i.e. minimising -R2).
+
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    def f(factor):
+        return -r2_score(y_true=y_true, y_pred=factor * y_pred)
 
     # Minimize `f`, with the initial guess being the ratio of the means.
     guess = np.mean(y_true) / np.mean(y_pred)
