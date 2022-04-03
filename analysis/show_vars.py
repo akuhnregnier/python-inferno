@@ -38,6 +38,7 @@ if __name__ == "__main__":
     logger.add(sys.stderr, level="DEBUG")
 
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    plt.ioff()
 
     jules_lats, jules_lons = load_jules_lats_lons()
     jules_lats = jules_lats.points.ravel()
