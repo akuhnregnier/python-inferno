@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from pathlib import Path
+
+import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
@@ -115,18 +118,50 @@ if __name__ == "__main__":
 
     # Plotting.
 
+    interactive = False
+
+    if not interactive:
+        plt.ioff()
+
+    ###
+
     cube_plotting(mean_jules_fapar_2d, title="JULES")
+
+    ###
+
     cube_plotting(mean_obs_fapar_2d, title="Obs")
-    cube_plotting(
-        fapar_r2_2d, title="R2 FAPAR <-> FAPAR", boundaries=[-10, -1, 0, 0.2, 0.4]
+
+    ###
+
+    fig, axes = plt.subplots(
+        2,
+        1,
+        subplot_kw={"projection": ccrs.Robinson()},
+        squeeze=True,
+        figsize=(5, 4.5),
     )
-    cube_plotting(
-        npp_r2_2d, title="R2 FAPAR <-> NPP", boundaries=[-10, -1, 0, 0.2, 0.4]
+    common_kwargs = dict(
+        title="",
+        boundaries=[-10, -1, 0, 0.2, 0.4],
+        fig=fig,
+        colorbar_kwargs=dict(label="R2"),
     )
+
+    axes[0].set_title(r"FAPAR $\leftrightarrow$ FAPAR")
+    axes[0].text(-0.01, 1.05, "(a)", transform=axes[0].transAxes)
+    cube_plotting(fapar_r2_2d, ax=axes[0], **common_kwargs)
+
+    axes[1].set_title(r"FAPAR $\leftrightarrow$ NPP")
+    axes[1].text(-0.01, 1.05, "(b)", transform=axes[1].transAxes)
+    cube_plotting(npp_r2_2d, ax=axes[1], **common_kwargs)
+    fig.savefig(Path("~/tmp/r2_fapar_npp.png").expanduser())
+
+    ###
 
     plt.figure()
     plt.hexbin(jules_fapar_1d.ravel(), obs_fapar_1d.ravel())
     plt.xlabel("jules fapar")
     plt.ylabel("obs fapar")
 
-    plt.show()
+    if interactive:
+        plt.show()
