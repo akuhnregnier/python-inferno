@@ -81,6 +81,9 @@ def sigmoid(x, factor, centre, shape):
     return (1.0 + np.exp(factor * shape * (centre - x))) ** (-1.0 / shape)
 
 
+# NOTE - For some reason (arm64, Python 3.10 numba) refuses to allow calling this
+# function like calc_flam(temp_l=..., ...), which is why positional arguments only are
+# used now. The ORDER therefore MATTERS.
 @njit(nogil=True, cache=True, fastmath=True)
 def calc_flam(
     temp_l,
@@ -194,7 +197,7 @@ def calc_flam(
         rain_rate = rain_l * s_in_day
 
         flammability = max(
-            min(10.0 ** Z_l * f_rhum_l * fuel_l * f_sm_l * np.exp(cr * rain_rate), 1.0),
+            min(10.0**Z_l * f_rhum_l * fuel_l * f_sm_l * np.exp(cr * rain_rate), 1.0),
             0.0,
         )
     elif flammability_method == 2:
