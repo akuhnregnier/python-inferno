@@ -164,15 +164,22 @@ def core_unpack_wrapped(*objs):
     return tuple(out) if len(out) != 1 else out[0]
 
 
-def unpack_wrapped(func):
+def unpack_wrapped(func, ignore=None):
     # NOTE: This decorator does not support nested proxy objects.
+
+    if ignore is None:
+        ignore = []
+
     @wraps(func)
     def inner(*args, **kwargs):
         # Call the wrapped function, unpacking any wrapped parameters in the process
         # (no nesting).
         return func(
             *core_unpack_wrapped(*args),
-            **{key: core_unpack_wrapped(val) for key, val in kwargs.items()},
+            **{
+                key: (core_unpack_wrapped(val) if key not in ignore else val)
+                for key, val in kwargs.items()
+            },
         )
 
     return inner
@@ -876,3 +883,17 @@ def get_exp_name(*, dryness_method, fuel_build_up_method):
 
 def get_exp_key(*, dryness_method, fuel_build_up_method):
     return f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"
+
+
+def transform_dtype(func):
+    @wraps(func)
+    def _transform_dtype(**kwargs):
+        out = {}
+        for name, val in kwargs.items():
+            if isinstance(val, np.ndarray):
+                out[name] = np.asarray(val, dtype=np.float32)
+            else:
+                out[name] = val
+        return func(**out)
+
+    return _transform_dtype

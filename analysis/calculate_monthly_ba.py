@@ -22,7 +22,7 @@ from sklearn.metrics import r2_score
 from tqdm import tqdm
 from wildfires.analysis import cube_plotting
 
-from python_inferno.configuration import land_pts
+from python_inferno.configuration import land_pts, n_total_pft, npft
 from python_inferno.data import load_data, timestep
 from python_inferno.metrics import calculate_factor, loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
@@ -240,8 +240,8 @@ if __name__ == "__main__":
 
     def frac_weighted_mean(data):
         assert len(data.shape) == 3, "Need time, PFT, and space coords."
-        assert data.shape[1] in (13, 17)
-        assert frac.shape[1] == 17
+        assert data.shape[1] in (npft, n_total_pft)
+        assert frac.shape[1] == n_total_pft
 
         return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
             frac[:, : data.shape[1]], axis=1

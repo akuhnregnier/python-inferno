@@ -9,8 +9,14 @@ s_in_month = 2.6280288e6
 m2_in_km2 = 1.0e6
 rsec_per_day = s_in_day = 86400.0
 
+n_total_pft = 17
 npft = 13
 land_pts = 7771
+
+n_cell_tot_pft = lambda Nt: Nt * n_total_pft * land_pts
+n_cell_nat_pft = lambda Nt: Nt * npft * land_pts
+n_cell_grp_pft = lambda Nt: Nt * N_pft_groups * land_pts
+n_cell_no_pft = lambda Nt: Nt * land_pts
 
 # Fraction of leaf dry matter in the form of C
 # Used to convert LMA (kgleaf/m2) to sigl (kgC/m2)

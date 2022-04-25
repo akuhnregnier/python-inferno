@@ -21,7 +21,7 @@ from wildfires.analysis import cube_plotting
 
 from python_inferno.ba_model import get_pred_ba_prep
 from python_inferno.cache import cache
-from python_inferno.configuration import N_pft_groups, pft_groups
+from python_inferno.configuration import N_pft_groups, n_total_pft, npft, pft_groups
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.model_params import get_model_params
 from python_inferno.utils import (
@@ -34,9 +34,9 @@ from python_inferno.utils import (
 
 def frac_weighted_mean(*, data, frac):
     assert len(data.shape) == 3, "Need time, PFT, and space coords."
-    assert frac.shape[1] == 17
+    assert frac.shape[1] == n_total_pft
 
-    if data.shape[1] in (13, 17):
+    if data.shape[1] in (npft, n_total_pft):
         frac = frac[:, : data.shape[1]]
     elif data.shape[1] == N_pft_groups:
         # Grouped averaging.

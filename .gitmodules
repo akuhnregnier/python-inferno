@@ -1,0 +1,3 @@
+[submodule "gpu_inferno"]
+	path = gpu_inferno
+	url = git@github.com:akuhnregnier/gpu_inferno

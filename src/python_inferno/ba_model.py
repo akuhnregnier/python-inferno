@@ -10,7 +10,7 @@ from sklearn.metrics import r2_score
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
 from .metrics import calculate_factor, loghist, mpd, nme, nmse
-from .multi_timestep_inferno import multi_timestep_inferno
+from .multi_timestep_inferno import _multi_timestep_inferno, multi_timestep_inferno
 from .utils import expand_pft_params, monthly_average_data, unpack_wrapped
 
 Status = Enum("Status", ["SUCCESS", "FAIL"])
@@ -120,6 +120,7 @@ def run_model(
         fuel_build_up_centre=0.0,
         fuel_build_up_shape=1.0,
     ),
+    _func=_multi_timestep_inferno,
 ):
     # Model kwargs.
     kwargs = dict(
@@ -140,13 +141,14 @@ def run_model(
         if name not in kwargs:
             kwargs[name] = value
 
-    model_ba = unpack_wrapped(multi_timestep_inferno)(
+    model_ba = unpack_wrapped(multi_timestep_inferno, ignore=["_func"])(
         **{
             **kwargs,
             **single_opt_kwargs,
             **expanded_opt_kwargs,
             **data_dict,
-        }
+        },
+        _func=_func,
     )
     return model_ba
 
@@ -226,6 +228,7 @@ def get_pred_ba_prep(
     dryness_method=2,
     fuel_build_up_method=1,
     include_temperature=1,
+    _func=_multi_timestep_inferno,
     **opt_kwargs,
 ):
     """
@@ -265,6 +268,7 @@ def get_pred_ba_prep(
         single_opt_kwargs=single_opt_kwargs,
         expanded_opt_kwargs=expanded_opt_kwargs,
         data_dict=data_dict,
+        _func=_func,
     )
 
     # Modify the predicted BA using the crop fraction (i.e. assume a certain

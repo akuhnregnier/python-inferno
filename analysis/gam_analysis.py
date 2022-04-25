@@ -36,7 +36,13 @@ from tqdm import tqdm
 
 from python_inferno.ba_model import Status, calculate_scores, process_params
 from python_inferno.cache import cache
-from python_inferno.configuration import N_pft_groups, pft_group_names, pft_groups
+from python_inferno.configuration import (
+    N_pft_groups,
+    n_total_pft,
+    npft,
+    pft_group_names,
+    pft_groups,
+)
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics import null_model_analysis
@@ -48,9 +54,9 @@ NoVal = Enum("NoVal", ["NoVal"])
 
 def frac_weighted_mean(*, data, frac):
     assert len(data.shape) == 3, "Need time, PFT, and space coords."
-    assert frac.shape[1] == 17
+    assert frac.shape[1] == n_total_pft
 
-    if data.shape[1] in (13, 17):
+    if data.shape[1] in (npft, n_total_pft):
         frac = frac[:, : data.shape[1]]
     elif data.shape[1] == N_pft_groups:
         # Grouped averaging.
@@ -256,7 +262,7 @@ def partial_dependence_plots(
                 alpha=0.2,
                 fc="tab:blue",
                 zorder=2,
-                label=fr"$\pm{se_factor:0.1f}\ \mathrm{{SE}}$",
+                label=rf"$\pm{se_factor:0.1f}\ \mathrm{{SE}}$",
             )
         )
 

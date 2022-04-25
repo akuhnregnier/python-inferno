@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from python_inferno.ba_model import Status, calculate_scores, get_pred_ba
 from python_inferno.cache import cache
+from python_inferno.configuration import n_total_pft, npft
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.metrics import null_model_analysis
 from python_inferno.model_params import get_model_params
@@ -31,8 +32,8 @@ from python_inferno.utils import (
 
 def frac_weighted_mean(*, data, frac):
     assert len(data.shape) == 3, "Need time, PFT, and space coords."
-    assert data.shape[1] in (13, 17)
-    assert frac.shape[1] == 17
+    assert data.shape[1] in (npft, n_total_pft)
+    assert frac.shape[1] == n_total_pft
 
     return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
         frac[:, : data.shape[1]], axis=1
