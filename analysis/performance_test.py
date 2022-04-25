@@ -39,7 +39,7 @@ if __name__ == "__main__":
         params,
         exp_name,
         exp_key,
-    ) in islice(method_iter(), 0, 1):
+    ) in islice(method_iter(), 0, None):
         logger.info(exp_name)
 
         outputs = dict()
@@ -49,16 +49,43 @@ if __name__ == "__main__":
             ("python", partial(get_pred_ba_prep, _func=_multi_timestep_inferno)),
             ("metal", partial(get_pred_ba_prep, _func=run_single_shot)),
         ]:
-            for i in range(10):
+            for i in range(20):
                 start = time()
 
                 outputs[name] = unpack_wrapped(function)(**params)
                 times[name].append(time() - start)
 
         for name, time_vals in times.items():
-            print(f"Times taken by '{name:<10}': {time_vals}.")
+            assert time_vals
 
-        for name, output_tup in outputs.items():
-            print(name)
-            model_ba = output_tup[0]
-            print(model_ba.shape, np.unique(model_ba))
+            if len(time_vals) > 1:
+                sel_time_vals = time_vals[1:]
+                if len(sel_time_vals) == 1:
+                    std = 0
+                    mean = sel_time_vals[0]
+                else:
+                    std = np.std(sel_time_vals)
+                    mean = np.mean(sel_time_vals)
+            else:
+                std = 0
+                mean = time_vals[0]
+
+            extra = ""
+            if std / mean > 0.1:
+                extra = "!!"
+
+            print(f"Time taken by '{name:<10}': {mean:0.1e} ± {std:0.1e} {extra}")
+
+        diffs = outputs["python"][0] - outputs["metal"][0]
+        print(
+            "Diffs: "
+            + ", ".join(
+                format(d, "0.1e")
+                for d in [
+                    np.mean(diffs),
+                    np.mean(np.abs(diffs)),
+                    np.max(diffs),
+                    np.max(np.abs(diffs)),
+                ]
+            )
+        )
