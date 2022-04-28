@@ -730,6 +730,6 @@ def get_2d_cubes(*, data_dict):
 
 
 @cache
-def subset_sthu_soilt(data_dict):
+def subset_sthu_soilt_inplace(data_dict):
     data_dict["sthu_soilt"] = data_dict["sthu_soilt"][:, 0, 0]
     return data_dict
