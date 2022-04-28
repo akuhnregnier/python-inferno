@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-from collections import defaultdict
 from enum import Enum
 from functools import partial
+from time import time
 
 import numpy as np
 from loguru import logger
@@ -20,79 +20,28 @@ class BAModelException(RuntimeError):
     """Raised when inadequate BA model parameters are used."""
 
 
-def process_params(*, opt_kwargs, defaults):
-    expanded_opt_tmp = defaultdict(list)
-    for name, val in opt_kwargs.items():
-        if name[-1] not in ("2", "3"):
-            expanded_opt_tmp[name].append(val)
-        elif name[-1] == "2":
-            assert name[:-1] in expanded_opt_tmp
-            assert len(expanded_opt_tmp[name[:-1]]) == 1
-            expanded_opt_tmp[name[:-1]].append(val)
-        elif name[-1] == "3":
-            assert name[:-1] in expanded_opt_tmp
-            assert len(expanded_opt_tmp[name[:-1]]) == 2
-            expanded_opt_tmp[name[:-1]].append(val)
+def process_param(*, kwargs, name, n_source, n_target, dtype):
+    """Process parameter values.
 
-    expanded_opt_kwargs = dict()
-    single_opt_kwargs = dict()
+    For example, a parameter with `name='param'` could be optimised for 3 different PFT groups,
+    which would be given as `kwargs=dict(param=1.0, param2=2.0, param3=1.2)`.
 
-    for name, vals in expanded_opt_tmp.items():
-        if len(vals) == 3:
-            expanded_opt_kwargs[name] = np.asarray(vals)
-        elif len(vals) == 1:
-            single_opt_kwargs[name] = vals[0]
-        else:
-            raise ValueError(f"Unexpected number of values {len(vals)}.")
+    This function will then take these inputs and transform them according to
+    `n_source`, `n_target`, and `dtype`.
 
-    logger.debug("Normal params")
-    for name, val in single_opt_kwargs.items():
-        logger.debug(f" - {name}: {val}")
+    """
+    assert n_target >= n_source
+    assert n_target in (npft, N_pft_groups)
 
-    logger.debug("Opt param arrays")
-    for name, vals in expanded_opt_kwargs.items():
-        logger.debug(f" - {name}: {vals}")
-
-    def extract_param(key, dtype_str, size):
-        if key in expanded_opt_kwargs:
-            param = expanded_opt_kwargs.pop(key).astype(dtype_str)
-            if param.shape == (N_pft_groups,) and size == npft:
-                return expand_pft_params(param)
-            assert param.shape == (size,), f"Expected: {(size,)}, got {param.shape}"
-            return param
-        elif key in single_opt_kwargs:
-            return np.array([single_opt_kwargs.pop(key)] * size).astype(dtype_str)
-        return np.array([defaults[key]] * size).astype(dtype_str)
-
-    n_samples_pft = extract_param("fuel_build_up_n_samples", "int64", N_pft_groups)
-    litter_tc = extract_param("litter_tc", "float64", npft)
-    leaf_f = extract_param("leaf_f", "float64", npft)
-
-    average_samples = int(single_opt_kwargs.pop("average_samples"))
-
-    rain_f = single_opt_kwargs.pop(
-        "rain_f", expanded_opt_kwargs.pop("rain_f", defaults["rain_f"])
-    )
-    vpd_f = single_opt_kwargs.pop(
-        "vpd_f", expanded_opt_kwargs.pop("vpd_f", defaults["vpd_f"])
-    )
-
-    crop_f = single_opt_kwargs.pop("crop_f", defaults["crop_f"])
-    assert "crop_f" not in expanded_opt_kwargs
-
-    return (
-        dict(
-            n_samples_pft=n_samples_pft,
-            litter_tc=litter_tc,
-            leaf_f=leaf_f,
-            average_samples=average_samples,
-            rain_f=rain_f,
-            vpd_f=vpd_f,
-            crop_f=crop_f,
-        ),
-        single_opt_kwargs,
-        expanded_opt_kwargs,
-    )
+    if n_source == 1:
+        return np.array([kwargs[name]] * n_target).astype(dtype)
+    elif n_source == 3:
+        values = [kwargs[name], kwargs[name + "2"], kwargs[name + "3"]]
+        if n_target == npft:
+            return np.asarray(expand_pft_params(values)).astype(dtype)
+        return np.asarray(values).astype(dtype)
+    else:
+        raise ValueError(f"n_source {n_source} not supported.")
 
 
 def run_model(
@@ -100,55 +49,24 @@ def run_model(
     dryness_method,
     fuel_build_up_method,
     include_temperature,
-    single_opt_kwargs,
-    expanded_opt_kwargs,
     data_dict,
-    missing_param_defaults=dict(
-        temperature_factor=0.0,
-        temperature_centre=0.0,
-        temperature_shape=1.0,
-        dry_bal_factor=1,
-        dry_bal_centre=0,
-        dry_bal_shape=1.0,
-        dry_day_factor=0.0,
-        dry_day_centre=0.0,
-        dry_day_shape=1.0,
-        litter_pool_factor=0.0,
-        litter_pool_centre=0.0,
-        litter_pool_shape=1.0,
-        fuel_build_up_factor=0.0,
-        fuel_build_up_centre=0.0,
-        fuel_build_up_shape=1.0,
-    ),
     _func=_multi_timestep_inferno,
+    **kwargs,
 ):
-    # Model kwargs.
-    kwargs = dict(
+    model_ba = unpack_wrapped(multi_timestep_inferno, ignore=["_func"])(
         ignition_method=1,
         timestep=timestep,
         flammability_method=2,
         dryness_method=dryness_method,
         fuel_build_up_method=fuel_build_up_method,
         include_temperature=include_temperature,
+        _func=_func,
         # These are not used for ignition mode 1, nor do they contain a temporal
         # coordinate.
         pop_den=np.zeros((land_pts,)) - 1,
         flash_rate=np.zeros((land_pts,)) - 1,
-    )
-
-    # Fill in missing keys with default values.
-    for name, value in missing_param_defaults.items():
-        if name not in kwargs:
-            kwargs[name] = value
-
-    model_ba = unpack_wrapped(multi_timestep_inferno, ignore=["_func"])(
-        **{
-            **kwargs,
-            **single_opt_kwargs,
-            **expanded_opt_kwargs,
-            **data_dict,
-        },
-        _func=_func,
+        **data_dict,
+        **kwargs,
     )
     return model_ba
 
@@ -215,125 +133,208 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
     return scores, Status.SUCCESS, avg_ba, calc_factors
 
 
-def get_pred_ba_prep(
-    *,
-    defaults=dict(
-        rain_f=0.3,
-        vpd_f=400,
-        crop_f=0.5,
-        fuel_build_up_n_samples=0,
-        litter_tc=1e-9,
-        leaf_f=1e-3,
-    ),
-    dryness_method=2,
-    fuel_build_up_method=1,
-    include_temperature=1,
-    _func=_multi_timestep_inferno,
-    **opt_kwargs,
-):
-    """
+class BAModel:
+    def __init__(
+        self,
+        *,
+        _func=_multi_timestep_inferno,
+        dryness_method,
+        fuel_build_up_method,
+        include_temperature,
+        average_samples,
+        **kwargs,
+    ):
+        self.dryness_method = dryness_method
+        self.fuel_build_up_method = fuel_build_up_method
+        self.include_temperature = include_temperature
+        self.average_samples = int(average_samples)
+        self._func = _func
 
-    Note: Signature should match the below.
+        self.rain_f = (
+            process_param(
+                kwargs=kwargs,
+                name="rain_f",
+                n_source=3 if "rain_f2" in kwargs else 1,
+                n_target=N_pft_groups,
+                dtype=np.float64,
+            )
+            if dryness_method == 2
+            else None
+        )
+        self.vpd_f = (
+            process_param(
+                kwargs=kwargs,
+                name="vpd_f",
+                n_source=3 if "vpd_f2" in kwargs else 1,
+                n_target=N_pft_groups,
+                dtype=np.float64,
+            )
+            if dryness_method == 2
+            else None
+        )
 
-    """
-    (
-        data_params,
-        single_opt_kwargs,
-        expanded_opt_kwargs,
-    ) = process_params(opt_kwargs=opt_kwargs, defaults=defaults)
+        self.n_samples_pft = (
+            process_param(
+                kwargs=kwargs,
+                name="fuel_build_up_n_samples",
+                n_source=3 if "fuel_build_up_n_samples2" in kwargs else 1,
+                n_target=N_pft_groups,
+                dtype=np.int64,
+            )
+            if fuel_build_up_method == 1
+            else None
+        )
 
-    (
-        data_dict,
-        mon_avg_gfed_ba_1d,
-        jules_time_coord,
-    ) = get_processed_climatological_data(
-        litter_tc=data_params["litter_tc"],
-        leaf_f=data_params["leaf_f"],
-        n_samples_pft=data_params["n_samples_pft"],
-        average_samples=data_params["average_samples"],
-        rain_f=data_params["rain_f"],
-        vpd_f=data_params["vpd_f"],
-    )
+        self.litter_tc = (
+            process_param(
+                kwargs=kwargs,
+                name="litter_tc",
+                n_source=3 if "litter_tc2" in kwargs else 1,
+                n_target=npft,
+                dtype=np.float64,
+            )
+            if fuel_build_up_method == 2
+            else None
+        )
+        self.leaf_f = (
+            process_param(
+                kwargs=kwargs,
+                name="leaf_f",
+                n_source=3 if "leaf_f2" in kwargs else 1,
+                n_target=npft,
+                dtype=np.float64,
+            )
+            if fuel_build_up_method == 2
+            else None
+        )
 
-    # Shallow copy to allow popping of the dictionary without affecting the
-    # memoized copy.
-    data_dict = data_dict.copy()
-    # Extract variables not used further below.
-    obs_pftcrop_1d = data_dict.pop("obs_pftcrop_1d")
+        (
+            data_dict,
+            self.mon_avg_gfed_ba_1d,
+            self.jules_time_coord,
+        ) = get_processed_climatological_data(
+            litter_tc=self.litter_tc,
+            leaf_f=self.leaf_f,
+            n_samples_pft=self.n_samples_pft,
+            average_samples=self.average_samples,
+            rain_f=self.rain_f,
+            vpd_f=self.vpd_f,
+        )
 
-    model_ba = run_model(
-        dryness_method=dryness_method,
-        fuel_build_up_method=fuel_build_up_method,
-        include_temperature=include_temperature,
-        single_opt_kwargs=single_opt_kwargs,
-        expanded_opt_kwargs=expanded_opt_kwargs,
-        data_dict=data_dict,
-        _func=_func,
-    )
+        # Shallow copy to allow popping of the dictionary without affecting the
+        # memoized copy.
+        self.data_dict = data_dict.copy()
+        # Extract variables not used further below.
+        self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
 
-    # Modify the predicted BA using the crop fraction (i.e. assume a certain
-    # proportion of cropland never burns, even though this may be the case in
-    # given the weather conditions).
-    model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
+    def run(
+        self,
+        *,
+        crop_f,
+        **kwargs,
+    ):
+        start = time()
 
-    return (
-        model_ba,
-        data_params,
-        obs_pftcrop_1d,
-        jules_time_coord,
-        mon_avg_gfed_ba_1d,
-        data_dict,
-    )
+        n_params = N_pft_groups
+        dtype_params = np.float64
+        dummy_params = np.zeros(n_params, dtype=dtype_params)
+
+        processed_kwargs = {}
+
+        def process_key_from_kwargs(key):
+            return process_param(
+                kwargs=kwargs,
+                name=key,
+                n_source=3 if f"{key}2" in kwargs else 1,
+                n_target=n_params,
+                dtype=dtype_params,
+            )
+
+        # The below may conditionally be present. If not, they need to be provided
+        # by 'dummy' variables.
+        for keys, condition in (
+            (["fapar_factor", "fapar_centre", "fapar_shape"], True),
+            (
+                ["temperature_factor", "temperature_centre", "temperature_shape"],
+                self.include_temperature == 1,
+            ),
+            (
+                ["fuel_build_up_factor", "fuel_build_up_centre", "fuel_build_up_shape"],
+                self.fuel_build_up_method == 1,
+            ),
+            (
+                ["litter_pool_factor", "litter_pool_centre", "litter_pool_shape"],
+                self.fuel_build_up_method == 2,
+            ),
+            (
+                ["dry_day_factor", "dry_day_centre", "dry_day_shape"],
+                self.dryness_method == 1,
+            ),
+            (
+                ["dry_bal_factor", "dry_bal_centre", "dry_bal_shape"],
+                self.dryness_method == 2,
+            ),
+        ):
+            for key in keys:
+                processed_kwargs[key] = (
+                    process_key_from_kwargs(key) if condition else dummy_params
+                )
+
+        print("1:", time() - start)
+        start = time()
+
+        model_ba = run_model(
+            dryness_method=self.dryness_method,
+            fuel_build_up_method=self.fuel_build_up_method,
+            include_temperature=self.include_temperature,
+            data_dict=self.data_dict,
+            _func=self._func,
+            **processed_kwargs,
+        )
+
+        print("2:", time() - start)
+        start = time()
+
+        # Modify the predicted BA using the crop fraction (i.e. assume a certain
+        # proportion of cropland never burns, even though this may be the case in
+        # given the weather conditions).
+        model_ba *= 1 - crop_f * self.obs_pftcrop_1d
+
+        print("3:", time() - start)
+        start = time()
+
+        scores, status, avg_ba, calc_factors = calculate_scores(
+            model_ba=model_ba,
+            jules_time_coord=self.jules_time_coord,
+            mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
+        )
+        print("4:", time() - start)
+        if status is Status.FAIL:
+            raise BAModelException()
+
+        assert status is Status.SUCCESS
+
+        return dict(
+            model_ba=model_ba,
+            data_params=dict(
+                litter_tc=self.litter_tc,
+                leaf_f=self.leaf_f,
+                n_samples_pft=self.n_samples_pft,
+                average_samples=self.average_samples,
+                rain_f=self.rain_f,
+                vpd_f=self.vpd_f,
+            ),
+            obs_pftcrop_1d=self.obs_pftcrop_1d,
+            jules_time_coord=self.jules_time_coord,
+            mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
+            data_dict=self.data_dict,
+            avg_ba=avg_ba,
+            scores=scores,
+            calc_factors=calc_factors,
+        )
 
 
-def get_pred_ba(
-    *,
-    defaults=dict(
-        rain_f=0.3,
-        vpd_f=400,
-        crop_f=0.5,
-        fuel_build_up_n_samples=0,
-        litter_tc=1e-9,
-        leaf_f=1e-3,
-    ),
-    dryness_method=2,
-    fuel_build_up_method=1,
-    include_temperature=1,
-    **opt_kwargs,
-):
-    """
-
-    Note: Signature should match the above.
-
-    """
-    (
-        model_ba,
-        data_params,
-        obs_pftcrop_1d,
-        jules_time_coord,
-        mon_avg_gfed_ba_1d,
-        _,
-    ) = get_pred_ba_prep(
-        defaults=defaults,
-        dryness_method=dryness_method,
-        fuel_build_up_method=fuel_build_up_method,
-        include_temperature=include_temperature,
-        **opt_kwargs,
-    )
-
-    scores, status, avg_ba, calc_factors = calculate_scores(
-        model_ba=model_ba,
-        jules_time_coord=jules_time_coord,
-        mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
-    )
-    if status is Status.FAIL:
-        raise BAModelException()
-
-    assert status is Status.SUCCESS
-
-    return avg_ba, scores, mon_avg_gfed_ba_1d, calc_factors
-
-
+# XXX TODO
 def gen_to_optimise(
     *,
     fail_func,

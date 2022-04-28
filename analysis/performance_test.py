@@ -3,7 +3,6 @@
 import os
 import sys
 from collections import defaultdict
-from functools import partial
 from itertools import islice
 from pathlib import Path
 from time import time
@@ -11,12 +10,11 @@ from time import time
 import numpy as np
 from loguru import logger
 
-from python_inferno.ba_model import get_pred_ba_prep
+from python_inferno.ba_model import BAModel
 from python_inferno.data import load_jules_lats_lons
 from python_inferno.model_params import get_model_params
 from python_inferno.multi_timestep_inferno import _multi_timestep_inferno
 from python_inferno.py_gpu_inferno import run_single_shot
-from python_inferno.utils import unpack_wrapped
 
 if __name__ == "__main__":
     logger.remove()
@@ -46,13 +44,17 @@ if __name__ == "__main__":
         times = defaultdict(list)
 
         for name, function in [
-            ("python", partial(get_pred_ba_prep, _func=_multi_timestep_inferno)),
-            ("metal", partial(get_pred_ba_prep, _func=run_single_shot)),
+            ("python", _multi_timestep_inferno),
+            ("metal", run_single_shot),
         ]:
+            # `**params` is used twice here because the functions simply use the
+            # kwargs they require, ignoring the rest.
+            ba_model = BAModel(**params, _func=function)
+
             for i in range(20):
                 start = time()
 
-                outputs[name] = unpack_wrapped(function)(**params)
+                outputs[name] = ba_model.run(**params)
                 times[name].append(time() - start)
 
         for name, time_vals in times.items():
@@ -76,7 +78,7 @@ if __name__ == "__main__":
 
             print(f"Time taken by '{name:<10}': {mean:0.1e} ± {std:0.1e} {extra}")
 
-        diffs = outputs["python"][0] - outputs["metal"][0]
+        diffs = outputs["python"]["model_ba"] - outputs["metal"]["model_ba"]
         print(
             "Diffs: "
             + ", ".join(

@@ -543,7 +543,11 @@ def get_processed_climatological_data(
         # NOTE NPP is used here now, NOT FAPAR!
         fuel_build_up=npp_pft,  # Note this is shifted below.
         fapar_diag_pft=npp_pft,
-        litter_pool=calc_litter_pool(litter_tc=litter_tc, leaf_f=leaf_f, Nt=None),
+        litter_pool=calc_litter_pool(
+            litter_tc=litter_tc if litter_tc is not None else tuple([1e-9] * npft),
+            leaf_f=leaf_f if leaf_f is not None else tuple([1e-3] * npft),
+            Nt=None,
+        ),
         dry_days=get_climatological_dry_days(),
         grouped_dry_bal=dry_bal_func(
             rain_f=rain_f if rain_f is not None else tuple([0.3] * N_pft_groups),
@@ -561,7 +565,11 @@ def get_processed_climatological_data(
     data_dict, jules_time_coord = temporal_processing(
         data_dict=data_dict,
         # NOTE 'fuel_build_up' refers to the (initially) unshifted productivity proxy
-        antecedent_shifts_dict={"fuel_build_up": n_samples_pft},
+        antecedent_shifts_dict=dict(
+            (key, val)
+            for (key, val) in [("fuel_build_up", n_samples_pft)]
+            if val is not None
+        ),
         average_samples=average_samples,
         aggregator={
             name: {"dry_days": "MAX", "t1p5m_tile": "MAX"}.get(name, "MEAN")
