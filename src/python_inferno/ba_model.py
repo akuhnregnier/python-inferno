@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from enum import Enum
 from functools import partial
-from time import time
 
 import numpy as np
 from loguru import logger
@@ -233,8 +232,6 @@ class BAModel:
         crop_f,
         **kwargs,
     ):
-        start = time()
-
         n_params = N_pft_groups
         dtype_params = np.float64
         dummy_params = np.zeros(n_params, dtype=dtype_params)
@@ -280,9 +277,6 @@ class BAModel:
                     process_key_from_kwargs(key) if condition else dummy_params
                 )
 
-        print("1:", time() - start)
-        start = time()
-
         model_ba = run_model(
             dryness_method=self.dryness_method,
             fuel_build_up_method=self.fuel_build_up_method,
@@ -292,27 +286,10 @@ class BAModel:
             **processed_kwargs,
         )
 
-        print("2:", time() - start)
-        start = time()
-
         # Modify the predicted BA using the crop fraction (i.e. assume a certain
         # proportion of cropland never burns, even though this may be the case in
         # given the weather conditions).
         model_ba *= 1 - crop_f * self.obs_pftcrop_1d
-
-        print("3:", time() - start)
-        start = time()
-
-        scores, status, avg_ba, calc_factors = calculate_scores(
-            model_ba=model_ba,
-            jules_time_coord=self.jules_time_coord,
-            mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
-        )
-        print("4:", time() - start)
-        if status is Status.FAIL:
-            raise BAModelException()
-
-        assert status is Status.SUCCESS
 
         return dict(
             model_ba=model_ba,
@@ -328,6 +305,20 @@ class BAModel:
             jules_time_coord=self.jules_time_coord,
             mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
             data_dict=self.data_dict,
+        )
+
+    def calculate_scores(self, *, model_ba):
+        scores, status, avg_ba, calc_factors = calculate_scores(
+            model_ba=model_ba,
+            jules_time_coord=self.jules_time_coord,
+            mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
+        )
+        if status is Status.FAIL:
+            raise BAModelException()
+
+        assert status is Status.SUCCESS
+
+        return dict(
             avg_ba=avg_ba,
             scores=scores,
             calc_factors=calc_factors,
