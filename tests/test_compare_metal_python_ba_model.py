@@ -13,7 +13,7 @@ from python_inferno.ba_model import BAModel, GPUBAModel
             "dry_Dry_Day__fuel_Antec_NPP",
             {
                 "np.abs(np.mean(diffs))": 3.5e-16,
-                "np.mean(np.abs(diffs))": 4.0e-16,
+                "np.mean(np.abs(diffs))": 4.8e-16,
                 "np.max(np.abs(diffs))": 3.1e-13,
             },
         ),
@@ -21,23 +21,23 @@ from python_inferno.ba_model import BAModel, GPUBAModel
             "dry_Dry_Day__fuel_Leaf_Litter_Pool",
             {
                 "np.abs(np.mean(diffs))": 2.4e-15,
-                "np.mean(np.abs(diffs))": 2.6e-15,
+                "np.mean(np.abs(diffs))": 3.1e-15,
                 "np.max(np.abs(diffs))": 3.9e-13,
             },
         ),
         (
             "dry_VPD_Precip__fuel_Antec_NPP",
             {
-                "np.abs(np.mean(diffs))": 4.5e-15,
-                "np.mean(np.abs(diffs))": 7.8e-15,
+                "np.abs(np.mean(diffs))": 4.6e-15,
+                "np.mean(np.abs(diffs))": 9.1e-15,
                 "np.max(np.abs(diffs))": 4.8e-13,
             },
         ),
         (
             "dry_VPD_Precip__fuel_Leaf_Litter_Pool",
             {
-                "np.abs(np.mean(diffs))": 2.4e-17,
-                "np.mean(np.abs(diffs))": 4.8e-17,
+                "np.abs(np.mean(diffs))": 1.5e-16,
+                "np.mean(np.abs(diffs))": 8.1e-16,
                 "np.max(np.abs(diffs))": 1.5e-13,
             },
         ),
@@ -56,7 +56,17 @@ def test_GPUBAModel(model_params, exp_key, expected_diffs):
         # kwargs they require, ignoring the rest.
         ba_model = model_class(**params)
 
-        model_bas[name] = ba_model.run(**params)["model_ba"]
+        model_bas[name] = ba_model.run(
+            **{
+                **dict(
+                    fapar_weight=1,
+                    dryness_weight=1,
+                    temperature_weight=1,
+                    fuel_weight=1,
+                ),
+                **params,
+            }
+        )["model_ba"]
 
         if name == "metal":
             ba_model._gpu_inferno.release()

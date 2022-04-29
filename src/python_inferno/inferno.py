@@ -118,6 +118,10 @@ def calc_flam(
     litter_pool_centre,
     litter_pool_shape,
     include_temperature,
+    fapar_weight,
+    dryness_weight,
+    temperature_weight,
+    fuel_weight,
 ):
     # Description:
     #   Performs the calculation of the flammibility
@@ -227,20 +231,25 @@ def calc_flam(
             raise ValueError("Unknown 'fuel_build_up_method'.")
 
         if include_temperature == 1:
-            temperature_factor = sigmoid(
+            temperature_sigmoid = sigmoid(
                 temp_l, temperature_factor, temperature_centre, temperature_shape
             )
+            weighted_temperature_sigmoid = 1 + temperature_weight * (
+                temperature_sigmoid - 1
+            )
         elif include_temperature == 0:
-            temperature_factor = 1.0
+            weighted_temperature_sigmoid = 1.0
         else:
             raise ValueError("Unknown 'include_temperature'.")
 
+        fapar_sigmoid = sigmoid(fapar, fapar_factor, fapar_centre, fapar_shape)
+
         # Convert fuel build-up index to flammability factor.
         flammability = (
-            dry_factor
-            * temperature_factor
-            * fuel_factor
-            * sigmoid(fapar, fapar_factor, fapar_centre, fapar_shape)
+            (1 + dryness_weight * (dry_factor - 1))
+            * weighted_temperature_sigmoid
+            * (1 + fuel_weight * (fuel_factor - 1))
+            * (1 + fapar_weight * (fapar_sigmoid - 1))
         )
     else:
         raise ValueError("Unknown 'flammability_method'.")

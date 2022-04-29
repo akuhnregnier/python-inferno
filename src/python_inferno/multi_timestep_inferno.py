@@ -59,6 +59,10 @@ def _multi_timestep_inferno(
     dry_bal_factor,
     dry_bal_centre,
     dry_bal_shape,
+    fapar_weight,
+    dryness_weight,
+    temperature_weight,
+    fuel_weight,
 ):
     # Ensure consistency of the time dimension.
     if not (
@@ -203,6 +207,10 @@ def _multi_timestep_inferno(
                     litter_pool_centre[pft_group_i],
                     litter_pool_shape[pft_group_i],
                     include_temperature,
+                    fapar_weight[pft_group_i],
+                    fuel_weight[pft_group_i],
+                    temperature_weight[pft_group_i],
+                    dryness_weight[pft_group_i],
                 )
 
                 burnt_area_ft[ti, i, l] = calc_burnt_area(
@@ -259,6 +267,10 @@ def multi_timestep_inferno(
     include_temperature,
     timestep,
     overall_scale,
+    fapar_weight,
+    dryness_weight,
+    temperature_weight,
+    fuel_weight,
 ):
     param_vars = dict(
         fapar_factor=fapar_factor,
@@ -279,6 +291,10 @@ def multi_timestep_inferno(
         litter_pool_factor=litter_pool_factor,
         litter_pool_centre=litter_pool_centre,
         litter_pool_shape=litter_pool_shape,
+        fapar_weight=fapar_weight,
+        dryness_weight=dryness_weight,
+        temperature_weight=temperature_weight,
+        fuel_weight=fuel_weight,
     )
 
     # Ensure the parameters are given as arrays with `N_pft_groups` elements.

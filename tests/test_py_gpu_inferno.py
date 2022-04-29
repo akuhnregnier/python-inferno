@@ -34,7 +34,6 @@ def test_GPUCompute_synthetic(
     flammabilityMethod,
     Nt,
 ):
-
     compute.set_data(
         _ignitionMethod=1,
         _flammabilityMethod=flammabilityMethod,
@@ -80,6 +79,10 @@ def test_GPUCompute_synthetic(
         litter_pool_factor=np.zeros(N_pft_groups, dtype=np.float32),
         litter_pool_centre=np.zeros(N_pft_groups, dtype=np.float32),
         litter_pool_shape=np.zeros(N_pft_groups, dtype=np.float32),
+        fapar_weight=np.ones(N_pft_groups, dtype=np.float32),
+        dryness_weight=np.ones(N_pft_groups, dtype=np.float32),
+        temperature_weight=np.ones(N_pft_groups, dtype=np.float32),
+        fuel_weight=np.ones(N_pft_groups, dtype=np.float32),
     )
 
     compute.run()
@@ -87,9 +90,15 @@ def test_GPUCompute_synthetic(
 
 def test_GPUBAModel(params_model_ba):
     for params, expected_model_ba in params_model_ba:
-        assert np.allclose(
-            GPUBAModel(**params).run(**params)["model_ba"],
-            expected_model_ba["metal"],
-            atol=1e-12,
-            rtol=1e-7,
-        )
+        model_ba = GPUBAModel(**params).run(
+            **{
+                **dict(
+                    fapar_weight=1,
+                    dryness_weight=1,
+                    temperature_weight=1,
+                    fuel_weight=1,
+                ),
+                **params,
+            }
+        )["model_ba"]
+        assert np.allclose(model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7)

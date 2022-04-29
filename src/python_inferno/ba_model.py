@@ -131,26 +131,26 @@ def calculate_scores(
 
     if Metrics.MPD in requested:
         mpd_val, ignored = calculate_mpd(avg_ba, mon_avg_gfed_ba_1d)
-        scores[mpd] = mpd_val
-        scores[mpd_ignored] = ignored
+        scores["mpd"] = mpd_val
+        scores["mpd_ignored"] = ignored
 
     if Metrics.R2 in requested:
-        scores[r2] = r2_score(y_true=y_true, y_pred=y_pred)
+        scores["r2"] = r2_score(y_true=y_true, y_pred=y_pred)
 
     if Metrics.NME in requested:
-        scores[nme] = nme(obs=y_true, pred=y_pred)
+        scores["nme"] = nme(obs=y_true, pred=y_pred)
 
     if Metrics.ARCSINH_NME in requested:
-        scores[arcsinh_nme] = nme(
+        scores["arcsinh_nme"] = nme(
             obs=np.arcsinh(ARCSINH_FACTOR * y_true),
             pred=np.arcsinh(ARCSINH_FACTOR * y_pred),
         )
 
     if Metrics.NMSE in requested:
-        scores[nmse] = nmse(obs=y_true, pred=y_pred)
+        scores["nmse"] = nmse(obs=y_true, pred=y_pred)
 
     if Metrics.LOGHIST in requested:
-        scores[loghist] = loghist(
+        scores["loghist"] = loghist(
             obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)
         )
 
@@ -270,7 +270,7 @@ class BAModel:
     def process_kwargs(self, **kwargs):
         n_params = N_pft_groups
         dtype_params = np.float64
-        dummy_params = np.zeros(n_params, dtype=dtype_params)
+        dummy_params = np.ones(n_params, dtype=dtype_params)
 
         processed_kwargs = dict(overall_scale=kwargs.pop("overall_scale", 1.0))
 
@@ -286,9 +286,25 @@ class BAModel:
         # The below may conditionally be present. If not, they need to be provided
         # by 'dummy' variables.
         for keys, condition in (
-            (["fapar_factor", "fapar_centre", "fapar_shape"], True),
             (
-                ["temperature_factor", "temperature_centre", "temperature_shape"],
+                # Always process these keys.
+                [
+                    "fapar_factor",
+                    "fapar_centre",
+                    "fapar_shape",
+                    "fapar_weight",
+                    "dryness_weight",
+                    "fuel_weight",
+                ],
+                True,
+            ),
+            (
+                [
+                    "temperature_factor",
+                    "temperature_centre",
+                    "temperature_shape",
+                    "temperature_weight",
+                ],
                 self.include_temperature == 1,
             ),
             (
@@ -384,9 +400,7 @@ class BAModel:
 
 class GPUBAModel(BAModel):
     def __init__(self, **kwargs):
-        from .py_gpu_inferno import GPUInferno, frac_weighted_mean
-
-        self.frac_weighted_mean = frac_weighted_mean
+        from .py_gpu_inferno import GPUInferno
 
         logger.info("GPUBAModel init.")
 
@@ -442,10 +456,14 @@ class GPUBAModel(BAModel):
         litter_pool_factor,
         litter_pool_centre,
         litter_pool_shape,
+        fapar_weight,
+        dryness_weight,
+        temperature_weight,
+        fuel_weight,
         **kwargs,
     ):
         # TODO Eliminate need for dtype transform.
-        out = transform_dtype(self._gpu_inferno.run)(
+        return transform_dtype(self._gpu_inferno.run)(
             overall_scale=overall_scale,
             fapar_factor=fapar_factor,
             fapar_centre=fapar_centre,
@@ -465,12 +483,11 @@ class GPUBAModel(BAModel):
             litter_pool_factor=litter_pool_factor,
             litter_pool_centre=litter_pool_centre,
             litter_pool_shape=litter_pool_shape,
+            fapar_weight=fapar_weight,
+            dryness_weight=dryness_weight,
+            temperature_weight=temperature_weight,
+            fuel_weight=fuel_weight,
         )
-
-        weighted = self.frac_weighted_mean(
-            data=out.reshape((self.Nt, npft, land_pts)), frac=self.data_dict["frac"]
-        )
-        return weighted
 
 
 def gen_to_optimise(
