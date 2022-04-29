@@ -118,7 +118,6 @@ dependencies:
   - hdf4=4.2.15=hefd3b78_3
   - hdf5=1.12.1=nompi_ha60fbc9_104
   - heapdict=1.0.1=py_0
-  - hyperopt=0.2.5=pyh9f0ad1d_0
   - icu=69.1=he49afe7_0
   - identify=2.4.12=pyhd8ed1ab_0
   - idna=3.3=pyhd8ed1ab_0
@@ -291,7 +290,7 @@ dependencies:
   - pygments=2.11.2=pyhd8ed1ab_0
   - pyhdf=0.10.3=py310ha369d9e_2
   - pylint=2.13.5=pyhd8ed1ab_0
-  - pymongo=4.1.0=py310h9d931ec_0
+  - pymongo=3.12.0=py310hc377ac9_0
   - pyopenssl=22.0.0=pyhd8ed1ab_0
   - pyparsing=3.0.8=pyhd8ed1ab_0
   - pyperclip=1.8.2=pyhd8ed1ab_2
@@ -401,6 +400,7 @@ dependencies:
     - git+https://github.com/akuhnregnier/ALEPython.git@0.5.5#egg=alepython
     - git+https://github.com/akuhnregnier/clean_ipynb.git@0.3.3#egg=clean_ipynb
     - git+https://github.com/akuhnregnier/era5analysis.git@0.2.1#egg=era5analysis
+    - git+https://github.com/akuhnregnier/hyperopt.git@0.2.7.1#egg=hyperopt
     - git+https://github.com/akuhnregnier/jupyter-notebook-tools.git@0.1.0#egg=jupyter-notebook-tools
     - git+https://github.com/akuhnregnier/rulefit.git@v0.3.1#egg=rulefit
     - attrs==20.3.0

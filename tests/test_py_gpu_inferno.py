@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+import pickle
+
 import numpy as np
 import pytest
 
-from python_inferno import py_gpu_inferno
+from python_inferno.ba_model import GPUBAModel
 from python_inferno.configuration import (
     N_pft_groups,
     n_cell_grp_pft,
@@ -10,13 +12,27 @@ from python_inferno.configuration import (
     n_cell_no_pft,
     n_cell_tot_pft,
 )
+from python_inferno.py_gpu_inferno import _GPUCompute
+
+from . import TEST_DATA_DIR
 
 
 @pytest.fixture
 def compute():
-    compute = py_gpu_inferno._GPUCompute()
+    compute = _GPUCompute()
     yield compute
     compute.release()
+
+
+@pytest.fixture
+def params_model_ba():
+    with (TEST_DATA_DIR / "best_params.pkl").open("rb") as f:
+        params_dict = pickle.load(f)
+
+    with (TEST_DATA_DIR / "model_ba.pkl").open("rb") as f:
+        model_ba_dict = pickle.load(f)
+
+    return [[params_dict[key], model_ba_dict[key]] for key in params_dict]
 
 
 @pytest.mark.parametrize("includeTemperature", [0, 1])
@@ -24,7 +40,7 @@ def compute():
 @pytest.mark.parametrize("drynessMethod", [1, 2])
 @pytest.mark.parametrize("flammabilityMethod", [1, 2])
 @pytest.mark.parametrize("Nt", [100, 10])
-def test_GPUCompute(
+def test_GPUCompute_synthetic(
     compute,
     includeTemperature,
     fuelBuildUpMethod,
@@ -81,3 +97,13 @@ def test_GPUCompute(
     )
 
     compute.run()
+
+
+def test_GPUBAModel(params_model_ba):
+    for params, expected_model_ba in params_model_ba:
+        assert np.allclose(
+            GPUBAModel(**params).run(**params)["model_ba"],
+            expected_model_ba["metal"],
+            atol=1e-12,
+            rtol=1e-7,
+        )

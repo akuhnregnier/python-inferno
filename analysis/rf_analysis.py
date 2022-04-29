@@ -3,6 +3,7 @@
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import product
+from operator import itemgetter
 from pathlib import Path
 
 import matplotlib as mpl
@@ -19,7 +20,7 @@ from sklearn.inspection import partial_dependence
 from tqdm import tqdm
 from wildfires.analysis import cube_plotting
 
-from python_inferno.ba_model import get_pred_ba_prep
+from python_inferno.ba_model import BAModel
 from python_inferno.cache import cache
 from python_inferno.configuration import N_pft_groups, n_total_pft, npft, pft_groups
 from python_inferno.data import load_data, load_jules_lats_lons
@@ -449,7 +450,16 @@ def main():
             jules_time_coord,
             mon_avg_gfed_ba_1d,
             data_dict,
-        ) = get_pred_ba_prep(**params)
+        ) = itemgetter(
+            "model_ba",
+            "data_params",
+            "obs_pftcrop_1d",
+            "jules_time_coord",
+            "mon_avg_gfed_ba_1d",
+            "data_dict",
+        )(
+            BAModel(**params).run(**params)
+        )
 
         futures.append(
             executor.submit(

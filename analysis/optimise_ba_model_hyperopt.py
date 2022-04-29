@@ -32,12 +32,6 @@ def success_func(loss, *args, **kwargs):
     return loss
 
 
-to_optimise = gen_to_optimise(
-    fail_func=fail_func,
-    success_func=success_func,
-)
-
-
 def main(
     expr,
     memo,
@@ -67,16 +61,19 @@ def main(
 
     logger.info(f"No match (search time: {time() - start:0.2f}).")
 
+    to_optimise = gen_to_optimise(
+        fail_func=fail_func,
+        success_func=success_func,
+        # Init (data) params.
+        dryness_method=dryness_method,
+        fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
+        **discrete_params,
+    )
+
     def to_optimise_with_discrete(x):
-        opt_kwargs = {
-            **space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x))),
-            **discrete_params,
-        }
         return to_optimise(
-            dryness_method=dryness_method,
-            fuel_build_up_method=fuel_build_up_method,
-            include_temperature=include_temperature,
-            **opt_kwargs,
+            **space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x)))
         )
 
     recorder = Recorder(record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record")
@@ -102,21 +99,28 @@ def main(
             # Update record in file.
             recorder.dump()
 
-    res = basinhopping(
-        to_optimise_with_discrete,
-        x0=space.continuous_x0_mid,
-        disp=True,
-        minimizer_kwargs=dict(
-            method="L-BFGS-B",
-            jac=None,
-            bounds=[(0, 1)] * len(space.continuous_param_names),
-            options=dict(maxiter=50, ftol=1e-5, eps=1e-3),
-        ),
-        seed=0,
-        niter_success=5,
-        callback=basinhopping_callback,
-        take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
-    )
+    # XXX
+    import cProfile
+
+    with cProfile.Profile() as pr:
+        res = basinhopping(
+            to_optimise_with_discrete,
+            x0=space.continuous_x0_mid,
+            disp=True,
+            minimizer_kwargs=dict(
+                method="L-BFGS-B",
+                jac=None,
+                bounds=[(0, 1)] * len(space.continuous_param_names),
+                # XXX
+                options=dict(maxiter=10, ftol=1e-5, eps=1e-3),
+            ),
+            seed=0,
+            # XXX
+            niter_success=2,
+            callback=basinhopping_callback,
+            take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
+        )
+    pr.dump_stats("/tmp/prof")
     loss = res.fun
 
     if loss > 100.0:
@@ -129,7 +133,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    exp_base = "exp101"
+    exp_base = "exp200"
 
     dryness_methods = (1, 2)
     fuel_build_up_methods = (1, 2)
@@ -234,7 +238,7 @@ if __name__ == "__main__":
                     ),
                     algo=tpe.suggest,
                     trials=trials,
-                    rstate=np.random.RandomState(0),
+                    rstate=np.random.default_rng(0),
                     space=exp_space.render_discrete(),
                     # NOTE: Sometimes the same parameters are sampled repeatedly.
                     max_evals=min(10000, round(2 * exp_space.n_discrete_product)),
@@ -249,3 +253,7 @@ if __name__ == "__main__":
                     pass_expr_memo_ctrl=True,
                 )
             )
+            # XXX
+            break
+    for f in futures:
+        print(f.result())

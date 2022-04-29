@@ -10,9 +10,17 @@ from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
 from .metrics import calculate_factor, loghist, mpd, nme, nmse
 from .multi_timestep_inferno import _multi_timestep_inferno, multi_timestep_inferno
-from .utils import expand_pft_params, monthly_average_data, unpack_wrapped
+from .utils import (
+    expand_pft_params,
+    monthly_average_data,
+    transform_dtype,
+    unpack_wrapped,
+)
 
 Status = Enum("Status", ["SUCCESS", "FAIL"])
+
+dummy_pop_den = np.zeros((land_pts,), dtype=np.float32) - 1
+dummy_flash_rate = np.zeros((land_pts,), dtype=np.float32) - 1
 
 
 class BAModelException(RuntimeError):
@@ -62,8 +70,8 @@ def run_model(
         _func=_func,
         # These are not used for ignition mode 1, nor do they contain a temporal
         # coordinate.
-        pop_den=np.zeros((land_pts,)) - 1,
-        flash_rate=np.zeros((land_pts,)) - 1,
+        pop_den=dummy_pop_den,
+        flash_rate=dummy_flash_rate,
         **data_dict,
         **kwargs,
     )
@@ -143,11 +151,26 @@ class BAModel:
         average_samples,
         **kwargs,
     ):
-        self.dryness_method = dryness_method
-        self.fuel_build_up_method = fuel_build_up_method
-        self.include_temperature = include_temperature
+        self.dryness_method = int(dryness_method)
+        self.fuel_build_up_method = int(fuel_build_up_method)
+        self.include_temperature = int(include_temperature)
         self.average_samples = int(average_samples)
         self._func = _func
+
+        logger.info(
+            "Init: "
+            + ", ".join(
+                map(
+                    str,
+                    (
+                        self.dryness_method,
+                        self.fuel_build_up_method,
+                        self.include_temperature,
+                        self.average_samples,
+                    ),
+                )
+            )
+        )
 
         self.rain_f = (
             process_param(
@@ -226,12 +249,7 @@ class BAModel:
         # Extract variables not used further below.
         self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
 
-    def run(
-        self,
-        *,
-        crop_f,
-        **kwargs,
-    ):
+    def process_kwargs(self, **kwargs):
         n_params = N_pft_groups
         dtype_params = np.float64
         dummy_params = np.zeros(n_params, dtype=dtype_params)
@@ -277,7 +295,35 @@ class BAModel:
                     process_key_from_kwargs(key) if condition else dummy_params
                 )
 
-        model_ba = run_model(
+        return processed_kwargs
+
+    def get_model_ba(
+        self,
+        dryness_method,
+        fuel_build_up_method,
+        include_temperature,
+        data_dict,
+        _func,
+        **processed_kwargs,
+    ):
+        return run_model(
+            dryness_method=self.dryness_method,
+            fuel_build_up_method=self.fuel_build_up_method,
+            include_temperature=self.include_temperature,
+            data_dict=self.data_dict,
+            _func=self._func,
+            **processed_kwargs,
+        )
+
+    def run(
+        self,
+        *,
+        crop_f,
+        **kwargs,
+    ):
+        processed_kwargs = self.process_kwargs(**kwargs)
+
+        model_ba = self.get_model_ba(
             dryness_method=self.dryness_method,
             fuel_build_up_method=self.fuel_build_up_method,
             include_temperature=self.include_temperature,
@@ -307,7 +353,7 @@ class BAModel:
             data_dict=self.data_dict,
         )
 
-    def calculate_scores(self, *, model_ba):
+    def calc_scores(self, *, model_ba):
         scores, status, avg_ba, calc_factors = calculate_scores(
             model_ba=model_ba,
             jules_time_coord=self.jules_time_coord,
@@ -325,15 +371,114 @@ class BAModel:
         )
 
 
-# XXX TODO
+class GPUBAModel(BAModel):
+    def __init__(self, **kwargs):
+        from .py_gpu_inferno import GPUInferno, frac_weighted_mean
+
+        self.frac_weighted_mean = frac_weighted_mean
+
+        logger.info("GPUBAModel init.")
+
+        super().__init__(**kwargs)
+
+        self.Nt = self.data_dict["pstar"].shape[0]
+
+        self._gpu_inferno = transform_dtype(GPUInferno)(
+            ignition_method=1,
+            flammability_method=2,
+            dryness_method=self.dryness_method,
+            fuel_build_up_method=self.fuel_build_up_method,
+            include_temperature=self.include_temperature,
+            Nt=self.Nt,
+            t1p5m_tile=self.data_dict["t1p5m_tile"].ravel(),
+            q1p5m_tile=self.data_dict["q1p5m_tile"].ravel(),
+            pstar=self.data_dict["pstar"].ravel(),
+            sthu_soilt_single=self.data_dict["sthu_soilt"][:, 0, 0].ravel(),
+            frac=self.data_dict["frac"].ravel(),
+            c_soil_dpm_gb=self.data_dict["c_soil_dpm_gb"].ravel(),
+            c_soil_rpm_gb=self.data_dict["c_soil_rpm_gb"].ravel(),
+            canht=self.data_dict["canht"].ravel(),
+            ls_rain=self.data_dict["ls_rain"].ravel(),
+            con_rain=self.data_dict["con_rain"].ravel(),
+            pop_den=dummy_pop_den,
+            flash_rate=dummy_flash_rate,
+            fuel_build_up=self.data_dict["fuel_build_up"].ravel(),
+            fapar_diag_pft=self.data_dict["fapar_diag_pft"].ravel(),
+            grouped_dry_bal=self.data_dict["grouped_dry_bal"].ravel(),
+            litter_pool=self.data_dict["litter_pool"].ravel(),
+            dry_days=self.data_dict["dry_days"].ravel(),
+        )
+
+    def get_model_ba(
+        self,
+        *,
+        fapar_factor,
+        fapar_centre,
+        fapar_shape,
+        fuel_build_up_factor,
+        fuel_build_up_centre,
+        fuel_build_up_shape,
+        temperature_factor,
+        temperature_centre,
+        temperature_shape,
+        dry_day_factor,
+        dry_day_centre,
+        dry_day_shape,
+        dry_bal_factor,
+        dry_bal_centre,
+        dry_bal_shape,
+        litter_pool_factor,
+        litter_pool_centre,
+        litter_pool_shape,
+        **kwargs,
+    ):
+        # TODO Eliminate need for dtype transform.
+        out = transform_dtype(self._gpu_inferno.run)(
+            fapar_factor=fapar_factor,
+            fapar_centre=fapar_centre,
+            fapar_shape=fapar_shape,
+            fuel_build_up_factor=fuel_build_up_factor,
+            fuel_build_up_centre=fuel_build_up_centre,
+            fuel_build_up_shape=fuel_build_up_shape,
+            temperature_factor=temperature_factor,
+            temperature_centre=temperature_centre,
+            temperature_shape=temperature_shape,
+            dry_day_factor=dry_day_factor,
+            dry_day_centre=dry_day_centre,
+            dry_day_shape=dry_day_shape,
+            dry_bal_factor=dry_bal_factor,
+            dry_bal_centre=dry_bal_centre,
+            dry_bal_shape=dry_bal_shape,
+            litter_pool_factor=litter_pool_factor,
+            litter_pool_centre=litter_pool_centre,
+            litter_pool_shape=litter_pool_shape,
+        )
+
+        weighted = self.frac_weighted_mean(
+            data=out.reshape((self.Nt, npft, land_pts)), frac=self.data_dict["frac"]
+        )
+        return weighted
+
+
 def gen_to_optimise(
     *,
     fail_func,
     success_func,
+    **model_ba_init_kwargs,
 ):
-    def to_optimise(**kwargs):
+    try:
+        ba_model = GPUBAModel(**model_ba_init_kwargs)
+    except ModuleNotFoundError:
+        logger.warning("GPU INFERNO module not found.")
+        ba_model = BAModel(**model_ba_init_kwargs)
+
+    def to_optimise(**run_kwargs):
+        # NOTE: It is assumed here that the data being operated on will not change
+        # between runs of the `to_optimise` function. Data-relevant parameters in
+        # `run_kwargs` will be silently ignored!
         try:
-            scores = get_pred_ba(**kwargs)[1]
+            model_ba = ba_model.run(**run_kwargs)["model_ba"]
+            scores = ba_model.calc_scores(model_ba=model_ba)["scores"]
         except BAModelException:
             return fail_func()
 
@@ -342,5 +487,7 @@ def gen_to_optimise(
         loss = scores["arcsinh_nme"] + scores["mpd"]
         logger.debug(f"loss: {loss:0.6f}")
         return success_func(loss)
+
+    # TODO Call release on GPU class when done?
 
     return to_optimise

@@ -21,7 +21,7 @@ def test_uniform_space():
         },
         trials=trials,
         algo=tpe.suggest,
-        rstate=np.random.RandomState(0),
+        rstate=np.random.default_rng(0),
         verbose=False,
     )
 
@@ -46,7 +46,7 @@ def test_mod_quniform_space():
         },
         trials=trials,
         algo=tpe.suggest,
-        rstate=np.random.RandomState(0),
+        rstate=np.random.default_rng(0),
         verbose=False,
     )
 
@@ -70,13 +70,13 @@ def test_mod_quniform_check():
         ((2, 8, 3), (2, 5, 8)),
         ((0.2, 0.8, 0.3), (0.2, 0.5, 0.8)),
         ((1e-10, 5e-10, 2e-10), (1e-10, 3e-10, 5e-10)),
-        ((2, 2 + 1e-5, 3), (2,)),
+        ((2, 2 + 1e-10, 3), (2,)),
         ((-8, -2, 3), (-8, -5, -2)),
         ((-10, 10, 2), (-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10)),
     ],
 )
 def test_mod_quniform_samples(args, expected):
-    rng = np.random.RandomState(0)
+    rng = np.random.default_rng(0)
     samples = [sample(mod_quniform("test", *args), rng=rng) for _ in range(int(1e4))]
     values, counts = np.unique(samples, return_counts=True)
     assert np.std(counts) < (0.04 * np.mean(counts))

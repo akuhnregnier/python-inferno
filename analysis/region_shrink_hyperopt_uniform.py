@@ -28,7 +28,7 @@ if __name__ == "__main__":
             },
             algo=tpe.suggest,
             trials=trials,
-            rstate=np.random.RandomState(seed),
+            rstate=np.random.default_rng(seed),
             verbose=False,
         )
 

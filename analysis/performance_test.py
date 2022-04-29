@@ -10,11 +10,9 @@ from time import time
 import numpy as np
 from loguru import logger
 
-from python_inferno.ba_model import BAModel
+from python_inferno.ba_model import BAModel, GPUBAModel
 from python_inferno.data import load_jules_lats_lons
 from python_inferno.model_params import get_model_params
-from python_inferno.multi_timestep_inferno import _multi_timestep_inferno
-from python_inferno.py_gpu_inferno import run_single_shot
 
 if __name__ == "__main__":
     logger.remove()
@@ -29,33 +27,36 @@ if __name__ == "__main__":
     )
 
     for (
-        dryness_method,
-        fuel_build_up_method,
-        df_sel,
-        min_index,
-        min_loss,
+        _,
+        _,
+        _,
+        _,
+        _,
         params,
         exp_name,
-        exp_key,
+        _,
     ) in islice(method_iter(), 0, None):
         logger.info(exp_name)
 
         outputs = dict()
         times = defaultdict(list)
 
-        for name, function in [
-            ("python", _multi_timestep_inferno),
-            ("metal", run_single_shot),
+        for name, model_class in [
+            ("python", BAModel),
+            ("metal", GPUBAModel),
         ]:
             # `**params` is used twice here because the functions simply use the
             # kwargs they require, ignoring the rest.
-            ba_model = BAModel(**params, _func=function)
+            ba_model = model_class(**params)
 
-            for i in range(20):
+            for i in range(100 if name == "python" else 1000):
                 start = time()
 
                 outputs[name] = ba_model.run(**params)
                 times[name].append(time() - start)
+
+            if name == "metal":
+                ba_model._gpu_inferno.release()
 
         for name, time_vals in times.items():
             assert time_vals

@@ -11,7 +11,7 @@ from loguru import logger
 from matplotlib.transforms import offset_copy
 from wildfires.analysis import cube_plotting
 
-from .ba_model import get_pred_ba_prep
+from .ba_model import BAModel
 from .configuration import pft_group_names
 from .data import (
     get_2d_cubes,
@@ -265,8 +265,8 @@ def plotting(
     region_nrows_ncols = dict(nrows=math.ceil(N_plots / 2), ncols=2)
 
     if data_params is not None:
-        (_, _, _, _, _, data_dict) = get_pred_ba_prep(**data_params)
-        data_dict = subset_sthu_soilt_inplace(data_dict)
+        data_dict = BAModel(**data_params).data_dict
+        subset_sthu_soilt_inplace(data_dict)
         data_2d_cubes = get_2d_cubes(data_dict=data_dict)
     else:
         data_2d_cubes = None

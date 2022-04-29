@@ -5,6 +5,7 @@ import os
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
+from operator import itemgetter
 from pathlib import Path
 
 import matplotlib as mpl
@@ -14,7 +15,7 @@ from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
 from tqdm import tqdm
 
-from python_inferno.ba_model import Status, calculate_scores, get_pred_ba
+from python_inferno.ba_model import BAModel, Status, calculate_scores
 from python_inferno.cache import cache
 from python_inferno.configuration import n_total_pft, npft
 from python_inferno.data import load_data, load_jules_lats_lons
@@ -178,7 +179,14 @@ if __name__ == "__main__":
         )
 
         logger.info("Predicting BA")
-        model_ba, scores, mon_avg_gfed_ba_1d, calc_factors = get_pred_ba(**params)
+        ba_model = BAModel(**params)
+        model_ba, mon_avg_gfed_ba_1d = itemgetter("model_ba", "mon_avg_gfed_ba_1d")(
+            ba_model.run(**params)
+        )
+        scores, calc_factors = itemgetter("scores", "calc_factors")(
+            ba_model.score(model_ba=model_ba)
+        )
+
         model_ba *= calc_factors["adj_factor"]
 
         ba_mask_1d = get_ba_mask(mon_avg_gfed_ba_1d)
