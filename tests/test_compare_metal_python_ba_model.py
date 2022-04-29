@@ -1,20 +1,9 @@
 # -*- coding: utf-8 -*-
-import pickle
 
 import numpy as np
 import pytest
 
 from python_inferno.ba_model import BAModel, GPUBAModel
-
-from . import TEST_DATA_DIR
-
-
-@pytest.fixture
-def model_params():
-    with (TEST_DATA_DIR / "best_params.pkl").open("rb") as f:
-        params_dict = pickle.load(f)
-
-    return params_dict
 
 
 @pytest.mark.parametrize(
@@ -77,3 +66,4 @@ def test_GPUBAModel(model_params, exp_key, expected_diffs):
     assert np.abs(np.mean(diffs)) <= expected_diffs["np.abs(np.mean(diffs))"]
     assert np.mean(np.abs(diffs)) <= expected_diffs["np.mean(np.abs(diffs))"]
     assert np.max(np.abs(diffs)) <= expected_diffs["np.max(np.abs(diffs))"]
+    assert np.allclose(diffs, 0, atol=1e-12, rtol=1e-9)

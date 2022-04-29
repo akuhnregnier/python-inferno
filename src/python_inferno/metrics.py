@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import math
+from enum import Enum
 from string import ascii_lowercase
 
 import matplotlib.pyplot as plt
@@ -13,6 +14,8 @@ from tqdm import tqdm
 from .cache import cache, mark_dependency
 from .data import get_gfed_regions, get_pnv_mega_plot_data
 from .utils import linspace_no_endpoint
+
+Metrics = Enum("Metrics", ["NME", "NMSE", "MPD", "R2", "LOGHIST", "ARCSINH_NME"])
 
 
 @mark_dependency
@@ -34,7 +37,7 @@ def nme(*, obs, pred, return_std=False):
     if return_std:
         N = np.ma.getdata(abs_diff)[~np.ma.getmaskarray(abs_diff)].size
         # Return the standard deviation of the mean.
-        return err, (np.mean(np.abs(pred - obs)) / denom) / (N ** 0.5)
+        return err, (np.mean(np.abs(pred - obs)) / denom) / (N**0.5)
     return err
 
 
@@ -118,7 +121,7 @@ def mpd(*, obs, pred, return_ignored=False, return_std=False):
     if return_std:
         N = np.ma.getdata(vals)[~np.ma.getmaskarray(vals)].size
         # Return the standard deviation of the mean.
-        to_return.append(np.ma.std(vals) / (N ** 0.5))
+        to_return.append(np.ma.std(vals) / (N**0.5))
     if return_ignored or return_std:
         return tuple(to_return)
     return to_return[0]
@@ -236,8 +239,8 @@ def error_hist(
         xs = np.linspace(err - std, err + std, 100)
         ax2.plot(
             xs,
-            (1 / np.sqrt(2 * np.pi * std ** 2))
-            * np.exp(-((xs - err) ** 2) / (2 * std ** 2)),
+            (1 / np.sqrt(2 * np.pi * std**2))
+            * np.exp(-((xs - err) ** 2) / (2 * std**2)),
             c=f"C{i+1}",
             linestyle="--",
             alpha=0.8,

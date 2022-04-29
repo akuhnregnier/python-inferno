@@ -66,6 +66,7 @@ class GPUInferno:
     def run(
         self,
         *,
+        overall_scale,
         fapar_factor,
         fapar_centre,
         fapar_shape,
@@ -106,7 +107,7 @@ class GPUInferno:
             litter_pool_shape=litter_pool_shape,
         )
 
-        return self.gpu_compute.run()
+        return overall_scale * self.gpu_compute.run()
 
     def release(self):
         self.gpu_compute.release()

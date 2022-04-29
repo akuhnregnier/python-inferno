@@ -258,7 +258,7 @@ def multi_timestep_inferno(
     dry_bal_shape,
     include_temperature,
     timestep,
-    _func=_multi_timestep_inferno,
+    overall_scale,
 ):
     param_vars = dict(
         fapar_factor=fapar_factor,
@@ -290,7 +290,7 @@ def multi_timestep_inferno(
         transformed_param_vars[name] = np.asarray(val, dtype=np.float64)
         assert transformed_param_vars[name].shape == (N_pft_groups,)
 
-    ba = transform_dtype(_func)(
+    ba = overall_scale * transform_dtype(_multi_timestep_inferno)(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,

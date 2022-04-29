@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from enum import Enum
 from functools import partial
 
 import numpy as np
@@ -8,8 +7,8 @@ from sklearn.metrics import r2_score
 
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
-from .metrics import calculate_factor, loghist, mpd, nme, nmse
-from .multi_timestep_inferno import _multi_timestep_inferno, multi_timestep_inferno
+from .metrics import Metrics, loghist, mpd, nme, nmse
+from .multi_timestep_inferno import multi_timestep_inferno
 from .utils import (
     expand_pft_params,
     monthly_average_data,
@@ -17,7 +16,8 @@ from .utils import (
     unpack_wrapped,
 )
 
-Status = Enum("Status", ["SUCCESS", "FAIL"])
+ARCSINH_FACTOR = 1e6
+MPD_IGNORE_THRES = 5600
 
 dummy_pop_den = np.zeros((land_pts,), dtype=np.float32) - 1
 dummy_flash_rate = np.zeros((land_pts,), dtype=np.float32) - 1
@@ -27,7 +27,7 @@ class BAModelException(RuntimeError):
     """Raised when inadequate BA model parameters are used."""
 
 
-def process_param(*, kwargs, name, n_source, n_target, dtype):
+def process_param_inplace(*, kwargs, name, n_source, n_target, dtype):
     """Process parameter values.
 
     For example, a parameter with `name='param'` could be optimised for 3 different PFT groups,
@@ -36,14 +36,17 @@ def process_param(*, kwargs, name, n_source, n_target, dtype):
     This function will then take these inputs and transform them according to
     `n_source`, `n_target`, and `dtype`.
 
+    `kwargs` will be consumed in the process. Pass a copy (`kwargs.copy()`) to prevent
+    side-effects.
+
     """
     assert n_target >= n_source
     assert n_target in (npft, N_pft_groups)
 
     if n_source == 1:
-        return np.array([kwargs[name]] * n_target).astype(dtype)
+        return np.array([kwargs.pop(name)] * n_target).astype(dtype)
     elif n_source == 3:
-        values = [kwargs[name], kwargs[name + "2"], kwargs[name + "3"]]
+        values = [kwargs.pop(name), kwargs.pop(name + "2"), kwargs.pop(name + "3")]
         if n_target == npft:
             return np.asarray(expand_pft_params(values)).astype(dtype)
         return np.asarray(values).astype(dtype)
@@ -56,18 +59,18 @@ def run_model(
     dryness_method,
     fuel_build_up_method,
     include_temperature,
+    overall_scale,
     data_dict,
-    _func=_multi_timestep_inferno,
     **kwargs,
 ):
-    model_ba = unpack_wrapped(multi_timestep_inferno, ignore=["_func"])(
+    model_ba = unpack_wrapped(multi_timestep_inferno)(
         ignition_method=1,
         timestep=timestep,
         flammability_method=2,
         dryness_method=dryness_method,
         fuel_build_up_method=fuel_build_up_method,
         include_temperature=include_temperature,
-        _func=_func,
+        overall_scale=overall_scale,
         # These are not used for ignition mode 1, nor do they contain a temporal
         # coordinate.
         pop_den=dummy_pop_den,
@@ -78,22 +81,7 @@ def run_model(
     return model_ba
 
 
-def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
-    fail_out = (None, Status.FAIL, None, None)
-
-    if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
-        return fail_out
-
-    # Calculate monthly averages.
-    avg_ba = monthly_average_data(
-        model_ba, time_coord=jules_time_coord, conservative=True
-    )
-    assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
-
-    y_pred = np.ma.getdata(avg_ba)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-    y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-    assert y_pred.shape == y_true.shape
-
+def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d):
     pad_func = partial(
         np.pad,
         pad_width=((0, 12 - mon_avg_gfed_ba_1d.shape[0]), (0, 0)),
@@ -102,49 +90,80 @@ def calculate_scores(*, model_ba, jules_time_coord, mon_avg_gfed_ba_1d):
     mpd_val, ignored = mpd(
         obs=pad_func(mon_avg_gfed_ba_1d), pred=pad_func(avg_ba), return_ignored=True
     )
-
-    if ignored > 5600:
+    if ignored > MPD_IGNORE_THRES:
         # Ensure that not too many samples are ignored.
-        return fail_out
+        raise BAModelException()
 
-    # Estimate the adjustment factor by minimising the NME.
-    adj_factor = calculate_factor(y_true=y_true, y_pred=y_pred)
-    y_pred *= adj_factor
+    return mpd_val, ignored
 
-    arcsinh_factor = 1e6
-    arcsinh_y_true = np.arcsinh(arcsinh_factor * y_true)
-    arcsinh_y_pred = np.arcsinh(arcsinh_factor * y_pred)
-    arcsinh_adj_factor = calculate_factor(y_true=arcsinh_y_true, y_pred=arcsinh_y_pred)
 
-    scores = dict(
-        # 1D stats
-        r2=r2_score(y_true=y_true, y_pred=y_pred),
-        nme=nme(obs=y_true, pred=y_pred),
-        arcsinh_nme=nme(obs=arcsinh_y_true, pred=arcsinh_adj_factor * arcsinh_y_pred),
-        nmse=nmse(obs=y_true, pred=y_pred),
-        loghist=loghist(obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)),
-        # Temporal stats.
-        mpd=mpd_val,
-        mpd_ignored=ignored,
+def calculate_scores(
+    *, model_ba, jules_time_coord, mon_avg_gfed_ba_1d, requested=Metrics
+):
+    assert requested
+
+    if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
+        raise BAModelException()
+
+    # Calculate monthly averages.
+    avg_ba = monthly_average_data(
+        model_ba, time_coord=jules_time_coord, conservative=True
     )
+    assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
+
+    if any(
+        metric in requested
+        for metric in (
+            Metrics.R2,
+            Metrics.NME,
+            Metrics.ARCSINH_NME,
+            Metrics.NMSE,
+            Metrics.LOGHIST,
+        )
+    ):
+        y_pred = np.ma.getdata(avg_ba)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
+        y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[
+            ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
+        ]
+        assert y_pred.shape == y_true.shape
+
+    scores = {}
+
+    if Metrics.MPD in requested:
+        mpd_val, ignored = calculate_mpd(avg_ba, mon_avg_gfed_ba_1d)
+        scores[mpd] = mpd_val
+        scores[mpd_ignored] = ignored
+
+    if Metrics.R2 in requested:
+        scores[r2] = r2_score(y_true=y_true, y_pred=y_pred)
+
+    if Metrics.NME in requested:
+        scores[nme] = nme(obs=y_true, pred=y_pred)
+
+    if Metrics.ARCSINH_NME in requested:
+        scores[arcsinh_nme] = nme(
+            obs=np.arcsinh(ARCSINH_FACTOR * y_true),
+            pred=np.arcsinh(ARCSINH_FACTOR * y_pred),
+        )
+
+    if Metrics.NMSE in requested:
+        scores[nmse] = nmse(obs=y_true, pred=y_pred)
+
+    if Metrics.LOGHIST in requested:
+        scores[loghist] = loghist(
+            obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)
+        )
 
     if any(np.ma.is_masked(val) for val in scores.values()):
-        return fail_out
+        raise BAModelException()
 
-    calc_factors = dict(
-        adj_factor=adj_factor,
-        arcsinh_factor=arcsinh_factor,
-        arcsinh_adj_factor=arcsinh_adj_factor,
-    )
-
-    return scores, Status.SUCCESS, avg_ba, calc_factors
+    return scores, avg_ba
 
 
 class BAModel:
     def __init__(
         self,
         *,
-        _func=_multi_timestep_inferno,
         dryness_method,
         fuel_build_up_method,
         include_temperature,
@@ -155,7 +174,6 @@ class BAModel:
         self.fuel_build_up_method = int(fuel_build_up_method)
         self.include_temperature = int(include_temperature)
         self.average_samples = int(average_samples)
-        self._func = _func
 
         logger.info(
             "Init: "
@@ -173,7 +191,7 @@ class BAModel:
         )
 
         self.rain_f = (
-            process_param(
+            process_param_inplace(
                 kwargs=kwargs,
                 name="rain_f",
                 n_source=3 if "rain_f2" in kwargs else 1,
@@ -184,7 +202,7 @@ class BAModel:
             else None
         )
         self.vpd_f = (
-            process_param(
+            process_param_inplace(
                 kwargs=kwargs,
                 name="vpd_f",
                 n_source=3 if "vpd_f2" in kwargs else 1,
@@ -196,7 +214,7 @@ class BAModel:
         )
 
         self.n_samples_pft = (
-            process_param(
+            process_param_inplace(
                 kwargs=kwargs,
                 name="fuel_build_up_n_samples",
                 n_source=3 if "fuel_build_up_n_samples2" in kwargs else 1,
@@ -208,7 +226,7 @@ class BAModel:
         )
 
         self.litter_tc = (
-            process_param(
+            process_param_inplace(
                 kwargs=kwargs,
                 name="litter_tc",
                 n_source=3 if "litter_tc2" in kwargs else 1,
@@ -219,7 +237,7 @@ class BAModel:
             else None
         )
         self.leaf_f = (
-            process_param(
+            process_param_inplace(
                 kwargs=kwargs,
                 name="leaf_f",
                 n_source=3 if "leaf_f2" in kwargs else 1,
@@ -254,10 +272,10 @@ class BAModel:
         dtype_params = np.float64
         dummy_params = np.zeros(n_params, dtype=dtype_params)
 
-        processed_kwargs = {}
+        processed_kwargs = dict(overall_scale=kwargs.pop("overall_scale", 1.0))
 
         def process_key_from_kwargs(key):
-            return process_param(
+            return process_param_inplace(
                 kwargs=kwargs,
                 name=key,
                 n_source=3 if f"{key}2" in kwargs else 1,
@@ -303,7 +321,6 @@ class BAModel:
         fuel_build_up_method,
         include_temperature,
         data_dict,
-        _func,
         **processed_kwargs,
     ):
         return run_model(
@@ -311,7 +328,6 @@ class BAModel:
             fuel_build_up_method=self.fuel_build_up_method,
             include_temperature=self.include_temperature,
             data_dict=self.data_dict,
-            _func=self._func,
             **processed_kwargs,
         )
 
@@ -328,7 +344,6 @@ class BAModel:
             fuel_build_up_method=self.fuel_build_up_method,
             include_temperature=self.include_temperature,
             data_dict=self.data_dict,
-            _func=self._func,
             **processed_kwargs,
         )
 
@@ -353,21 +368,17 @@ class BAModel:
             data_dict=self.data_dict,
         )
 
-    def calc_scores(self, *, model_ba):
-        scores, status, avg_ba, calc_factors = calculate_scores(
+    def calc_scores(self, *, model_ba, requested):
+        scores, avg_ba = calculate_scores(
             model_ba=model_ba,
             jules_time_coord=self.jules_time_coord,
             mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
+            requested=requested,
         )
-        if status is Status.FAIL:
-            raise BAModelException()
-
-        assert status is Status.SUCCESS
 
         return dict(
             avg_ba=avg_ba,
             scores=scores,
-            calc_factors=calc_factors,
         )
 
 
@@ -412,6 +423,7 @@ class GPUBAModel(BAModel):
     def get_model_ba(
         self,
         *,
+        overall_scale,
         fapar_factor,
         fapar_centre,
         fapar_shape,
@@ -434,6 +446,7 @@ class GPUBAModel(BAModel):
     ):
         # TODO Eliminate need for dtype transform.
         out = transform_dtype(self._gpu_inferno.run)(
+            overall_scale=overall_scale,
             fapar_factor=fapar_factor,
             fapar_centre=fapar_centre,
             fapar_shape=fapar_shape,
@@ -478,7 +491,9 @@ def gen_to_optimise(
         # `run_kwargs` will be silently ignored!
         try:
             model_ba = ba_model.run(**run_kwargs)["model_ba"]
-            scores = ba_model.calc_scores(model_ba=model_ba)["scores"]
+            scores = ba_model.calc_scores(
+                model_ba=model_ba, requested=(Metrics.MPD, Metrics.ARCSINH_NME)
+            )["scores"]
         except BAModelException:
             return fail_func()
 

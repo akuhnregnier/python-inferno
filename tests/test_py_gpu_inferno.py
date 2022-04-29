@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import pickle
 
 import numpy as np
 import pytest
@@ -14,25 +13,12 @@ from python_inferno.configuration import (
 )
 from python_inferno.py_gpu_inferno import _GPUCompute
 
-from . import TEST_DATA_DIR
-
 
 @pytest.fixture
 def compute():
     compute = _GPUCompute()
     yield compute
     compute.release()
-
-
-@pytest.fixture
-def params_model_ba():
-    with (TEST_DATA_DIR / "best_params.pkl").open("rb") as f:
-        params_dict = pickle.load(f)
-
-    with (TEST_DATA_DIR / "model_ba.pkl").open("rb") as f:
-        model_ba_dict = pickle.load(f)
-
-    return [[params_dict[key], model_ba_dict[key]] for key in params_dict]
 
 
 @pytest.mark.parametrize("includeTemperature", [0, 1])
