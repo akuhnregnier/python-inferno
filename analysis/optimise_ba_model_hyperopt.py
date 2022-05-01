@@ -146,6 +146,7 @@ if __name__ == "__main__":
         dryness_methods, fuel_build_up_methods, include_temperatures
     ):
         space_template = dict(
+            overall_scale=(1, [(1e-3, 1e3)], hp.uniform),
             fapar_factor=(3, [(-50, -1)], hp.uniform),
             fapar_centre=(3, [(-0.1, 1.1)], hp.uniform),
             fapar_shape=(3, [(0.1, 20.0)], hp.uniform),
