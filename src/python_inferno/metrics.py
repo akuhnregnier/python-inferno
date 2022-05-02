@@ -112,8 +112,8 @@ def mpd(*, obs, pred, return_ignored=False, return_std=False):
     def add_mask(arr):
         return np.ma.MaskedArray(np.ma.getdata(arr), mask=combined_mask)
 
-    vals = (1 / np.pi) * add_mask(np.arccos(np.cos(phase_func(pred) - phase_func(obs))))
-    mpd_val = np.ma.mean(vals)
+    vals = add_mask(np.arccos(np.cos(phase_func(pred) - phase_func(obs))))
+    mpd_val = (1 / np.pi) * np.ma.mean(vals)
 
     to_return = [mpd_val]
     if return_ignored:

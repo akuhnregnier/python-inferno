@@ -41,15 +41,15 @@ def test_nmse():
     assert_allclose(nmse(obs=obs, pred=np.zeros_like(obs) + np.mean(obs)), 1)
 
 
-def test_mpd():
-    obs = np.random.default_rng(0).random((12, 1000))
+def test_mpd(benchmark):
+    obs = np.random.default_rng(0).random((12, 7771))
     assert_allclose(mpd(obs=obs, pred=obs), 0)
 
     pred = np.random.default_rng(1).random(obs.shape)
     mpd1 = mpd(obs=obs, pred=pred)
     assert mpd1 > 0
 
-    mpd2 = mpd(obs=obs, pred=(pred + obs) / 2.0)
+    mpd2 = benchmark(mpd, obs=obs, pred=(pred + obs) / 2.0)
     assert mpd2 < mpd1
 
 
