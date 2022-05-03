@@ -63,6 +63,7 @@ def run_model(
     include_temperature,
     overall_scale,
     data_dict,
+    land_point=-1,
     **kwargs,
 ):
     model_ba = unpack_wrapped(multi_timestep_inferno)(
@@ -73,6 +74,7 @@ def run_model(
         fuel_build_up_method=fuel_build_up_method,
         include_temperature=include_temperature,
         overall_scale=overall_scale,
+        land_point=land_point,
         # These are not used for ignition mode 1, nor do they contain a temporal
         # coordinate.
         pop_den=dummy_pop_den,
@@ -279,7 +281,7 @@ class BAModel:
         self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
 
         # Set up conservative averaging.
-        self.cons_monthly_avg = ConsMonthlyAvgNoMask(self.jules_time_coord, L=land_pts)
+        self._cons_monthly_avg = ConsMonthlyAvgNoMask(self.jules_time_coord, L=land_pts)
 
     def process_kwargs(self, **kwargs):
         n_params = N_pft_groups
@@ -287,6 +289,9 @@ class BAModel:
         dummy_params = np.ones(n_params, dtype=dtype_params)
 
         processed_kwargs = dict(overall_scale=kwargs.pop("overall_scale", 1.0))
+
+        if "land_point" in kwargs:
+            processed_kwargs["land_point"] = int(kwargs["land_point"])
 
         def process_key_from_kwargs(key):
             return process_param_inplace(
@@ -401,7 +406,7 @@ class BAModel:
     def calc_scores(self, *, model_ba, requested):
         scores, avg_ba = calculate_scores(
             model_ba=model_ba,
-            cons_monthly_avg=self.cons_monthly_avg,
+            cons_monthly_avg=self._cons_monthly_avg,
             mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
             requested=requested,
         )
