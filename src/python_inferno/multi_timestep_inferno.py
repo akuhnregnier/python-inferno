@@ -63,6 +63,7 @@ def _multi_timestep_inferno(
     dryness_weight,
     temperature_weight,
     fuel_weight,
+    land_point,
 ):
     # Ensure consistency of the time dimension.
     if not (
@@ -85,7 +86,6 @@ def _multi_timestep_inferno(
 
     # Store the output BA (averaged over PFTs).
     burnt_area = np.zeros((Nt, land_pts))
-    burnt_area_ft = np.zeros((Nt, npft, land_pts))
 
     # Plant Material that is available as fuel (on the surface)
     pmtofuel = 0.7
@@ -105,7 +105,13 @@ def _multi_timestep_inferno(
     # XXX What does selecting one of the 4 layers change here?
     inferno_sm = sthu_soilt[:, 0, 0]
 
-    for l in prange(land_pts):
+    if land_point == -1:
+        loop_start = 0
+        loop_end = land_pts
+    else:
+        loop_start = land_point
+        loop_end = land_point + 1
+    for l in prange(loop_start, loop_end):
         for ti in range(Nt):
             # Rainfall (inferno_rain)
 
@@ -213,12 +219,10 @@ def _multi_timestep_inferno(
                     dryness_weight[pft_group_i],
                 )
 
-                burnt_area_ft[ti, i, l] = calc_burnt_area(
-                    flammability_ft, ignitions, avg_ba[i]
-                )
+                burnt_area_ft = calc_burnt_area(flammability_ft, ignitions, avg_ba[i])
 
                 # We add pft-specific variables to the gridbox totals
-                burnt_area[ti, l] += frac[ti, i, l] * burnt_area_ft[ti, i, l]
+                burnt_area[ti, l] += frac[ti, i, l] * burnt_area_ft
 
     return burnt_area
 
@@ -271,6 +275,7 @@ def multi_timestep_inferno(
     dryness_weight,
     temperature_weight,
     fuel_weight,
+    land_point=-1,
 ):
     param_vars = dict(
         fapar_factor=fapar_factor,
@@ -329,6 +334,7 @@ def multi_timestep_inferno(
         litter_pool=litter_pool,
         fuel_build_up_method=int(fuel_build_up_method),
         include_temperature=int(include_temperature),
+        land_point=land_point,
         **transformed_param_vars,
     )
     return ba
