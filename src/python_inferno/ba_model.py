@@ -489,6 +489,9 @@ class GPUBAModel(BAModel):
             fuel_weight=fuel_weight,
         )
 
+    def release(self):
+        self._gpu_inferno.release()
+
 
 def gen_to_optimise(
     *,

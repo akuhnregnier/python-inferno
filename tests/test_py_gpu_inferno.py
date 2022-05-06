@@ -127,7 +127,28 @@ def test_many_run(compute, get_compute_data, compute_params):
 
 def test_GPUBAModel(params_model_ba):
     for params, expected_model_ba in params_model_ba:
-        model_ba = GPUBAModel(**params).run(
+        # Set up the model.
+        model = GPUBAModel(**params)
+        # Initialise the parameters using random values to ensure that modifying the
+        # parameters later on works as expected.
+        rng = np.random.default_rng(0)
+        random_model_ba = model.run(
+            **{
+                key: rng.random(1)
+                for key in (
+                    *params.keys(),
+                    "fapar_weight",
+                    "dryness_weight",
+                    "temperature_weight",
+                    "fuel_weight",
+                )
+            }
+        )["model_ba"]
+        assert not np.allclose(
+            random_model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7
+        )
+        # Set the proper parameters and run.
+        model_ba = model.run(
             **{
                 **dict(
                     fapar_weight=1,
@@ -139,3 +160,5 @@ def test_GPUBAModel(params_model_ba):
             }
         )["model_ba"]
         assert np.allclose(model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7)
+
+        model.release()
