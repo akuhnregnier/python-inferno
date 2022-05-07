@@ -2,9 +2,24 @@
 from functools import partial
 
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
-from python_inferno.metrics import calculate_factor, loghist, mpd, nme, nmse
+from python_inferno.metrics import (
+    calculate_factor,
+    calculate_phase,
+    loghist,
+    mpd,
+    nme,
+    nmse,
+)
+from python_inferno.py_gpu_inferno import GPUCalculateMPD, GPUCalculatePhase
+
+
+def test_phase_calculation():
+    x = np.random.default_rng(0).random((12, 300), dtype=np.float32)
+    gpu_phase = GPUCalculatePhase(x.shape[1])
+    assert_allclose(gpu_phase.run(x), calculate_phase(x), rtol=1e-7, atol=1e-7)
 
 
 def test_mse():
@@ -42,46 +57,56 @@ def test_nmse():
 
 
 def test_mpd(benchmark):
+    test_mpd = GPUCalculateMPD(7771).run
+
     obs = np.random.default_rng(0).random((12, 7771))
-    assert_allclose(mpd(obs=obs, pred=obs), 0)
+    assert_allclose(test_mpd(obs=obs, pred=obs), 0)
 
     pred = np.random.default_rng(1).random(obs.shape)
-    mpd1 = mpd(obs=obs, pred=pred)
+    mpd1 = test_mpd(obs=obs, pred=pred)
     assert mpd1 > 0
 
-    mpd2 = benchmark(mpd, obs=obs, pred=(pred + obs) / 2.0)
+    GPUCalculatePhase(obs.shape[1])
+
+    mpd2 = benchmark(
+        test_mpd,
+        obs=obs,
+        pred=(pred + obs) / 2.0,
+    )
     assert mpd2 < mpd1
 
 
-def test_mpd_sin():
+@pytest.mark.parametrize("test_mpd", [mpd, GPUCalculateMPD(1).run])
+def test_mpd_sin(test_mpd):
     obs = np.sin(np.linspace(0, 1, 12) * np.pi)
     mpd_vals = np.array(
         [
-            mpd(obs=obs.reshape(12, 1), pred=np.roll(obs, i).reshape(12, 1))
+            test_mpd(obs=obs.reshape(12, 1), pred=np.roll(obs, i).reshape(12, 1))
             for i in range(13)
         ]
     )
     comp = np.linspace(0, 1, 7)
-    assert_allclose(mpd_vals, np.append(comp, comp[:6][::-1]))
+    assert_allclose(mpd_vals, np.append(comp, comp[:6][::-1]), atol=1e-7)
 
 
-def test_mpd_zeros():
+@pytest.mark.parametrize("test_mpd", [mpd, GPUCalculateMPD(1000).run])
+def test_mpd_zeros(test_mpd):
     obs = np.random.default_rng(0).random((12, 1000))
 
     # Set all values at a certain location to 0.
     obs[:, 0] = 0.0
-    assert_allclose(mpd(obs=obs, pred=obs), 0)
+    assert_allclose(test_mpd(obs=obs, pred=obs), 0)
 
     pred = np.random.default_rng(1).random(obs.shape)
-    assert mpd(obs=obs, pred=pred) < 1
+    assert test_mpd(obs=obs, pred=pred) < 1
 
-    assert mpd(obs=obs, pred=pred, return_ignored=True)[1] == 1
+    assert test_mpd(obs=obs, pred=pred, return_ignored=True)[1] == 1
 
     pred[:, 0] = 0.0
-    assert mpd(obs=obs, pred=pred, return_ignored=True)[1] == 1
+    assert test_mpd(obs=obs, pred=pred, return_ignored=True)[1] == 1
 
     pred[:, 2] = 0.0
-    assert mpd(obs=obs, pred=pred, return_ignored=True)[1] == 2
+    assert test_mpd(obs=obs, pred=pred, return_ignored=True)[1] == 2
 
 
 def test_loghist():

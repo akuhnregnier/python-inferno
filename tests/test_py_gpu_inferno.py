@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from numpy.testing import assert_allclose
 
 from python_inferno.ba_model import GPUBAModel
 from python_inferno.configuration import (
@@ -11,7 +12,11 @@ from python_inferno.configuration import (
     n_cell_no_pft,
     n_cell_tot_pft,
 )
-from python_inferno.py_gpu_inferno import _GPUCompute
+from python_inferno.py_gpu_inferno import (
+    GPUCalculateMPD,
+    GPUCalculatePhase,
+    _GPUCompute,
+)
 
 
 @pytest.fixture
@@ -162,3 +167,62 @@ def test_GPUBAModel(params_model_ba):
         assert np.allclose(model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7)
 
         model.release()
+
+
+def test_multiple_phase_instances():
+    phases = []
+    for i in range(10):
+        phases.append(GPUCalculatePhase(i + 10))
+        assert phases[-1].run(
+            np.random.default_rng(0).random((12, i + 10), dtype=np.float32)
+        ).shape == (i + 10,)
+
+
+def test_gpu_phase(benchmark):
+    gpu_calc = GPUCalculatePhase(7771)
+    benchmark(
+        gpu_calc.run, x=np.random.default_rng(0).random((12, 7771), dtype=np.float32)
+    )
+
+
+def test_gpu_mpd():
+    gpu_mpd = GPUCalculateMPD(7771)
+    mpd, ignored = gpu_mpd.run(
+        obs=np.random.default_rng(0).random((12, 7771), dtype=np.float32),
+        pred=np.random.default_rng(1).random((12, 7771), dtype=np.float32),
+        return_ignored=True,
+    )
+    assert mpd > 0
+    assert ignored >= 0
+
+
+def test_multiple_mpd_instances():
+    gpu_mpds = []
+    for i in range(100):
+        gpu_mpds.append(GPUCalculateMPD(i + 10))
+        assert (
+            len(
+                gpu_mpds[-1].run(
+                    obs=np.random.default_rng(0).random((12, i + 10), dtype=np.float32),
+                    pred=np.random.default_rng(1).random(
+                        (12, i + 10), dtype=np.float32
+                    ),
+                    return_ignored=True,
+                )
+            )
+            == 2
+        )
+
+
+def test_multiple_mpd_instances2():
+    gpu = GPUCalculateMPD(7771)
+    mpd = gpu.run
+
+    obs = np.random.default_rng(0).random((12, 7771))
+    assert_allclose(mpd(obs=obs, pred=obs), 0)
+
+    gpu2 = GPUCalculateMPD(100)
+    mpd2 = gpu2.run
+
+    obs = np.random.default_rng(0).random((12, 100))
+    assert_allclose(mpd2(obs=obs, pred=obs), 0)

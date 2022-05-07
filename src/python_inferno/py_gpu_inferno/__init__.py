@@ -4,7 +4,10 @@ from time import time
 import numpy as np
 
 from ..configuration import land_pts, n_total_pft, npft
+from .py_gpu_inferno import GPUCalculateMPD as _GPUCalculateMPD
+from .py_gpu_inferno import GPUCalculatePhase
 from .py_gpu_inferno import GPUCompute as _GPUCompute
+from .py_gpu_inferno import calculate_phase
 
 
 class GPUInferno:
@@ -137,3 +140,18 @@ def frac_weighted_mean(*, data, frac):
     #     frac[:, : data.shape[1]], axis=1
     # )
     return np.sum(data * frac[:, : data.shape[1]], axis=1)
+
+
+class GPUCalculateMPD:
+    def __init__(self, N):
+        self.N = N
+        self._GPUCalculateMPD = _GPUCalculateMPD(N)
+
+    def run(self, *, obs, pred, return_ignored=False):
+        out = self._GPUCalculateMPD.run(
+            obs=np.asarray(obs, dtype=np.float32),
+            pred=np.asarray(pred, dtype=np.float32),
+        )
+        if return_ignored:
+            return out
+        return out[0]

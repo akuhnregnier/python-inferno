@@ -65,19 +65,21 @@ def calculate_phase(x):
 
 
 @njit(nogil=True, cache=True)
-def calculate_phase_2d(data):
+def calculate_phase_2d(x):
     """Calculate phase of data with shape (12, M, N)."""
-    if len(data.shape) != 3 or data.shape[0] != 12:
+    if len(x.shape) != 3 or x.shape[0] != 12:
         raise ValueError("Unexpected shape encountered (should be (12, M, N)).")
 
-    phase = np.zeros(data.shape[1:])
-    for i in range(data.shape[1]):
-        phase[i] = calculate_phase(data[:, i])
+    phase = np.zeros(x.shape[1:])
+    for i in range(x.shape[1]):
+        phase[i] = calculate_phase(x[:, i])
     return phase
 
 
 @mark_dependency
-def mpd(*, obs, pred, return_ignored=False, return_std=False):
+def mpd(
+    *, obs, pred, return_ignored=False, return_std=False, phase_func_1d=calculate_phase
+):
     """Mean phase difference.
 
     Args:
@@ -87,7 +89,7 @@ def mpd(*, obs, pred, return_ignored=False, return_std=False):
 
     """
     if len(obs.shape) == 2 and len(pred.shape) == 2:
-        phase_func = calculate_phase
+        phase_func = phase_func_1d
     elif len(obs.shape) == 3 and len(pred.shape) == 3:
         phase_func = calculate_phase_2d
     else:
@@ -112,7 +114,12 @@ def mpd(*, obs, pred, return_ignored=False, return_std=False):
     def add_mask(arr):
         return np.ma.MaskedArray(np.ma.getdata(arr), mask=combined_mask)
 
-    vals = add_mask(np.arccos(np.cos(phase_func(pred) - phase_func(obs))))
+    phase_diff = phase_func(x=pred) - phase_func(x=obs)
+    # assert obs.shape == pred.shape
+    # all_phases = phase_func(x=np.concatenate((pred, obs), axis=1))
+    # phase_diff = all_phases[: obs.shape[1]] - all_phases[obs.shape[1] :]
+
+    vals = add_mask(np.arccos(np.cos(phase_diff)))
     mpd_val = (1 / np.pi) * np.ma.mean(vals)
 
     to_return = [mpd_val]
