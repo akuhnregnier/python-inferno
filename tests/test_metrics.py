@@ -22,7 +22,7 @@ def test_phase_calculation():
     assert_allclose(gpu_phase.run(x), calculate_phase(x), rtol=1e-7, atol=1e-7)
 
 
-def test_mse():
+def test_nme():
     obs = np.random.default_rng(0).random((1000,))
     assert_allclose(nme(obs=obs, pred=obs), 0)
 
@@ -37,6 +37,13 @@ def test_mse():
 
     # The shape should not matter.
     assert_allclose(nme(obs=obs, pred=np.zeros_like(obs) + np.mean(obs)), 1)
+
+
+def test_nme_benchmark(benchmark):
+    obs = np.random.default_rng(0).random((12, 7771))
+    pred = np.random.default_rng(1).random(obs.shape)
+    nme1 = benchmark(nme, obs=obs, pred=pred)
+    assert nme1 > 0
 
 
 def test_nmse():
