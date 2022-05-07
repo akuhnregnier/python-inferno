@@ -7,8 +7,9 @@ from sklearn.metrics import r2_score
 
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
-from .metrics import Metrics, loghist, mpd, nme, nmse
+from .metrics import Metrics, loghist, nme, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
+from .py_gpu_inferno import GPUCalculateMPD
 from .utils import (
     expand_pft_params,
     monthly_average_data,
@@ -81,7 +82,7 @@ def run_model(
     return model_ba
 
 
-def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d):
+def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run):
     pad_func = partial(
         np.pad,
         pad_width=((0, 12 - mon_avg_gfed_ba_1d.shape[0]), (0, 0)),

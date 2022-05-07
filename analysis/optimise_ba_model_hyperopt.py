@@ -116,7 +116,7 @@ def main(
             ),
             seed=0,
             # XXX
-            niter_success=2,
+            niter_success=1,
             callback=basinhopping_callback,
             take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
         )
