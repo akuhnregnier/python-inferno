@@ -18,6 +18,25 @@ from .utils import linspace_no_endpoint
 Metrics = Enum("Metrics", ["NME", "NMSE", "MPD", "R2", "LOGHIST", "ARCSINH_NME"])
 
 
+@njit(nogil=True, cache=True, fastmath=True)
+def nme_simple(*, obs, pred):
+    """Normalised mean error.
+
+    Args:
+        obs (array-like): Observations.
+        pred (array-like): Predictions.
+
+    """
+    obs = np.asarray(obs)
+    pred = np.asarray(pred)
+    denom = np.mean(np.abs(obs - np.mean(obs)))
+
+    abs_diff = np.abs(pred - obs)
+    err = np.mean(abs_diff) / denom
+
+    return err
+
+
 @mark_dependency
 def nme(*, obs, pred, return_std=False):
     """Normalised mean error.

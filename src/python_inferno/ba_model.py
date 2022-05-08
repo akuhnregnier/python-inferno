@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 import numpy as np
@@ -7,7 +8,7 @@ from sklearn.metrics import r2_score
 
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
-from .metrics import Metrics, loghist, nme, nmse
+from .metrics import Metrics, loghist, nme_simple, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
 from .py_gpu_inferno import GPUCalculateMPD
 from .utils import (
@@ -130,30 +131,39 @@ def calculate_scores(
 
     scores = {}
 
-    if Metrics.MPD in requested:
-        mpd_val, ignored = calculate_mpd(avg_ba, mon_avg_gfed_ba_1d)
-        scores["mpd"] = mpd_val
-        scores["mpd_ignored"] = ignored
-
-    if Metrics.R2 in requested:
-        scores["r2"] = r2_score(y_true=y_true, y_pred=y_pred)
-
-    if Metrics.NME in requested:
-        scores["nme"] = nme(obs=y_true, pred=y_pred)
-
-    if Metrics.ARCSINH_NME in requested:
-        scores["arcsinh_nme"] = nme(
-            obs=np.arcsinh(ARCSINH_FACTOR * y_true),
-            pred=np.arcsinh(ARCSINH_FACTOR * y_pred),
+    with ThreadPoolExecutor(
+        max_workers=max(
+            1, int(Metrics.MPD in requested) + int(Metrics.NME in requested)
         )
+    ) as executor:
+        if Metrics.MPD in requested:
+            mpd_future = executor.submit(calculate_mpd, avg_ba, mon_avg_gfed_ba_1d)
 
-    if Metrics.NMSE in requested:
-        scores["nmse"] = nmse(obs=y_true, pred=y_pred)
+        if Metrics.NME in requested:
+            nme_future = executor.submit(nme_simple, obs=y_true, pred=y_pred)
 
-    if Metrics.LOGHIST in requested:
-        scores["loghist"] = loghist(
-            obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)
-        )
+        if Metrics.R2 in requested:
+            scores["r2"] = r2_score(y_true=y_true, y_pred=y_pred)
+
+        if Metrics.ARCSINH_NME in requested:
+            scores["arcsinh_nme"] = nme_simple(
+                obs=np.arcsinh(ARCSINH_FACTOR * y_true),
+                pred=np.arcsinh(ARCSINH_FACTOR * y_pred),
+            )
+
+        if Metrics.NMSE in requested:
+            scores["nmse"] = nmse(obs=y_true, pred=y_pred)
+
+        if Metrics.LOGHIST in requested:
+            scores["loghist"] = loghist(
+                obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)
+            )
+
+        if Metrics.MPD in requested:
+            scores["mpd"], scores["mpd_ignored"] = mpd_future.result()
+
+        if Metrics.NME in requested:
+            scores["nme"] = nme_future.result()
 
     if any(np.ma.is_masked(val) for val in scores.values()):
         raise BAModelException()
