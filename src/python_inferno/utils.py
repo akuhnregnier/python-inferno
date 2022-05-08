@@ -27,6 +27,7 @@ from .configuration import (
     pft_groups_array,
     pft_groups_lengths,
 )
+from .py_gpu_inferno import GPUConsAvg
 
 if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
@@ -241,7 +242,7 @@ class ConsMonthlyAvg:
 
     """
 
-    def __init__(self, time_coord):
+    def __init__(self, time_coord, L):
         last_datetimes = time_coord.units.num2date(time_coord.points[-2:])
 
         if (
@@ -308,18 +309,16 @@ class ConsMonthlyAvg:
                         - max((upper_bin - upper_bound).total_seconds(), 0)
                     )
 
+        self.gpu_cons_avg = GPUConsAvg(L=L, weights=self.weights)
+
     def cons_monthly_average_data(self, data):
         if self.trimmed:
             data = data[:-1]
 
         assert data.shape[0] == self.Nt
 
-        out_data, out_mask = _cons_avg2(
-            Nt=self.Nt,
-            Nout=self.Nout,
-            weights=self.weights,
-            in_data=np.ma.getdata(data),
-            in_mask=np.ma.getmaskarray(data),
+        out_data, out_mask = self.gpu_cons_avg.run(
+            np.ma.getdata(data), np.ma.getmaskarray(data)
         )
 
         if np.all(out_mask[-1]):

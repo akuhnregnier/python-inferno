@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from python_inferno.ba_model import BAModel, Status, calculate_scores
 from python_inferno.cache import cache
-from python_inferno.configuration import n_total_pft, npft
+from python_inferno.configuration import land_pts, n_total_pft, npft
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.metrics import null_model_analysis
 from python_inferno.model_params import get_model_params
@@ -245,7 +245,7 @@ if __name__ == "__main__":
     jules_ba_gb = data_dict.pop("jules_ba_gb")
     scores, status, avg_jules_ba, calc_factors = calculate_scores(
         model_ba=jules_ba_gb,
-        cons_monthly_avg=ConsMonthlyAvg(jules_time_coord),
+        cons_monthly_avg=ConsMonthlyAvg(jules_time_coord, L=land_pts),
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
     )
     assert status is Status.SUCCESS, "Score calculation failed!"

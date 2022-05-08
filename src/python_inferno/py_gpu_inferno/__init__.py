@@ -7,6 +7,7 @@ from ..configuration import land_pts, n_total_pft, npft
 from .py_gpu_inferno import GPUCalculateMPD as _GPUCalculateMPD
 from .py_gpu_inferno import GPUCalculatePhase
 from .py_gpu_inferno import GPUCompute as _GPUCompute
+from .py_gpu_inferno import GPUConsAvg as _GPUConsAvg
 from .py_gpu_inferno import calculate_phase
 
 
@@ -155,3 +156,17 @@ class GPUCalculateMPD:
         if return_ignored:
             return out
         return out[0]
+
+
+class GPUConsAvg:
+    def __init__(self, L, weights):
+        self.L = L
+        self.M = weights.shape[0]
+        self.N = weights.shape[1]
+        self._GPUConsAvg = _GPUConsAvg(L, np.asarray(weights, dtype=np.float32))
+
+    def run(self, data, mask):
+        out_data, out_mask = self._GPUConsAvg.run(
+            np.asarray(data, dtype=np.float32), mask
+        )
+        return out_data.reshape((self.N, self.L)), out_mask.reshape((self.N, self.L))

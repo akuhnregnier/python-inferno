@@ -38,7 +38,13 @@ from tqdm import tqdm
 
 from python_inferno.ba_model import Status, calculate_scores, process_params
 from python_inferno.cache import cache, mark_dependency
-from python_inferno.configuration import N_pft_groups, npft, pft_group_names, pft_groups
+from python_inferno.configuration import (
+    N_pft_groups,
+    land_pts,
+    npft,
+    pft_group_names,
+    pft_groups,
+)
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics import null_model_analysis
@@ -688,7 +694,7 @@ if __name__ == "__main__":
 
         scores, status, avg_ba, calc_factors = calculate_scores(
             model_ba=pred_y_1d,
-            cons_monthly_avg=ConsMonthlyAvg(jules_time_coord),
+            cons_monthly_avg=ConsMonthlyAvg(jules_time_coord, L=land_pts),
             mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
         )
         assert status is Status.SUCCESS

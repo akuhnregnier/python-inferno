@@ -11,6 +11,7 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from numpy.testing import assert_allclose, assert_array_equal
 
+from python_inferno.py_gpu_inferno import GPUConsAvg
 from python_inferno.utils import (
     ConsMonthlyAvg,
     _cons_avg,
@@ -267,7 +268,9 @@ def test_monthly_average_data():
     )
 
     mon_avg = monthly_average_data(data, time_coord=time_coord)
-    mon_avg_con = ConsMonthlyAvg(time_coord).cons_monthly_average_data(data)
+    mon_avg_con = ConsMonthlyAvg(time_coord, L=data.shape[1]).cons_monthly_average_data(
+        data
+    )
 
     assert np.allclose(mon_avg, mon_avg_con)
 
@@ -290,7 +293,9 @@ def test_monthly_average_data_days():
     )
 
     mon_avg = monthly_average_data(data, time_coord=time_coord)
-    mon_avg_con = ConsMonthlyAvg(time_coord).cons_monthly_average_data(data)
+    mon_avg_con = ConsMonthlyAvg(time_coord, L=data.shape[1]).cons_monthly_average_data(
+        data
+    )
 
     assert np.allclose(mon_avg, np.vstack((data[1][np.newaxis], data[-1][np.newaxis])))
 
@@ -351,7 +356,9 @@ def test_monthly_average_data_rand():
         units=units,
     )
 
-    mon_avg_con = ConsMonthlyAvg(time_coord).cons_monthly_average_data(data)
+    mon_avg_con = ConsMonthlyAvg(time_coord, L=data.shape[1]).cons_monthly_average_data(
+        data
+    )
 
     assert np.all(mon_avg_con <= np.max(data))
     assert np.all(mon_avg_con >= np.min(data))
@@ -445,13 +452,44 @@ def test_cons_avg_benchmark(benchmark, get_cons_avg_data):
 
 
 @pytest.mark.parametrize("seed", list(range(100)))
-def test_cons_avg2(get_cons_avg_data, seed):
-    cons_avg_data = get_cons_avg_data(seed=seed)
-    data1, mask1 = _cons_avg(*cons_avg_data)
-    data2, mask2 = _cons_avg2(*cons_avg_data[:-3])
+def test_cons_avg_implementations(get_cons_avg_data, seed):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data(seed=seed)
+    data1, mask1 = _cons_avg(
+        Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weights
+    )
+    data2, mask2 = _cons_avg2(Nt, Nout, weights, in_data, in_mask)
+    data3, mask3 = GPUConsAvg(L=7771, weights=weights).run(in_data, in_mask)
+
     assert_array_equal(mask1, mask2)
+    assert_array_equal(mask1, mask3)
+
     assert_allclose(data1[~mask1], data2[~mask1], rtol=5e-7, atol=1e-7)
+    assert_allclose(data1[~mask1], data3[~mask1], rtol=5e-7, atol=1e-7)
 
 
 def test_cons_avg2_benchmark(benchmark, get_cons_avg_data):
     benchmark(_cons_avg2, *get_cons_avg_data()[:-3])
+
+
+def test_gpu_cons_avg_benchmark(benchmark, get_cons_avg_data):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data()
+    gpu_cons_avg = GPUConsAvg(L=7771, weights=weights)
+    benchmark(gpu_cons_avg.run, in_data, in_mask)

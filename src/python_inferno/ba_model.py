@@ -99,7 +99,7 @@ def calculate_scores(
 ):
     assert requested
 
-    if np.all(np.isclose(model_ba, 0, rtol=0, atol=1e-15)):
+    if np.all(np.abs(model_ba) < 1e-15):
         raise BAModelException()
 
     # Calculate monthly averages.
@@ -116,10 +116,9 @@ def calculate_scores(
             Metrics.LOGHIST,
         )
     ):
-        y_pred = np.ma.getdata(avg_ba)[~np.ma.getmaskarray(mon_avg_gfed_ba_1d)]
-        y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[
-            ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
-        ]
+        sel = ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
+        y_pred = np.ma.getdata(avg_ba)[sel]
+        y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[sel]
         assert y_pred.shape == y_true.shape
 
     scores = {}
@@ -272,7 +271,7 @@ class BAModel:
         self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
 
         # Set up conservative averaging.
-        self.cons_monthly_avg = ConsMonthlyAvg(self.jules_time_coord)
+        self.cons_monthly_avg = ConsMonthlyAvg(self.jules_time_coord, L=land_pts)
 
     def process_kwargs(self, **kwargs):
         n_params = N_pft_groups

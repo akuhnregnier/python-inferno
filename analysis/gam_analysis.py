@@ -38,6 +38,7 @@ from python_inferno.ba_model import Status, calculate_scores, process_params
 from python_inferno.cache import cache
 from python_inferno.configuration import (
     N_pft_groups,
+    land_pts,
     n_total_pft,
     npft,
     pft_group_names,
@@ -510,7 +511,7 @@ if __name__ == "__main__":
 
         scores, status, avg_ba, calc_factors = calculate_scores(
             model_ba=pred_y_1d,
-            cons_monthly_avg=ConsMonthlyAvg(jules_time_coord),
+            cons_monthly_avg=ConsMonthlyAvg(jules_time_coord, L=land_pts),
             mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
         )
         assert status is Status.SUCCESS
