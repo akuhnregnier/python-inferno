@@ -43,7 +43,13 @@ from python_inferno.data import get_processed_climatological_data, load_jules_la
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics import null_model_analysis
 from python_inferno.plotting import plotting
-from python_inferno.utils import get_distinct_params, get_exp_key, get_exp_name, memoize
+from python_inferno.utils import (
+    ConsMonthlyAvg,
+    get_distinct_params,
+    get_exp_key,
+    get_exp_name,
+    memoize,
+)
 
 NoVal = Enum("NoVal", ["NoVal"])
 
@@ -385,7 +391,7 @@ def partial_dependence_plots(
                 # is better for plotting.
 
                 expon = math.floor(np.log10(se_factor))
-                significand = se_factor / 10 ** expon
+                significand = se_factor / 10**expon
                 with numpy2ri_context():
                     col_axes[i + 1].fill_between(
                         partial_plot_vals[comb_name],
@@ -395,7 +401,7 @@ def partial_dependence_plots(
                         fc=f"C{i}",
                         zorder=2,
                         label=(
-                            fr"$\pm{significand:0.1f} \times 10^{{{expon}}}\ \mathrm{{SE}}$"
+                            rf"$\pm{significand:0.1f} \times 10^{{{expon}}}\ \mathrm{{SE}}$"
                             if shift_i == 0
                             else None
                         ),
@@ -682,7 +688,7 @@ if __name__ == "__main__":
 
         scores, status, avg_ba, calc_factors = calculate_scores(
             model_ba=pred_y_1d,
-            jules_time_coord=jules_time_coord,
+            cons_monthly_avg=ConsMonthlyAvg(jules_time_coord),
             mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
         )
         assert status is Status.SUCCESS

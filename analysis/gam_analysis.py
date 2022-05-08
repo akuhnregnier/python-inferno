@@ -47,7 +47,7 @@ from python_inferno.data import get_processed_climatological_data, load_jules_la
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics import null_model_analysis
 from python_inferno.plotting import plotting
-from python_inferno.utils import get_exp_key, get_exp_name, memoize
+from python_inferno.utils import ConsMonthlyAvg, get_exp_key, get_exp_name, memoize
 
 NoVal = Enum("NoVal", ["NoVal"])
 
@@ -510,7 +510,7 @@ if __name__ == "__main__":
 
         scores, status, avg_ba, calc_factors = calculate_scores(
             model_ba=pred_y_1d,
-            jules_time_coord=jules_time_coord,
+            cons_monthly_avg=ConsMonthlyAvg(jules_time_coord),
             mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
         )
         assert status is Status.SUCCESS

@@ -5,12 +5,16 @@ from operator import mul
 
 import cf_units
 import iris
+import iris.cube  # noqa
 import numpy as np
 import pytest
 from dateutil.relativedelta import relativedelta
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 
 from python_inferno.utils import (
+    ConsMonthlyAvg,
+    _cons_avg,
+    _cons_avg2,
     dict_match,
     expand_pft_params,
     exponential_average,
@@ -262,8 +266,8 @@ def test_monthly_average_data():
         units=units,
     )
 
-    mon_avg = monthly_average_data(data, time_coord=time_coord, conservative=False)
-    mon_avg_con = monthly_average_data(data, time_coord=time_coord, conservative=True)
+    mon_avg = monthly_average_data(data, time_coord=time_coord)
+    mon_avg_con = ConsMonthlyAvg(time_coord).cons_monthly_average_data(data)
 
     assert np.allclose(mon_avg, mon_avg_con)
 
@@ -285,8 +289,8 @@ def test_monthly_average_data_days():
         units=units,
     )
 
-    mon_avg = monthly_average_data(data, time_coord=time_coord, conservative=False)
-    mon_avg_con = monthly_average_data(data, time_coord=time_coord, conservative=True)
+    mon_avg = monthly_average_data(data, time_coord=time_coord)
+    mon_avg_con = ConsMonthlyAvg(time_coord).cons_monthly_average_data(data)
 
     assert np.allclose(mon_avg, np.vstack((data[1][np.newaxis], data[-1][np.newaxis])))
 
@@ -347,7 +351,7 @@ def test_monthly_average_data_rand():
         units=units,
     )
 
-    mon_avg_con = monthly_average_data(data, time_coord=time_coord, conservative=True)
+    mon_avg_con = ConsMonthlyAvg(time_coord).cons_monthly_average_data(data)
 
     assert np.all(mon_avg_con <= np.max(data))
     assert np.all(mon_avg_con >= np.min(data))
@@ -412,3 +416,42 @@ def test_wrap_phase_diffs():
         wrap_phase_diffs([-12, 12, 0, -6, 6, -10, 10, 8, -8, -4, 4]),
         [0, 0, 0, -6, -6, 2, -2, -4, 4, -4, 4],
     )
+
+
+@pytest.fixture
+def get_cons_avg_data():
+    def get_data(seed=0):
+        rng = np.random.default_rng(seed)
+
+        Nt = 22
+        Nout = 12
+        L = 7771
+
+        weights = rng.random((Nt, Nout), dtype=np.float32)
+        weights[weights < 0.5] = 0
+        in_data = rng.random((Nt, L), dtype=np.float32)
+        in_mask = rng.random((Nt, L)) < 0.1
+        out_data = np.zeros((Nout, L), dtype=np.float32)
+        out_mask = np.ones((Nout, L), dtype=np.bool_)
+        cum_weights = np.zeros((Nout, L), dtype=np.float32)
+
+        return Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weights
+
+    return get_data
+
+
+def test_cons_avg_benchmark(benchmark, get_cons_avg_data):
+    benchmark(_cons_avg, *get_cons_avg_data())
+
+
+@pytest.mark.parametrize("seed", list(range(100)))
+def test_cons_avg2(get_cons_avg_data, seed):
+    cons_avg_data = get_cons_avg_data(seed=seed)
+    data1, mask1 = _cons_avg(*cons_avg_data)
+    data2, mask2 = _cons_avg2(*cons_avg_data[:-3])
+    assert_array_equal(mask1, mask2)
+    assert_allclose(data1[~mask1], data2[~mask1], rtol=5e-7, atol=1e-7)
+
+
+def test_cons_avg2_benchmark(benchmark, get_cons_avg_data):
+    benchmark(_cons_avg2, *get_cons_avg_data()[:-3])

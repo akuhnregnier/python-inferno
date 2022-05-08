@@ -11,12 +11,7 @@ from .data import get_processed_climatological_data, timestep
 from .metrics import Metrics, loghist, nme_simple, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
 from .py_gpu_inferno import GPUCalculateMPD
-from .utils import (
-    expand_pft_params,
-    monthly_average_data,
-    transform_dtype,
-    unpack_wrapped,
-)
+from .utils import ConsMonthlyAvg, expand_pft_params, transform_dtype, unpack_wrapped
 
 ARCSINH_FACTOR = 1e6
 MPD_IGNORE_THRES = 5600
@@ -100,7 +95,7 @@ def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run)
 
 
 def calculate_scores(
-    *, model_ba, jules_time_coord, mon_avg_gfed_ba_1d, requested=Metrics
+    *, model_ba, cons_monthly_avg, mon_avg_gfed_ba_1d, requested=Metrics
 ):
     assert requested
 
@@ -108,9 +103,7 @@ def calculate_scores(
         raise BAModelException()
 
     # Calculate monthly averages.
-    avg_ba = monthly_average_data(
-        model_ba, time_coord=jules_time_coord, conservative=True
-    )
+    avg_ba = cons_monthly_avg.cons_monthly_average_data(model_ba)
     assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
 
     if any(
@@ -278,6 +271,9 @@ class BAModel:
         # Extract variables not used further below.
         self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
 
+        # Set up conservative averaging.
+        self.cons_monthly_avg = ConsMonthlyAvg(self.jules_time_coord)
+
     def process_kwargs(self, **kwargs):
         n_params = N_pft_groups
         dtype_params = np.float64
@@ -398,7 +394,7 @@ class BAModel:
     def calc_scores(self, *, model_ba, requested):
         scores, avg_ba = calculate_scores(
             model_ba=model_ba,
-            jules_time_coord=self.jules_time_coord,
+            cons_monthly_avg=self.cons_monthly_avg,
             mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
             requested=requested,
         )

@@ -23,6 +23,7 @@ from python_inferno.metrics import null_model_analysis
 from python_inferno.model_params import get_model_params
 from python_inferno.plotting import plotting
 from python_inferno.utils import (
+    ConsMonthlyAvg,
     PartialDateTime,
     get_apply_mask,
     get_ba_mask,
@@ -244,7 +245,7 @@ if __name__ == "__main__":
     jules_ba_gb = data_dict.pop("jules_ba_gb")
     scores, status, avg_jules_ba, calc_factors = calculate_scores(
         model_ba=jules_ba_gb,
-        jules_time_coord=jules_time_coord,
+        cons_monthly_avg=ConsMonthlyAvg(jules_time_coord),
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
     )
     assert status is Status.SUCCESS, "Score calculation failed!"

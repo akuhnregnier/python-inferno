@@ -10,7 +10,6 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 from iris.coord_categorisation import add_month_number, add_year
 from iris.time import PartialDateTime as IrisPartialDateTime
-from loguru import logger
 from numba import njit, prange
 from tqdm import tqdm
 from wildfires.cache.hashing import PartialDateTimeHasher
@@ -185,6 +184,18 @@ def unpack_wrapped(func, ignore=None):
     return inner
 
 
+def _cons_avg2(Nt, Nout, weights, in_data, in_mask):
+    assert len(in_data.shape) == len(in_mask.shape) == 2
+    weights[weights < 1e-9] = 0
+    in_sel = ~in_mask
+    cum_weights = np.einsum("mn,ml->nl", weights, in_sel, optimize=True)
+    out_data = (
+        np.einsum("ml,mn,ml->nl", in_data, weights, in_sel, optimize=True) / cum_weights
+    )
+    out_mask = cum_weights < 1e-15
+    return out_data, out_mask
+
+
 @njit(parallel=True, nogil=True, cache=True, fastmath=True)
 def _cons_avg(Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weights):
     assert (
@@ -222,17 +233,111 @@ def _cons_avg(Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weigh
     return out_data, out_mask
 
 
+class ConsMonthlyAvg:
+    """Monthly data averaging while taking into account the bounds of `time_coord`.
+
+    A single day e.g. (01/01/2000) at the end of the input data will be discarded to
+    avoid generating an 'average' month from a single sample only.
+
+    """
+
+    def __init__(self, time_coord):
+        last_datetimes = time_coord.units.num2date(time_coord.points[-2:])
+
+        if (
+            last_datetimes[-1].month == 1
+            and last_datetimes[-1].day == 1
+            and last_datetimes[-2].month == 12
+        ):
+            # Trim the last point.
+            time_coord = time_coord[:-1]
+            self.trimmed = True
+        else:
+            self.trimmed = False
+
+        self.Nt = time_coord.shape[0]
+
+        # For conservative averaging, take into account the bounds on the temporal coord.
+        assert time_coord.bounds is not None, "bounds are required"
+        assert time_coord.bounds.shape == (self.Nt, 2)
+
+        # Pre-calculate bound datetimes to save time.
+        bound_dts = time_coord.units.num2date(time_coord.bounds)
+
+        first_date = bound_dts[0][0]
+        last_date = bound_dts[-1][1]
+
+        lower_dates = [datetime(first_date.year, first_date.month, 1)]
+        while not (
+            (lower_dates[-1].year == last_date.year)
+            and (lower_dates[-1].month == last_date.month)
+        ):
+            lower_dates.append(lower_dates[-1] + relativedelta(months=1))
+
+        upper_dates = lower_dates.copy()
+        upper_dates.append(upper_dates[-1] + relativedelta(months=1))
+        upper_dates.pop(0)
+        assert len(upper_dates) == len(lower_dates)
+        # NOTE: Temporal bins are contiguous, i.e. the end of one bin is the beginning of
+        # the next, at year, month, 1, 0, ...
+
+        self.Nout = len(lower_dates)
+
+        # Calculate overlaps between bounds and the bins given by
+        # lower_dates[i], upper_dates[i]
+        self.weights = np.zeros((self.Nt, self.Nout))
+
+        cell_bounds = []
+        for i in range(self.Nt):
+            bounds = bound_dts[i]
+            cell_bounds.append(
+                # NOTE: Will this ignore the specifics of different calendars?
+                # (comparing datetime with real_datetime, etc...).
+                tuple(map(ensure_datetime, bounds))
+            )
+        for i in range(self.Nt):
+            for (j, (lower_bin, upper_bin)) in enumerate(zip(lower_dates, upper_dates)):
+                lower_bound, upper_bound = cell_bounds[i]
+
+                if (lower_bin >= upper_bound) or (upper_bin <= lower_bound):
+                    self.weights[i, j] = 0.0
+                else:
+                    self.weights[i, j] = (
+                        (upper_bin - lower_bin).total_seconds()
+                        - max((lower_bound - lower_bin).total_seconds(), 0)
+                        - max((upper_bin - upper_bound).total_seconds(), 0)
+                    )
+
+    def cons_monthly_average_data(self, data):
+        if self.trimmed:
+            data = data[:-1]
+
+        assert data.shape[0] == self.Nt
+
+        out_data, out_mask = _cons_avg2(
+            Nt=self.Nt,
+            Nout=self.Nout,
+            weights=self.weights,
+            in_data=np.ma.getdata(data),
+            in_mask=np.ma.getmaskarray(data),
+        )
+
+        if np.all(out_mask[-1]):
+            # Ignore the last month, since this is likely an artefact of the final bound
+            # being the beginning of the next month (e.g. a bound of (2000, x, 1, 0, 0)
+            # for the month x - 1).
+            out_data = out_data[:-1]
+            out_mask = out_mask[:-1]
+
+        return np.ma.MaskedArray(out_data, mask=out_mask)
+
+
 @mark_dependency
-def monthly_average_data(
-    data, time_coord=None, trim_single=True, conservative=False, agg_name="MEAN"
-):
+def monthly_average_data(data, time_coord=None, agg_name="MEAN"):
     """Calculate monthly average of data.
 
-    If `trim_single` is True, a single day e.g. (01/01/2000) at the end of the input
-    data will be discarded to avoid generating an 'average' month from a single sample
-    only.
-
-    `conservative` averaging will take into account the bounds of `time_coord`.
+    A single day e.g. (01/01/2000) at the end of the input data will be discarded to
+    avoid generating an 'average' month from a single sample only.
 
     """
     if isinstance(data, iris.cube.Cube):
@@ -259,110 +364,22 @@ def monthly_average_data(
         # Need to consider this for conservative averaging.
         time_coord = time_coord[:-1]
 
-    if not conservative:
-        add_year(dummy_cube, "time")
-        add_month_number(dummy_cube, "time")
+    add_year(dummy_cube, "time")
+    add_month_number(dummy_cube, "time")
 
-        # Use strings as an intermediary here to enable caching of function input values
-        # (iris aggregators are not easily hashable).
-        aggregators_map = {
-            "MAX": iris.analysis.MAX,
-            "MEAN": iris.analysis.MEAN,
-            "MEDIAN": iris.analysis.MEDIAN,
-            "MIN": iris.analysis.MIN,
-        }
+    # Use strings as an intermediary here to enable caching of function input values
+    # (iris aggregators are not easily hashable).
+    aggregators_map = {
+        "MAX": iris.analysis.MAX,
+        "MEAN": iris.analysis.MEAN,
+        "MEDIAN": iris.analysis.MEDIAN,
+        "MIN": iris.analysis.MIN,
+    }
 
-        avg_cube = dummy_cube.aggregated_by(
-            ("year", "month_number"), aggregators_map[agg_name]
-        )
-        return avg_cube.data
-    elif agg_name != "MEAN":
-        raise ValueError("Conservative averaging is only supported for 'MEAN'.")
-
-    logger.debug("Starting conservative temporal averaging.")
-
-    data = dummy_cube.data
-    Nt = data.shape[0]
-
-    # For conservative averaging, take into account the bounds on the temporal coord.
-    assert time_coord.bounds is not None, "bounds are required"
-    assert time_coord.bounds.shape == (Nt, 2)
-
-    # Pre-calculate bound datetimes to save time.
-    bound_dts = time_coord.units.num2date(time_coord.bounds)
-
-    first_date = bound_dts[0][0]
-    last_date = bound_dts[-1][1]
-
-    lower_dates = [datetime(first_date.year, first_date.month, 1)]
-    while not (
-        (lower_dates[-1].year == last_date.year)
-        and (lower_dates[-1].month == last_date.month)
-    ):
-        lower_dates.append(lower_dates[-1] + relativedelta(months=1))
-
-    upper_dates = lower_dates.copy()
-    upper_dates.append(upper_dates[-1] + relativedelta(months=1))
-    upper_dates.pop(0)
-    assert len(upper_dates) == len(lower_dates)
-    # NOTE: Temporal bins are contiguous, i.e. the end of one bin is the beginning of
-    # the next, at year, month, 1, 0, ...
-
-    Nout = len(lower_dates)
-    logger.debug(f"Input shape: {dummy_cube.shape}, nr. of output months: {Nout}.")
-
-    # Calculate overlaps between bounds and the bins given by
-    # lower_dates[i], upper_dates[i]
-    weights = np.zeros((Nt, Nout))
-
-    cell_bounds = []
-    for i in range(Nt):
-        bounds = bound_dts[i]
-        cell_bounds.append(
-            # NOTE: Will this ignore the specifics of different calendars?
-            # (comparing datetime with real_datetime, etc...).
-            tuple(map(ensure_datetime, bounds))
-        )
-    for i in range(Nt):
-        for (j, (lower_bin, upper_bin)) in enumerate(zip(lower_dates, upper_dates)):
-            lower_bound, upper_bound = cell_bounds[i]
-
-            if (lower_bin >= upper_bound) or (upper_bin <= lower_bound):
-                weights[i, j] = 0.0
-            else:
-                weights[i, j] = (
-                    (upper_bin - lower_bin).total_seconds()
-                    - max((lower_bound - lower_bin).total_seconds(), 0)
-                    - max((upper_bin - upper_bound).total_seconds(), 0)
-                )
-
-    logger.debug("Finished calculating weights.")
-
-    out_data = np.zeros((Nout, *data.shape[1:]))
-    out_mask = np.ones(out_data.shape, dtype=np.bool_)
-    cum_weights = np.zeros(out_data.shape)
-
-    out_data, out_mask = _cons_avg(
-        Nt=Nt,
-        Nout=Nout,
-        weights=weights,
-        in_data=dummy_cube.data.data,
-        in_mask=dummy_cube.data.mask,
-        out_data=out_data,
-        out_mask=out_mask,
-        cum_weights=cum_weights,
+    avg_cube = dummy_cube.aggregated_by(
+        ("year", "month_number"), aggregators_map[agg_name]
     )
-
-    if np.all(out_mask[-1]):
-        # Ignore the last month, since this is likely an artefact of the final bound
-        # being the beginning of the next month (e.g. a bound of (2000, x, 1, 0, 0)
-        # for the month x - 1).
-        out_data = out_data[:-1]
-        out_mask = out_mask[:-1]
-
-    logger.debug("Finished conservative temporal averaging.")
-
-    return np.ma.MaskedArray(out_data, mask=out_mask)
+    return avg_cube.data
 
 
 @njit(nogil=True, cache=True)
