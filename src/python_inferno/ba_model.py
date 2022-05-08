@@ -79,11 +79,14 @@ def run_model(
 
 
 def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run):
-    pad_func = partial(
-        np.pad,
-        pad_width=((0, 12 - mon_avg_gfed_ba_1d.shape[0]), (0, 0)),
-        constant_values=0.0,
-    )
+    if mon_avg_gfed_ba_1d.shape[0] == 12:
+        pad_func = lambda x: x
+    else:
+        pad_func = partial(
+            np.pad,
+            pad_width=((0, 12 - mon_avg_gfed_ba_1d.shape[0]), (0, 0)),
+            constant_values=0.0,
+        )
     mpd_val, ignored = mpd(
         obs=pad_func(mon_avg_gfed_ba_1d), pred=pad_func(avg_ba), return_ignored=True
     )
