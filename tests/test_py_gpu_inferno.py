@@ -34,12 +34,11 @@ def get_compute_data():
         includeTemperature=1,
         fuelBuildUpMethod=1,
         drynessMethod=1,
-        flammabilityMethod=1,
         Nt=10,
     ):
         return dict(
             _ignitionMethod=1,
-            _flammabilityMethod=flammabilityMethod,
+            _flammabilityMethod=2,
             _drynessMethod=drynessMethod,
             _fuelBuildUpMethod=fuelBuildUpMethod,
             _includeTemperature=includeTemperature,
@@ -97,7 +96,6 @@ def compute_params():
 @pytest.mark.parametrize("includeTemperature", [0, 1])
 @pytest.mark.parametrize("fuelBuildUpMethod", [1, 2])
 @pytest.mark.parametrize("drynessMethod", [1, 2])
-@pytest.mark.parametrize("flammabilityMethod", [1, 2])
 @pytest.mark.parametrize("Nt", [100, 10])
 def test_GPUCompute_synthetic(
     get_compute_data,
@@ -106,7 +104,6 @@ def test_GPUCompute_synthetic(
     includeTemperature,
     fuelBuildUpMethod,
     drynessMethod,
-    flammabilityMethod,
     Nt,
 ):
     compute.set_data(
@@ -114,7 +111,6 @@ def test_GPUCompute_synthetic(
             includeTemperature=includeTemperature,
             fuelBuildUpMethod=fuelBuildUpMethod,
             drynessMethod=drynessMethod,
-            flammabilityMethod=flammabilityMethod,
             Nt=Nt,
         )
     )
