@@ -11,7 +11,11 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from numpy.testing import assert_allclose, assert_array_equal
 
-from python_inferno.py_gpu_inferno import GPUConsAvg, GPUConsAvgNoMask
+from python_inferno.py_gpu_inferno import (
+    GPUConsAvg,
+    GPUConsAvgNoMask,
+    cpp_cons_avg_no_mask_inplace,
+)
 from python_inferno.utils import (
     ConsMonthlyAvg,
     _cons_avg,
@@ -571,9 +575,34 @@ def test_cons_avg_no_mask_implementations(get_cons_avg_data, seed):
         cum_weights,
     ) = get_cons_avg_data(seed=seed)
 
+    ref_out = GPUConsAvgNoMask(L=7771, weights=weights).run(in_data)
+
     assert_allclose(
-        GPUConsAvgNoMask(L=7771, weights=weights).run(in_data),
+        ref_out,
         _cons_avg2_no_mask(Nt, Nout, weights, in_data),
         atol=1e-7,
         rtol=1e-7,
     )
+
+    cpp_cons_avg_no_mask_inplace(weights=weights, data=in_data, out=out_data)
+
+    assert_allclose(
+        ref_out,
+        out_data,
+        atol=3e-7,
+        rtol=3e-7,
+    )
+
+
+def test_cpp_cons_avg_no_mask_benchmark(benchmark, get_cons_avg_data):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data()
+    benchmark(cpp_cons_avg_no_mask_inplace, weights=weights, data=in_data, out=out_data)
