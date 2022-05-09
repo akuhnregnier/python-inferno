@@ -27,7 +27,7 @@ from .configuration import (
     pft_groups_array,
     pft_groups_lengths,
 )
-from .py_gpu_inferno import GPUConsAvg, GPUConsAvgNoMask
+from .py_gpu_inferno import GPUConsAvg
 
 if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
@@ -246,6 +246,76 @@ def _cons_avg(Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weigh
     return out_data, out_mask
 
 
+def calculate_weights(time_coord):
+    last_datetimes = time_coord.units.num2date(time_coord.points[-2:])
+
+    if (
+        last_datetimes[-1].month == 1
+        and last_datetimes[-1].day == 1
+        and last_datetimes[-2].month == 12
+    ):
+        # Trim the last point.
+        time_coord = time_coord[:-1]
+        trimmed = True
+    else:
+        trimmed = False
+
+    Nt = time_coord.shape[0]
+
+    # For conservative averaging, take into account the bounds on the temporal coord.
+    assert time_coord.bounds is not None, "bounds are required"
+    assert time_coord.bounds.shape == (Nt, 2)
+
+    # Pre-calculate bound datetimes to save time.
+    bound_dts = time_coord.units.num2date(time_coord.bounds)
+
+    first_date = bound_dts[0][0]
+    last_date = bound_dts[-1][1]
+
+    lower_dates = [datetime(first_date.year, first_date.month, 1)]
+    while not (
+        (lower_dates[-1].year == last_date.year)
+        and (lower_dates[-1].month == last_date.month)
+    ):
+        lower_dates.append(lower_dates[-1] + relativedelta(months=1))
+
+    upper_dates = lower_dates.copy()
+    upper_dates.append(upper_dates[-1] + relativedelta(months=1))
+    upper_dates.pop(0)
+    assert len(upper_dates) == len(lower_dates)
+    # NOTE: Temporal bins are contiguous, i.e. the end of one bin is the beginning of
+    # the next, at year, month, 1, 0, ...
+
+    Nout = len(lower_dates)
+
+    # Calculate overlaps between bounds and the bins given by
+    # lower_dates[i], upper_dates[i]
+    weights = np.zeros((Nt, Nout))
+
+    cell_bounds = []
+    for i in range(Nt):
+        bounds = bound_dts[i]
+        cell_bounds.append(
+            # NOTE: Will this ignore the specifics of different calendars?
+            # (comparing datetime with real_datetime, etc...).
+            tuple(map(ensure_datetime, bounds))
+        )
+    for i in range(Nt):
+        for (j, (lower_bin, upper_bin)) in enumerate(zip(lower_dates, upper_dates)):
+            lower_bound, upper_bound = cell_bounds[i]
+
+            if (lower_bin >= upper_bound) or (upper_bin <= lower_bound):
+                weights[i, j] = 0.0
+            else:
+                weights[i, j] = (
+                    (upper_bin - lower_bin).total_seconds()
+                    - max((lower_bound - lower_bin).total_seconds(), 0)
+                    - max((upper_bin - upper_bound).total_seconds(), 0)
+                )
+
+    return trimmed, Nt, Nout, weights
+
+
 class ConsMonthlyAvg:
     """Monthly data averaging while taking into account the bounds of `time_coord`.
 
@@ -257,72 +327,8 @@ class ConsMonthlyAvg:
     _compute_class = GPUConsAvg
 
     def __init__(self, time_coord, L):
-        last_datetimes = time_coord.units.num2date(time_coord.points[-2:])
-
-        if (
-            last_datetimes[-1].month == 1
-            and last_datetimes[-1].day == 1
-            and last_datetimes[-2].month == 12
-        ):
-            # Trim the last point.
-            time_coord = time_coord[:-1]
-            self.trimmed = True
-        else:
-            self.trimmed = False
-
-        self.Nt = time_coord.shape[0]
-
-        # For conservative averaging, take into account the bounds on the temporal coord.
-        assert time_coord.bounds is not None, "bounds are required"
-        assert time_coord.bounds.shape == (self.Nt, 2)
-
-        # Pre-calculate bound datetimes to save time.
-        bound_dts = time_coord.units.num2date(time_coord.bounds)
-
-        first_date = bound_dts[0][0]
-        last_date = bound_dts[-1][1]
-
-        lower_dates = [datetime(first_date.year, first_date.month, 1)]
-        while not (
-            (lower_dates[-1].year == last_date.year)
-            and (lower_dates[-1].month == last_date.month)
-        ):
-            lower_dates.append(lower_dates[-1] + relativedelta(months=1))
-
-        upper_dates = lower_dates.copy()
-        upper_dates.append(upper_dates[-1] + relativedelta(months=1))
-        upper_dates.pop(0)
-        assert len(upper_dates) == len(lower_dates)
-        # NOTE: Temporal bins are contiguous, i.e. the end of one bin is the beginning of
-        # the next, at year, month, 1, 0, ...
-
-        self.Nout = len(lower_dates)
-
-        # Calculate overlaps between bounds and the bins given by
-        # lower_dates[i], upper_dates[i]
-        self.weights = np.zeros((self.Nt, self.Nout))
-
-        cell_bounds = []
-        for i in range(self.Nt):
-            bounds = bound_dts[i]
-            cell_bounds.append(
-                # NOTE: Will this ignore the specifics of different calendars?
-                # (comparing datetime with real_datetime, etc...).
-                tuple(map(ensure_datetime, bounds))
-            )
-        for i in range(self.Nt):
-            for (j, (lower_bin, upper_bin)) in enumerate(zip(lower_dates, upper_dates)):
-                lower_bound, upper_bound = cell_bounds[i]
-
-                if (lower_bin >= upper_bound) or (upper_bin <= lower_bound):
-                    self.weights[i, j] = 0.0
-                else:
-                    self.weights[i, j] = (
-                        (upper_bin - lower_bin).total_seconds()
-                        - max((lower_bound - lower_bin).total_seconds(), 0)
-                        - max((upper_bin - upper_bound).total_seconds(), 0)
-                    )
-
+        self.L = L
+        self.trimmed, self.Nt, self.Nout, self.weights = calculate_weights(time_coord)
         self.gpu_cons_avg = self._compute_class(L=L, weights=self.weights)
 
     def cons_monthly_average_data(self, data):
@@ -331,9 +337,9 @@ class ConsMonthlyAvg:
 
         assert data.shape[0] == self.Nt
 
-        return self._gpu_run(data)
+        return self._run(data)
 
-    def _gpu_run(self, data):
+    def _run(self, data):
         out_data, out_mask = self.gpu_cons_avg.run(
             np.ma.getdata(data), np.ma.getmaskarray(data)
         )
@@ -348,16 +354,22 @@ class ConsMonthlyAvg:
         return np.ma.MaskedArray(out_data, mask=out_mask)
 
 
+def NOOP(*args, **kwargs):
+    pass
+
+
 class ConsMonthlyAvgNoMask(ConsMonthlyAvg):
-    _compute_class = GPUConsAvgNoMask
+
+    _compute_class = NOOP
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _gpu_run(self, data):
+    def _run(self, data):
         assert not np.ma.isMaskedArray(data)
-        out_data = self.gpu_cons_avg.run(data)
-        return out_data
+        return _cons_avg2_no_mask(
+            Nt=self.Nt, Nout=self.Nout, weights=self.weights, in_data=data
+        )
 
 
 @mark_dependency
