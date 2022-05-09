@@ -27,7 +27,7 @@ from .configuration import (
     pft_groups_array,
     pft_groups_lengths,
 )
-from .py_gpu_inferno import GPUConsAvg
+from .py_gpu_inferno import GPUConsAvg, GPUConsAvgNoMask
 
 if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
@@ -354,22 +354,16 @@ class ConsMonthlyAvg:
         return np.ma.MaskedArray(out_data, mask=out_mask)
 
 
-def NOOP(*args, **kwargs):
-    pass
-
-
 class ConsMonthlyAvgNoMask(ConsMonthlyAvg):
 
-    _compute_class = NOOP
+    _compute_class = GPUConsAvgNoMask
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     def _run(self, data):
         assert not np.ma.isMaskedArray(data)
-        return _cons_avg2_no_mask(
-            Nt=self.Nt, Nout=self.Nout, weights=self.weights, in_data=data
-        )
+        return self.gpu_cons_avg.run(data)
 
 
 @mark_dependency
