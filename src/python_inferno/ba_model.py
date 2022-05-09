@@ -8,9 +8,9 @@ from sklearn.metrics import r2_score
 
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
-from .metrics import Metrics, loghist, nme_simple, nmse
+from .metrics import Metrics, loghist, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
-from .py_gpu_inferno import GPUCalculateMPD
+from .py_gpu_inferno import GPUCalculateMPD, cpp_nme
 from .utils import ConsMonthlyAvg, expand_pft_params, transform_dtype, unpack_wrapped
 
 ARCSINH_FACTOR = 1e6
@@ -135,13 +135,13 @@ def calculate_scores(
             mpd_future = executor.submit(calculate_mpd, avg_ba, mon_avg_gfed_ba_1d)
 
         if Metrics.NME in requested:
-            nme_future = executor.submit(nme_simple, obs=y_true, pred=y_pred)
+            nme_future = executor.submit(cpp_nme, obs=y_true, pred=y_pred)
 
         if Metrics.R2 in requested:
             scores["r2"] = r2_score(y_true=y_true, y_pred=y_pred)
 
         if Metrics.ARCSINH_NME in requested:
-            scores["arcsinh_nme"] = nme_simple(
+            scores["arcsinh_nme"] = cpp_nme(
                 obs=np.arcsinh(ARCSINH_FACTOR * y_true),
                 pred=np.arcsinh(ARCSINH_FACTOR * y_pred),
             )

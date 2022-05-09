@@ -14,7 +14,7 @@ from python_inferno.metrics import (
     nme_simple,
     nmse,
 )
-from python_inferno.py_gpu_inferno import GPUCalculateMPD, GPUCalculatePhase
+from python_inferno.py_gpu_inferno import GPUCalculateMPD, GPUCalculatePhase, cpp_nme
 
 
 def test_phase_calculation():
@@ -23,7 +23,7 @@ def test_phase_calculation():
     assert_allclose(gpu_phase.run(x), calculate_phase(x), rtol=1e-7, atol=1e-7)
 
 
-@pytest.mark.parametrize("nme_func", [nme, nme_simple])
+@pytest.mark.parametrize("nme_func", [nme, nme_simple, cpp_nme])
 def test_nme(nme_func):
     obs = np.random.default_rng(0).random((1000,))
     assert_allclose(nme(obs=obs, pred=obs), 0)
@@ -41,6 +41,15 @@ def test_nme(nme_func):
     assert_allclose(nme(obs=obs, pred=np.zeros_like(obs) + np.mean(obs)), 1)
 
 
+@pytest.mark.parametrize("nme_func", [nme_simple, cpp_nme])
+def test_nme_implementations(nme_func):
+    obs = np.random.default_rng(0).random((12, 7771))
+    pred = np.random.default_rng(1).random(obs.shape)
+    ref_nme = nme(obs=obs, pred=pred)
+    nme2 = nme_func(obs=obs, pred=pred)
+    assert_allclose(ref_nme, nme2, atol=4e-6, rtol=4e-6)
+
+
 def test_nme_benchmark(benchmark):
     obs = np.random.default_rng(0).random((12, 7771))
     pred = np.random.default_rng(1).random(obs.shape)
@@ -48,18 +57,17 @@ def test_nme_benchmark(benchmark):
     assert nme1 > 0
 
 
-def test_nme_simple():
-    obs = np.random.default_rng(0).random((12, 7771))
-    pred = np.random.default_rng(1).random(obs.shape)
-    nme1 = nme(obs=obs, pred=pred)
-    nme2 = nme_simple(obs=obs, pred=pred)
-    assert_allclose(nme1, nme2)
-
-
 def test_nme_simple_benchmark(benchmark):
     obs = np.random.default_rng(0).random((12, 7771))
     pred = np.random.default_rng(1).random(obs.shape)
     nme1 = benchmark(nme_simple, obs=obs, pred=pred)
+    assert nme1 > 0
+
+
+def test_cpp_nme_benchmark(benchmark):
+    obs = np.random.default_rng(0).random((12, 7771))
+    pred = np.random.default_rng(1).random(obs.shape)
+    nme1 = benchmark(cpp_nme, obs=obs, pred=pred)
     assert nme1 > 0
 
 

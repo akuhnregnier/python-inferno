@@ -17,6 +17,7 @@ from python_inferno.py_gpu_inferno import (
     GPUCalculateMPD,
     GPUCalculatePhase,
     _GPUCompute,
+    cpp_nme,
 )
 
 
@@ -228,3 +229,14 @@ def test_multiple_mpd_instances2():
 
     obs = np.random.default_rng(0).random((12, 100))
     assert_allclose(mpd2(obs=obs, pred=obs), 0)
+
+
+def test_cpp_nme():
+    rng = np.random.default_rng(0)
+    assert (
+        cpp_nme(
+            obs=rng.random(1000, dtype=np.float32),
+            pred=rng.random(1000, dtype=np.float32),
+        )
+        > 0
+    )
