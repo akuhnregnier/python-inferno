@@ -13,8 +13,8 @@ from python_inferno.ba_model import BAModel, GPUBAModel
             "dry_Dry_Day__fuel_Antec_NPP",
             {
                 "np.abs(np.mean(diffs))": 3.5e-16,
-                "np.mean(np.abs(diffs))": 4.8e-16,
-                "np.max(np.abs(diffs))": 3.1e-13,
+                "np.mean(np.abs(diffs))": 5.1e-16,
+                "np.max(np.abs(diffs))": 4.2e-13,
             },
         ),
         (
@@ -22,15 +22,15 @@ from python_inferno.ba_model import BAModel, GPUBAModel
             {
                 "np.abs(np.mean(diffs))": 2.4e-15,
                 "np.mean(np.abs(diffs))": 3.1e-15,
-                "np.max(np.abs(diffs))": 3.9e-13,
+                "np.max(np.abs(diffs))": 4.6e-13,
             },
         ),
         (
             "dry_VPD_Precip__fuel_Antec_NPP",
             {
-                "np.abs(np.mean(diffs))": 4.6e-15,
-                "np.mean(np.abs(diffs))": 9.1e-15,
-                "np.max(np.abs(diffs))": 4.8e-13,
+                "np.abs(np.mean(diffs))": 4.9e-15,
+                "np.mean(np.abs(diffs))": 9.2e-15,
+                "np.max(np.abs(diffs))": 5.1e-13,
             },
         ),
         (

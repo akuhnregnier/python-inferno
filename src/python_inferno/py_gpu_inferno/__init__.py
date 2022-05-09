@@ -42,6 +42,7 @@ class GPUInferno:
         self.gpu_compute = _GPUCompute()
         self.Nt = Nt
         self.frac = frac
+        assert frac.shape == (self.Nt * n_total_pft * land_pts,)
 
         self.gpu_compute.set_data(
             _ignitionMethod=ignition_method,
@@ -68,6 +69,7 @@ class GPUInferno:
             litter_pool=litter_pool,
             dry_days=dry_days,
         )
+        self.out = np.empty((self.Nt, land_pts), dtype=np.float32)
 
     def run(
         self,
@@ -120,27 +122,11 @@ class GPUInferno:
             temperature_weight=temperature_weight,
             fuel_weight=fuel_weight,
         )
-
-        return overall_scale * frac_weighted_mean(
-            data=self.gpu_compute.run().reshape((self.Nt, npft, land_pts)),
-            frac=self.frac.reshape((self.Nt, n_total_pft, land_pts)),
-        )
+        self.gpu_compute.run(self.out)
+        return overall_scale * self.out
 
     def release(self):
         self.gpu_compute.release()
-
-
-def frac_weighted_mean(*, data, frac):
-    assert len(data.shape) == 3, "Need time, PFT, and space coords."
-    assert data.shape[1] in (npft, n_total_pft)
-    assert frac.shape[1] == n_total_pft
-
-    # NOTE - The below would be more correct, but does not currently correspond to the
-    # NUMBA Python implementation.
-    # return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
-    #     frac[:, : data.shape[1]], axis=1
-    # )
-    return np.sum(data * frac[:, : data.shape[1]], axis=1)
 
 
 class GPUCalculateMPD:

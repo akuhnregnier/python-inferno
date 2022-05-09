@@ -7,6 +7,7 @@ from numpy.testing import assert_allclose
 from python_inferno.ba_model import GPUBAModel
 from python_inferno.configuration import (
     N_pft_groups,
+    land_pts,
     n_cell_grp_pft,
     n_cell_nat_pft,
     n_cell_no_pft,
@@ -119,15 +120,16 @@ def test_GPUCompute_synthetic(
 
     compute.set_params(**compute_params)
 
-    compute.run()
+    compute.run(np.empty((Nt, land_pts), dtype=np.float32))
 
 
 @pytest.mark.timeout(45)
 def test_many_run(compute, get_compute_data, compute_params):
-    compute.set_data(**get_compute_data())
+    Nt = 10
+    compute.set_data(**get_compute_data(Nt=Nt))
     for i in range(10000):
         compute.set_params(**compute_params)
-        compute.run()
+        compute.run(np.empty((Nt, land_pts), dtype=np.float32))
 
 
 def test_GPUBAModel(params_model_ba):
