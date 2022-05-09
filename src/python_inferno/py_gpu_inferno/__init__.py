@@ -8,6 +8,7 @@ from .py_gpu_inferno import GPUCalculateMPD as _GPUCalculateMPD
 from .py_gpu_inferno import GPUCalculatePhase
 from .py_gpu_inferno import GPUCompute as _GPUCompute
 from .py_gpu_inferno import GPUConsAvg as _GPUConsAvg
+from .py_gpu_inferno import GPUConsAvgNoMask as _GPUConsAvgNoMask
 from .py_gpu_inferno import calculate_phase
 from .py_gpu_inferno import nme as _nme
 
@@ -157,6 +158,21 @@ class GPUConsAvg:
             np.asarray(data, dtype=np.float32), mask
         )
         return out_data.reshape((self.N, self.L)), out_mask.reshape((self.N, self.L))
+
+
+class GPUConsAvgNoMask:
+    def __init__(self, L, weights):
+        self.L = L
+        self.M = weights.shape[0]
+        self.N = weights.shape[1]
+        self._GPUConsAvgNoMask = _GPUConsAvgNoMask(
+            L, np.asarray(weights, dtype=np.float32)
+        )
+
+    def run(self, data):
+        return self._GPUConsAvgNoMask.run(np.asarray(data, dtype=np.float32)).reshape(
+            (self.N, self.L)
+        )
 
 
 def cpp_nme(*, obs, pred):

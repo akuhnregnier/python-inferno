@@ -11,7 +11,12 @@ from .data import get_processed_climatological_data, timestep
 from .metrics import Metrics, loghist, nmse
 from .multi_timestep_inferno import multi_timestep_inferno
 from .py_gpu_inferno import GPUCalculateMPD, cpp_nme
-from .utils import ConsMonthlyAvg, expand_pft_params, transform_dtype, unpack_wrapped
+from .utils import (
+    ConsMonthlyAvgNoMask,
+    expand_pft_params,
+    transform_dtype,
+    unpack_wrapped,
+)
 
 ARCSINH_FACTOR = 1e6
 MPD_IGNORE_THRES = 5600
@@ -274,7 +279,7 @@ class BAModel:
         self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
 
         # Set up conservative averaging.
-        self.cons_monthly_avg = ConsMonthlyAvg(self.jules_time_coord, L=land_pts)
+        self.cons_monthly_avg = ConsMonthlyAvgNoMask(self.jules_time_coord, L=land_pts)
 
     def process_kwargs(self, **kwargs):
         n_params = N_pft_groups

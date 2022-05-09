@@ -11,11 +11,12 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from numpy.testing import assert_allclose, assert_array_equal
 
-from python_inferno.py_gpu_inferno import GPUConsAvg
+from python_inferno.py_gpu_inferno import GPUConsAvg, GPUConsAvgNoMask
 from python_inferno.utils import (
     ConsMonthlyAvg,
     _cons_avg,
     _cons_avg2,
+    _cons_avg2_no_mask,
     dict_match,
     expand_pft_params,
     exponential_average,
@@ -480,6 +481,31 @@ def test_cons_avg2_benchmark(benchmark, get_cons_avg_data):
     benchmark(_cons_avg2, *get_cons_avg_data()[:-3])
 
 
+@pytest.mark.parametrize("seed", list(range(100)))
+def test_cons_avg2_no_mask(get_cons_avg_data, seed):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data(seed=seed)
+
+    with_mask_out = _cons_avg2(
+        Nt, Nout, weights, in_data, np.zeros_like(in_mask, dtype=np.bool_)
+    )[0]
+    no_mask_out = _cons_avg2_no_mask(Nt, Nout, weights, in_data)
+
+    assert_allclose(no_mask_out, with_mask_out)
+
+
+def test_cons_avg2_no_mask_benchmark(benchmark, get_cons_avg_data):
+    benchmark(_cons_avg2_no_mask, *get_cons_avg_data()[:-4])
+
+
 def test_gpu_cons_avg_benchmark(benchmark, get_cons_avg_data):
     (
         Nt,
@@ -493,3 +519,61 @@ def test_gpu_cons_avg_benchmark(benchmark, get_cons_avg_data):
     ) = get_cons_avg_data()
     gpu_cons_avg = GPUConsAvg(L=7771, weights=weights)
     benchmark(gpu_cons_avg.run, in_data, in_mask)
+
+
+@pytest.mark.parametrize("seed", list(range(100)))
+def test_gpu_cons_avg_no_mask(get_cons_avg_data, seed):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data(seed=seed)
+
+    gpu_cons_avg = GPUConsAvg(L=7771, weights=weights)
+    gpu_cons_avg_no_mask = GPUConsAvgNoMask(L=7771, weights=weights)
+
+    with_mask_out = gpu_cons_avg.run(in_data, np.zeros_like(in_mask, dtype=np.bool_))[0]
+    no_mask_out = gpu_cons_avg_no_mask.run(in_data)
+
+    assert_allclose(no_mask_out, with_mask_out)
+
+
+def test_gpu_cons_avg_no_mask_benchmark(benchmark, get_cons_avg_data):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data()
+    gpu_cons_avg_no_mask = GPUConsAvgNoMask(L=7771, weights=weights)
+    benchmark(gpu_cons_avg_no_mask.run, in_data)
+
+
+@pytest.mark.parametrize("seed", list(range(100)))
+def test_cons_avg_no_mask_implementations(get_cons_avg_data, seed):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data(seed=seed)
+
+    assert_allclose(
+        GPUConsAvgNoMask(L=7771, weights=weights).run(in_data),
+        _cons_avg2_no_mask(Nt, Nout, weights, in_data),
+        atol=1e-7,
+        rtol=1e-7,
+    )

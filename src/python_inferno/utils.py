@@ -27,7 +27,7 @@ from .configuration import (
     pft_groups_array,
     pft_groups_lengths,
 )
-from .py_gpu_inferno import GPUConsAvg
+from .py_gpu_inferno import GPUConsAvg, GPUConsAvgNoMask
 
 if "TQDMAUTO" in os.environ:
     from tqdm.auto import tqdm  # noqa
@@ -197,6 +197,18 @@ def _cons_avg2(Nt, Nout, weights, in_data, in_mask):
     return out_data, out_mask
 
 
+def _cons_avg2_no_mask(Nt, Nout, weights, in_data):
+    assert len(in_data.shape) == 2
+    weights[weights < 1e-9] = 0
+
+    cum_weights = np.sum(weights, axis=0)  # mn -> n
+
+    out_data = np.einsum(
+        "ml,mn->nl", in_data, weights, optimize=True
+    ) / cum_weights.reshape(-1, 1)
+    return out_data
+
+
 @njit(parallel=True, nogil=True, cache=True, fastmath=True)
 def _cons_avg(Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weights):
     assert (
@@ -241,6 +253,8 @@ class ConsMonthlyAvg:
     avoid generating an 'average' month from a single sample only.
 
     """
+
+    _compute_class = GPUConsAvg
 
     def __init__(self, time_coord, L):
         last_datetimes = time_coord.units.num2date(time_coord.points[-2:])
@@ -309,7 +323,7 @@ class ConsMonthlyAvg:
                         - max((upper_bin - upper_bound).total_seconds(), 0)
                     )
 
-        self.gpu_cons_avg = GPUConsAvg(L=L, weights=self.weights)
+        self.gpu_cons_avg = self._compute_class(L=L, weights=self.weights)
 
     def cons_monthly_average_data(self, data):
         if self.trimmed:
@@ -317,6 +331,9 @@ class ConsMonthlyAvg:
 
         assert data.shape[0] == self.Nt
 
+        return self._gpu_run(data)
+
+    def _gpu_run(self, data):
         out_data, out_mask = self.gpu_cons_avg.run(
             np.ma.getdata(data), np.ma.getmaskarray(data)
         )
@@ -329,6 +346,18 @@ class ConsMonthlyAvg:
             out_mask = out_mask[:-1]
 
         return np.ma.MaskedArray(out_data, mask=out_mask)
+
+
+class ConsMonthlyAvgNoMask(ConsMonthlyAvg):
+    _compute_class = GPUConsAvgNoMask
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _gpu_run(self, data):
+        assert not np.ma.isMaskedArray(data)
+        out_data = self.gpu_cons_avg.run(data)
+        return out_data
 
 
 @mark_dependency
