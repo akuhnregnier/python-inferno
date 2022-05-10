@@ -17,6 +17,7 @@ from python_inferno.py_gpu_inferno import (
     cpp_cons_avg_no_mask_inplace,
 )
 from python_inferno.utils import (
+    ConsAvg3NoMask,
     ConsMonthlyAvg,
     _cons_avg,
     _cons_avg2,
@@ -33,6 +34,9 @@ from python_inferno.utils import (
     temporal_processing,
     wrap_phase_diffs,
 )
+
+N_ITER = 50
+N_ROUNDS = 500
 
 
 def test_temporal_nearest_neighbour_interp_0d_centre():
@@ -333,6 +337,7 @@ def test_monthly_average_data_days():
     assert np.allclose(mon_avg_con, comp_avg_con)
 
 
+@pytest.mark.slow
 def test_monthly_average_data_rand():
     data = np.ma.MaskedArray(np.random.default_rng(0).random((100, 10000)), mask=False)
     # Get mask array.
@@ -510,6 +515,48 @@ def test_cons_avg2_no_mask_benchmark(benchmark, get_cons_avg_data):
     benchmark(_cons_avg2_no_mask, *get_cons_avg_data()[:-4])
 
 
+@pytest.mark.parametrize("seed", list(range(100)))
+def test_cons_avg3_no_mask(get_cons_avg_data, seed):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data(seed=seed)
+
+    with_mask_out = _cons_avg2(
+        Nt, Nout, weights, in_data, np.zeros_like(in_mask, dtype=np.bool_)
+    )[0]
+
+    no_mask_out = ConsAvg3NoMask(weights=weights, out_data=out_data).cons_avg(in_data)
+
+    assert_allclose(no_mask_out, with_mask_out)
+
+
+def test_cons_avg3_no_mask_benchmark(benchmark, get_cons_avg_data):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data()
+
+    benchmark.pedantic(
+        ConsAvg3NoMask(weights=weights, out_data=out_data).cons_avg,
+        args=(in_data,),
+        iterations=N_ITER,
+        rounds=N_ROUNDS,
+    )
+
+
 def test_gpu_cons_avg_benchmark(benchmark, get_cons_avg_data):
     (
         Nt,
@@ -559,7 +606,12 @@ def test_gpu_cons_avg_no_mask_benchmark(benchmark, get_cons_avg_data):
         cum_weights,
     ) = get_cons_avg_data()
     gpu_cons_avg_no_mask = GPUConsAvgNoMask(L=7771, weights=weights)
-    benchmark(gpu_cons_avg_no_mask.run, in_data)
+    benchmark.pedantic(
+        gpu_cons_avg_no_mask.run,
+        args=(in_data,),
+        iterations=N_ITER,
+        rounds=N_ROUNDS,
+    )
 
 
 @pytest.mark.parametrize("seed", list(range(100)))
@@ -606,3 +658,75 @@ def test_cpp_cons_avg_no_mask_benchmark(benchmark, get_cons_avg_data):
         cum_weights,
     ) = get_cons_avg_data()
     benchmark(cpp_cons_avg_no_mask_inplace, weights=weights, data=in_data, out=out_data)
+
+
+@pytest.mark.slow
+def test_cons_avg3_no_mask_benchmark_rand(benchmark, get_cons_avg_data):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data()
+
+    cons_avg3 = ConsAvg3NoMask(weights=weights, out_data=out_data).cons_avg
+
+    rng = np.random.default_rng(0)
+
+    def _bench():
+        rng.random(dtype=np.float32, out=in_data)
+        cons_avg3(in_data)
+
+    benchmark.pedantic(_bench, iterations=N_ITER, rounds=N_ROUNDS)
+
+
+@pytest.mark.slow
+def test_gpu_cons_avg_no_mask_benchmark_rand(benchmark, get_cons_avg_data):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data()
+
+    gpu_cons_avg = GPUConsAvgNoMask(L=7771, weights=weights).run
+
+    rng = np.random.default_rng(0)
+
+    def _bench():
+        rng.random(dtype=np.float32, out=in_data)
+
+        gpu_cons_avg(in_data)
+
+    benchmark.pedantic(_bench, iterations=N_ITER, rounds=N_ROUNDS)
+
+
+@pytest.mark.slow
+def test_cons_avg2_no_mask_benchmark_rand(benchmark, get_cons_avg_data):
+    (
+        Nt,
+        Nout,
+        weights,
+        in_data,
+        in_mask,
+        out_data,
+        out_mask,
+        cum_weights,
+    ) = get_cons_avg_data()
+
+    rng = np.random.default_rng(0)
+
+    def _bench():
+        rng.random(dtype=np.float32, out=in_data)
+
+        _cons_avg2_no_mask(Nt, Nout, weights, in_data)
+
+    benchmark.pedantic(_bench, iterations=N_ITER, rounds=N_ROUNDS)

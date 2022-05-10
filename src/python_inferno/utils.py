@@ -209,6 +209,26 @@ def _cons_avg2_no_mask(Nt, Nout, weights, in_data):
     return out_data
 
 
+class ConsAvg3NoMask:
+    def __init__(self, *, weights, out_data):
+        assert len(weights.shape) == 2
+
+        weights[weights < 1e-9] = 0
+        self.weights_T = weights.T
+        self.cum_weights = np.sum(self.weights_T, axis=1).reshape(-1, 1)  # nm -> n
+
+        self.out_data = out_data
+
+    def cons_avg(self, in_data):
+        assert in_data.shape[0] == self.weights_T.shape[1]
+
+        return np.divide(
+            np.dot(self.weights_T, in_data, out=self.out_data),
+            self.cum_weights,
+            out=self.out_data,
+        )
+
+
 @njit(parallel=True, nogil=True, cache=True, fastmath=True)
 def _cons_avg(Nt, Nout, weights, in_data, in_mask, out_data, out_mask, cum_weights):
     assert (
