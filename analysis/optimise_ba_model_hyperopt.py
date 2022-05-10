@@ -99,29 +99,24 @@ def main(
             # Update record in file.
             recorder.dump()
 
-    # XXX
-    import cProfile
+    res = basinhopping(
+        to_optimise_with_discrete,
+        x0=space.continuous_x0_mid,
+        disp=True,
+        minimizer_kwargs=dict(
+            method="L-BFGS-B",
+            jac=None,
+            bounds=[(0, 1)] * len(space.continuous_param_names),
+            options=dict(maxiter=60, ftol=1e-5, eps=1e-3),
+        ),
+        seed=0,
+        T=0.05,
+        niter=100,
+        niter_success=15,
+        callback=basinhopping_callback,
+        take_step=BoundedSteps(stepsize=0.3, rng=np.random.default_rng(0)),
+    )
 
-    with cProfile.Profile() as pr:
-        res = basinhopping(
-            to_optimise_with_discrete,
-            x0=space.continuous_x0_mid,
-            disp=True,
-            minimizer_kwargs=dict(
-                method="L-BFGS-B",
-                jac=None,
-                bounds=[(0, 1)] * len(space.continuous_param_names),
-                # XXX
-                options=dict(maxiter=10, ftol=1e-5, eps=1e-3),
-            ),
-            seed=0,
-            # XXX
-            niter_success=1,
-            callback=basinhopping_callback,
-            take_step=BoundedSteps(stepsize=0.5, rng=np.random.default_rng(0)),
-        )
-    print("\n\n\nDUMPING STATS\n\n\n")
-    pr.dump_stats("/tmp/prof")
     loss = res.fun
 
     if loss > 100.0:
@@ -134,7 +129,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    exp_base = "exp200"
+    exp_base = "exp201"
 
     dryness_methods = (1, 2)
     fuel_build_up_methods = (1, 2)
@@ -259,7 +254,5 @@ if __name__ == "__main__":
                     pass_expr_memo_ctrl=True,
                 )
             )
-            # XXX
-            break
     for f in futures:
         print(f.result())
