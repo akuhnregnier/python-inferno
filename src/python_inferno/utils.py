@@ -347,9 +347,33 @@ class ConsMonthlyAvg:
     _compute_class = GPUConsAvg
 
     def __init__(self, time_coord, L):
-        self.L = L
-        self.trimmed, self.Nt, self.Nout, self.weights = calculate_weights(time_coord)
-        self.gpu_cons_avg = self._compute_class(L=L, weights=self.weights)
+        # Changing these properties will not automatically affect the underlying
+        # compute class.
+        self._L = L
+        self._trimmed, self._Nt, self._Nout, self._weights = calculate_weights(
+            time_coord
+        )
+        self.gpu_cons_avg = self._compute_class(L=self.L, weights=self.weights)
+
+    @property
+    def L(self):
+        return self._L
+
+    @property
+    def trimmed(self):
+        return self._trimmed
+
+    @property
+    def Nt(self):
+        return self._Nt
+
+    @property
+    def Nout(self):
+        return self._Nout
+
+    @property
+    def weights(self):
+        return self._weights
 
     def cons_monthly_average_data(self, data):
         if self.trimmed:
@@ -961,7 +985,7 @@ def transform_dtype(func):
     def _transform_dtype(**kwargs):
         out = {}
         for name, val in kwargs.items():
-            if isinstance(val, np.ndarray):
+            if isinstance(val, np.ndarray) and val.dtype != np.bool_:
                 out[name] = np.asarray(val, dtype=np.float32)
             else:
                 out[name] = val

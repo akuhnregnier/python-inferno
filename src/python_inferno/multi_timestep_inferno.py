@@ -17,6 +17,50 @@ set_num_threads(get_ncpus())
 
 
 @njit(nogil=True, parallel=True, cache=True, fastmath=True)
+def _get_diagnostics(
+    *,
+    t1p5m_tile,
+    q1p5m_tile,
+    pstar,
+    ls_rain,
+    con_rain,
+):
+    Nt = pstar.shape[0]
+
+    # Output arrays.
+    inferno_rain_out = np.zeros((Nt, land_pts), dtype=np.float32)
+    qsat_out = np.zeros((Nt, npft, land_pts), dtype=np.float32)
+    inferno_rhum_out = np.zeros((Nt, npft, land_pts), dtype=np.float32)
+
+    # Tolerance number to filter non-physical rain values
+    rain_tolerance = 1.0e-18  # kg/m2/s
+
+    for l in prange(0, land_pts):
+        for ti in range(Nt):
+            ls_rain_filtered = ls_rain[ti, l]
+            con_rain_filtered = con_rain[ti, l]
+
+            if ls_rain_filtered < rain_tolerance:
+                ls_rain_filtered = 0.0
+            if con_rain_filtered < rain_tolerance:
+                con_rain_filtered = 0.0
+
+            inferno_rain = ls_rain_filtered + con_rain_filtered
+
+            inferno_rain_out[ti, l] = inferno_rain
+
+            for i in range(npft):
+                # Get the tile relative humidity using saturation routine
+                qsat = qsat_wat(t1p5m_tile[ti, i, l], pstar[ti, l])
+                qsat_out[ti, i, l] = qsat
+
+                inferno_rhum = (q1p5m_tile[ti, i, l] / qsat) * 100.0
+                inferno_rhum_out[ti, i, l] = inferno_rhum
+
+    return inferno_rain_out, qsat_out, inferno_rhum_out
+
+
+@njit(nogil=True, parallel=True, cache=True, fastmath=True)
 def _multi_timestep_inferno(
     *,
     t1p5m_tile,
@@ -86,6 +130,9 @@ def _multi_timestep_inferno(
 
     # Store the output BA (averaged over PFTs).
     burnt_area = np.zeros((Nt, land_pts))
+
+    # Ignore mask stored for diagnostic purposes.
+    checks_failed_mask = np.ones((Nt, npft, land_pts), dtype=np.bool_)
 
     # Plant Material that is available as fuel (on the surface)
     pmtofuel = 0.7
@@ -173,6 +220,8 @@ def _multi_timestep_inferno(
                     continue
 
                 # If all these checks are passes, start fire calculations
+                checks_failed_mask[ti, i, l] = False  # Record the fact that the
+                # checks have passed.
 
                 ignitions = calc_ignitions(
                     pop_den[l],
@@ -214,9 +263,9 @@ def _multi_timestep_inferno(
                     litter_pool_shape[pft_group_i],
                     include_temperature,
                     fapar_weight[pft_group_i],
-                    fuel_weight[pft_group_i],
-                    temperature_weight[pft_group_i],
                     dryness_weight[pft_group_i],
+                    temperature_weight[pft_group_i],
+                    fuel_weight[pft_group_i],
                 )
 
                 burnt_area_ft = calc_burnt_area(flammability_ft, ignitions, avg_ba[i])
@@ -224,7 +273,7 @@ def _multi_timestep_inferno(
                 # We add pft-specific variables to the gridbox totals
                 burnt_area[ti, l] += frac[ti, i, l] * burnt_area_ft
 
-    return burnt_area
+    return burnt_area, checks_failed_mask
 
 
 def multi_timestep_inferno(
@@ -276,6 +325,7 @@ def multi_timestep_inferno(
     temperature_weight,
     fuel_weight,
     land_point=-1,
+    return_checks_failed_mask=False,
 ):
     param_vars = dict(
         fapar_factor=fapar_factor,
@@ -311,7 +361,7 @@ def multi_timestep_inferno(
         transformed_param_vars[name] = np.asarray(val, dtype=np.float64)
         assert transformed_param_vars[name].shape == (N_pft_groups,)
 
-    ba = overall_scale * transform_dtype(_multi_timestep_inferno)(
+    raw_ba, checks_failed_mask = transform_dtype(_multi_timestep_inferno)(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,
@@ -337,4 +387,7 @@ def multi_timestep_inferno(
         land_point=land_point,
         **transformed_param_vars,
     )
+    ba = overall_scale * raw_ba
+    if return_checks_failed_mask:
+        return ba, checks_failed_mask
     return ba

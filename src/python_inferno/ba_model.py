@@ -9,7 +9,7 @@ from sklearn.metrics import r2_score
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data, timestep
 from .metrics import Metrics, loghist, nmse
-from .multi_timestep_inferno import multi_timestep_inferno
+from .multi_timestep_inferno import _get_diagnostics, multi_timestep_inferno
 from .py_gpu_inferno import GPUCalculateMPD, cpp_nme
 from .utils import (
     ConsMonthlyAvgNoMask,
@@ -66,7 +66,7 @@ def run_model(
     land_point=-1,
     **kwargs,
 ):
-    model_ba = unpack_wrapped(multi_timestep_inferno)(
+    return unpack_wrapped(multi_timestep_inferno)(
         ignition_method=1,
         timestep=timestep,
         flammability_method=2,
@@ -82,7 +82,6 @@ def run_model(
         **data_dict,
         **kwargs,
     )
-    return model_ba
 
 
 def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run):
@@ -366,6 +365,33 @@ class BAModel:
             **processed_kwargs,
         )
 
+    def _get_checks_failed_mask(
+        self,
+        *,
+        crop_f,
+        **kwargs,
+    ):
+        processed_kwargs = self.process_kwargs(**kwargs)
+        _, checks_failed_mask = BAModel.get_model_ba(
+            self,
+            dryness_method=self.dryness_method,
+            fuel_build_up_method=self.fuel_build_up_method,
+            include_temperature=self.include_temperature,
+            data_dict=self.data_dict,
+            return_checks_failed_mask=True,
+            **processed_kwargs,
+        )
+        return checks_failed_mask
+
+    def _get_diagnostics(self):
+        return _get_diagnostics(
+            t1p5m_tile=self.data_dict["t1p5m_tile"],
+            q1p5m_tile=self.data_dict["q1p5m_tile"],
+            pstar=self.data_dict["pstar"],
+            ls_rain=self.data_dict["ls_rain"],
+            con_rain=self.data_dict["con_rain"],
+        )
+
     def run(
         self,
         *,
@@ -419,7 +445,6 @@ class BAModel:
 
 class GPUBAModel(BAModel):
     def __init__(self, **kwargs):
-        from .py_gpu_inferno import GPUInferno
 
         logger.info("GPUBAModel init.")
 
@@ -427,7 +452,7 @@ class GPUBAModel(BAModel):
 
         self.Nt = self.data_dict["pstar"].shape[0]
 
-        self._gpu_inferno = transform_dtype(GPUInferno)(
+        self._gpu_inferno = transform_dtype(self._gpu_class)(
             ignition_method=1,
             flammability_method=2,
             dryness_method=self.dryness_method,
@@ -451,7 +476,14 @@ class GPUBAModel(BAModel):
             grouped_dry_bal=self.data_dict["grouped_dry_bal"].ravel(),
             litter_pool=self.data_dict["litter_pool"].ravel(),
             dry_days=self.data_dict["dry_days"].ravel(),
+            checks_failed=BAModel._get_checks_failed_mask(self, **kwargs),
         )
+
+    @property
+    def _gpu_class(self):
+        from .py_gpu_inferno import GPUInferno
+
+        return GPUInferno
 
     def get_model_ba(
         self,
@@ -508,8 +540,34 @@ class GPUBAModel(BAModel):
             fuel_weight=fuel_weight,
         )
 
+    def _get_diagnostics(self):
+        return self._gpu_inferno.get_diagnostics()
+
     def release(self):
         self._gpu_inferno.release()
+
+
+class GPUConsAvgBAModel(GPUBAModel):
+    def __init__(self, **kwargs):
+        logger.info("GPUConsAvgBAModel init.")
+        super().__init__(**kwargs)
+
+        # NOTE This is a workaround based on the assumption that cropland fraction is
+        # slowly changing, meaning that there should be little difference between
+        # averaging from original timesteps to 12 months, vs. aggregated timesteps to
+        # 12 months (as is being done below). This is done for computational
+        # convenience at this point.
+        assert not np.any(np.ma.getmaskarray(self.obs_pftcrop_1d.mask))
+        self.obs_pftcrop_1d = self._cons_monthly_avg.cons_monthly_average_data(
+            np.ma.getdata(self.obs_pftcrop_1d)
+        )
+        assert self.obs_pftcrop_1d.shape == (12, land_pts)
+
+    @property
+    def _gpu_class(self):
+        from .py_gpu_inferno import GPUInfernoAvg
+
+        return partial(GPUInfernoAvg, weights=self._cons_monthly_avg.weights)
 
 
 def gen_to_optimise(

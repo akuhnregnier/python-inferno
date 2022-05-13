@@ -9,6 +9,8 @@ from .py_gpu_inferno import GPUCalculatePhase
 from .py_gpu_inferno import GPUCompute as _GPUCompute
 from .py_gpu_inferno import GPUConsAvg as _GPUConsAvg
 from .py_gpu_inferno import GPUConsAvgNoMask as _GPUConsAvgNoMask
+from .py_gpu_inferno import GPUFlam2
+from .py_gpu_inferno import GPUInfernoAvg as _GPUInfernoAvg
 from .py_gpu_inferno import calculate_phase
 from .py_gpu_inferno import cons_avg_no_mask as _cons_avg_no_mask
 from .py_gpu_inferno import nme as _nme
@@ -41,8 +43,9 @@ class GPUInferno:
         grouped_dry_bal,
         litter_pool,
         dry_days,
+        checks_failed,
     ):
-        self.gpu_compute = _GPUCompute()
+        self.gpu_compute = self._get_compute()
         self.Nt = Nt
         self.frac = frac
         assert frac.shape == (self.Nt * n_total_pft * land_pts,)
@@ -71,8 +74,23 @@ class GPUInferno:
             grouped_dry_bal=grouped_dry_bal,
             litter_pool=litter_pool,
             dry_days=dry_days,
+            checks_failed=checks_failed,
         )
-        self.out = np.empty((self.Nt, land_pts), dtype=np.float32)
+        self.out = self._get_out_arr()
+
+    def _get_compute(self):
+        return _GPUCompute()
+
+    def get_checks_failed_mask(self):
+        return self.gpu_compute.get_checks_failed_mask().reshape(
+            self.Nt, npft, land_pts
+        )
+
+    def get_diagnostics(self):
+        return self.gpu_compute.get_diagnostics()
+
+    def _get_out_arr(self):
+        return np.empty((self.Nt, land_pts), dtype=np.float32)
 
     def run(
         self,
@@ -132,6 +150,20 @@ class GPUInferno:
         self.gpu_compute.release()
 
 
+class GPUInfernoAvg(GPUInferno):
+    def __init__(self, *args, weights, **kwargs):
+        weights[weights < 1e-9] = 0
+
+        self.weights = weights
+        super().__init__(*args, **kwargs)
+
+    def _get_compute(self):
+        return _GPUInfernoAvg(land_pts, self.weights.astype(np.float32))
+
+    def _get_out_arr(self):
+        return np.empty((12, land_pts), dtype=np.float32)
+
+
 class GPUCalculateMPD:
     def __init__(self, N):
         self.N = N
@@ -149,6 +181,8 @@ class GPUCalculateMPD:
 
 class GPUConsAvg:
     def __init__(self, L, weights):
+        weights[weights < 1e-9] = 0
+
         self.L = L
         self.M = weights.shape[0]
         self.N = weights.shape[1]
@@ -163,6 +197,8 @@ class GPUConsAvg:
 
 class GPUConsAvgNoMask:
     def __init__(self, L, weights):
+        weights[weights < 1e-9] = 0
+
         self.L = L
         self.M = weights.shape[0]
         self.N = weights.shape[1]

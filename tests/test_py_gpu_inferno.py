@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from python_inferno.ba_model import GPUBAModel
+from python_inferno.ba_model import BAModel, GPUBAModel, GPUConsAvgBAModel
 from python_inferno.configuration import (
     N_pft_groups,
     land_pts,
@@ -13,10 +13,13 @@ from python_inferno.configuration import (
     n_cell_no_pft,
     n_cell_tot_pft,
 )
+from python_inferno.inferno import calc_flam
 from python_inferno.py_gpu_inferno import (
     GPUCalculateMPD,
     GPUCalculatePhase,
+    GPUFlam2,
     _GPUCompute,
+    _GPUInfernoAvg,
     cpp_nme,
 )
 
@@ -60,6 +63,7 @@ def get_compute_data():
             grouped_dry_bal=np.zeros(n_cell_grp_pft(Nt), dtype=np.float32),
             litter_pool=np.zeros(n_cell_nat_pft(Nt), dtype=np.float32),
             dry_days=np.zeros(n_cell_no_pft(Nt), dtype=np.float32),
+            checks_failed=np.zeros(n_cell_nat_pft(Nt), dtype=np.bool_),
         )
 
     return _get_compute_data
@@ -130,39 +134,31 @@ def test_many_run(compute, get_compute_data, compute_params):
 
 
 def test_GPUBAModel(params_model_ba):
-    for params, expected_model_ba in params_model_ba:
+    for _params, expected_model_ba in params_model_ba:
+        rng = np.random.default_rng(0)
+
+        params = {
+            **dict(
+                fapar_weight=1,
+                dryness_weight=1,
+                temperature_weight=1,
+                fuel_weight=1,
+            ),
+            **_params,
+        }
+
+        rand_params = {key: rng.random(1) for key in params}
+
         # Set up the model.
         model = GPUBAModel(**params)
         # Initialise the parameters using random values to ensure that modifying the
         # parameters later on works as expected.
-        rng = np.random.default_rng(0)
-        random_model_ba = model.run(
-            **{
-                key: rng.random(1)
-                for key in (
-                    *params.keys(),
-                    "fapar_weight",
-                    "dryness_weight",
-                    "temperature_weight",
-                    "fuel_weight",
-                )
-            }
-        )["model_ba"]
+        random_model_ba = model.run(**rand_params)["model_ba"]
         assert not np.allclose(
             random_model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7
         )
         # Set the proper parameters and run.
-        model_ba = model.run(
-            **{
-                **dict(
-                    fapar_weight=1,
-                    dryness_weight=1,
-                    temperature_weight=1,
-                    fuel_weight=1,
-                ),
-                **params,
-            }
-        )["model_ba"]
+        model_ba = model.run(**params)["model_ba"]
         assert np.allclose(model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7)
 
         model.release()
@@ -236,3 +232,216 @@ def test_cpp_nme():
         )
         > 0
     )
+
+
+@pytest.mark.parametrize("includeTemperature", [0, 1])
+@pytest.mark.parametrize("fuelBuildUpMethod", [1, 2])
+@pytest.mark.parametrize("drynessMethod", [1, 2])
+@pytest.mark.parametrize("Nt", [100, 10])
+def test_GPUInfernoConsAvg_synthetic(
+    get_compute_data,
+    compute_params,
+    includeTemperature,
+    fuelBuildUpMethod,
+    drynessMethod,
+    Nt,
+):
+    compute = _GPUInfernoAvg(
+        land_pts,
+        np.random.default_rng(0).random((Nt, 12), dtype=np.float32),
+    )
+    compute.set_data(
+        **get_compute_data(
+            includeTemperature=includeTemperature,
+            fuelBuildUpMethod=fuelBuildUpMethod,
+            drynessMethod=drynessMethod,
+            Nt=Nt,
+        )
+    )
+    compute.set_params(**compute_params)
+    compute.run(np.empty((12, land_pts), dtype=np.float32))
+    compute.release()
+
+
+def test_GPUInfernoConsAvg(params_model_ba):
+    for _params, expected_model_ba in params_model_ba:
+        params = {
+            **dict(
+                fapar_weight=1,
+                dryness_weight=1,
+                temperature_weight=1,
+                fuel_weight=1,
+            ),
+            **_params,
+        }
+
+        # Set up the model.
+        model = GPUConsAvgBAModel(**params)
+
+        test_ba = model.run(**params)["model_ba"]
+
+        # Carry out monthly averaging of the expected output to compare to the already
+        # averaged output above.
+        expected = model._cons_monthly_avg.cons_monthly_average_data(
+            expected_model_ba["metal"]
+        )
+
+        assert_allclose(test_ba, expected, atol=1e-12, rtol=1e-3)
+
+        model.release()
+
+
+def test_flam():
+    compute = GPUFlam2()
+
+    def gpu_calc_flam(**params):
+        return compute.run(
+            temp_l=params["temp_l"],
+            fuel_build_up=params["fuel_build_up"],
+            fapar=params["fapar"],
+            dry_days=params["dry_days"],
+            dryness_method=params["dryness_method"],
+            fuel_build_up_method=params["fuel_build_up_method"],
+            fapar_factor=params["fapar_factor"],
+            fapar_centre=params["fapar_centre"],
+            fapar_shape=params["fapar_shape"],
+            fuel_build_up_factor=params["fuel_build_up_factor"],
+            fuel_build_up_centre=params["fuel_build_up_centre"],
+            fuel_build_up_shape=params["fuel_build_up_shape"],
+            temperature_factor=params["temperature_factor"],
+            temperature_centre=params["temperature_centre"],
+            temperature_shape=params["temperature_shape"],
+            dry_day_factor=params["dry_day_factor"],
+            dry_day_centre=params["dry_day_centre"],
+            dry_day_shape=params["dry_day_shape"],
+            dry_bal=params["dry_bal"],
+            dry_bal_factor=params["dry_bal_factor"],
+            dry_bal_centre=params["dry_bal_centre"],
+            dry_bal_shape=params["dry_bal_shape"],
+            litter_pool=params["litter_pool"],
+            litter_pool_factor=params["litter_pool_factor"],
+            litter_pool_centre=params["litter_pool_centre"],
+            litter_pool_shape=params["litter_pool_shape"],
+            include_temperature=params["include_temperature"],
+            fapar_weight=params["fapar_weight"],
+            dryness_weight=params["dryness_weight"],
+            temperature_weight=params["temperature_weight"],
+            fuel_weight=params["fuel_weight"],
+        )
+
+    for seed in range(10000):
+        rng = np.random.default_rng(seed)
+
+        # Use random data and parameters to simulate variability of real nputs.
+        params = dict(
+            temp_l=rng.random(),
+            rhum_l=0.0,
+            fuel_l=0.0,
+            sm_l=0.0,
+            rain_l=0.0,
+            fuel_build_up=rng.random(),
+            fapar=rng.random(),
+            dry_days=rng.random(),
+            flammability_method=2,
+            dryness_method=rng.integers(1, 3),
+            fuel_build_up_method=rng.integers(1, 3),
+            fapar_factor=rng.random(),
+            fapar_centre=rng.random(),
+            fapar_shape=rng.random(),
+            fuel_build_up_factor=rng.random(),
+            fuel_build_up_centre=rng.random(),
+            fuel_build_up_shape=rng.random(),
+            temperature_factor=rng.random(),
+            temperature_centre=rng.random(),
+            temperature_shape=rng.random(),
+            dry_day_factor=rng.random(),
+            dry_day_centre=rng.random(),
+            dry_day_shape=rng.random(),
+            dry_bal=rng.random(),
+            dry_bal_factor=rng.random(),
+            dry_bal_centre=rng.random(),
+            dry_bal_shape=rng.random(),
+            litter_pool=rng.random(),
+            litter_pool_factor=rng.random(),
+            litter_pool_centre=rng.random(),
+            litter_pool_shape=rng.random(),
+            include_temperature=rng.integers(2),
+            fapar_weight=rng.random(),
+            dryness_weight=rng.random(),
+            temperature_weight=rng.random(),
+            fuel_weight=rng.random(),
+        )
+
+        python_flam = calc_flam(**params)
+        metal_flam = gpu_calc_flam(**params)
+
+        assert_allclose(python_flam, metal_flam, atol=1e-8, rtol=1e-4)
+
+    # Test 0 weights case.
+    for key in (
+        "fapar_weight",
+        "dryness_weight",
+        "temperature_weight",
+        "fuel_weight",
+    ):
+        params[key] = 0.0
+
+    python_flam = calc_flam(**params)
+    metal_flam = gpu_calc_flam(**params)
+
+    assert_allclose(python_flam, 1, atol=1e-8, rtol=1e-4)
+    assert_allclose(metal_flam, 1, atol=1e-8, rtol=1e-4)
+
+    compute.release()
+
+
+def test_checks_mask(model_params):
+    for _, _params in model_params.items():
+        params = {
+            **dict(
+                fapar_weight=1,
+                dryness_weight=1,
+                temperature_weight=1,
+                fuel_weight=1,
+            ),
+            **_params,
+        }
+
+        metal_model = GPUBAModel(**params)
+        mask = metal_model._gpu_inferno.get_checks_failed_mask()
+
+        python_model = BAModel(**params)
+        expected = python_model._get_checks_failed_mask(**params)
+
+        assert np.all(mask == expected)
+
+        metal_model.release()
+
+
+def test_diagnostics(model_params):
+    for _, _params in model_params.items():
+        params = {
+            **dict(
+                fapar_weight=1,
+                dryness_weight=1,
+                temperature_weight=1,
+                fuel_weight=1,
+            ),
+            **_params,
+        }
+
+        metal_model = GPUBAModel(**params)
+        metal_diagnostics = metal_model._get_diagnostics()
+
+        python_model = BAModel(**params)
+        python_diagnostics = python_model._get_diagnostics()
+
+        assert len(metal_diagnostics) == len(python_diagnostics) == 3
+
+        for i in range(len(metal_diagnostics)):
+            # NOTE This very high tolerance probably indicates the unreliability of
+            # certain floating point calculations. Therefore, the Python (Numba)
+            # version should be preferred.
+            assert_allclose(metal_diagnostics[i], python_diagnostics[i], rtol=0.6)
+
+        metal_model.release()

@@ -44,7 +44,17 @@ from python_inferno.ba_model import BAModel, GPUBAModel
     ],
 )
 def test_GPUBAModel(model_params, exp_key, expected_diffs):
-    params = model_params[exp_key]
+    _params = model_params[exp_key]
+
+    params = {
+        **dict(
+            fapar_weight=1,
+            dryness_weight=1,
+            temperature_weight=1,
+            fuel_weight=1,
+        ),
+        **_params,
+    }
 
     model_bas = {}
 
@@ -56,17 +66,7 @@ def test_GPUBAModel(model_params, exp_key, expected_diffs):
         # kwargs they require, ignoring the rest.
         ba_model = model_class(**params)
 
-        model_bas[name] = ba_model.run(
-            **{
-                **dict(
-                    fapar_weight=1,
-                    dryness_weight=1,
-                    temperature_weight=1,
-                    fuel_weight=1,
-                ),
-                **params,
-            }
-        )["model_ba"]
+        model_bas[name] = ba_model.run(**params)["model_ba"]
 
         if name == "metal":
             ba_model._gpu_inferno.release()

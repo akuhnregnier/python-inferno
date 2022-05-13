@@ -32,11 +32,21 @@ if __name__ == "__main__":
         _,
         _,
         _,
-        params,
+        _params,
         exp_name,
         _,
     ) in islice(method_iter(), 0, None):
         logger.info(exp_name)
+
+        params = {
+            **dict(
+                fapar_weight=1,
+                dryness_weight=1,
+                temperature_weight=1,
+                fuel_weight=1,
+            ),
+            **_params,
+        }
 
         outputs = dict()
         times = defaultdict(list)
@@ -52,17 +62,7 @@ if __name__ == "__main__":
             for i in range(100 if name == "python" else 1000):
                 start = time()
 
-                outputs[name] = ba_model.run(
-                    **{
-                        **dict(
-                            fapar_weight=1,
-                            dryness_weight=1,
-                            temperature_weight=1,
-                            fuel_weight=1,
-                        ),
-                        **params,
-                    }
-                )
+                outputs[name] = ba_model.run(**params)
                 times[name].append(time() - start)
 
             if name == "metal":
