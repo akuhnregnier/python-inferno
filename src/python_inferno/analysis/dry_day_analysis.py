@@ -22,7 +22,7 @@ def prepare_data():
         t1p5m_tile,
         q1p5m_tile,
         pstar,
-        sthu_soilt,
+        sthu_soilt_single,
         frac,
         c_soil_dpm_gb,
         c_soil_rpm_gb,

@@ -13,12 +13,7 @@ from wildfires.analysis import cube_plotting
 
 from .ba_model import BAModel
 from .configuration import pft_group_names
-from .data import (
-    get_2d_cubes,
-    get_gfed_regions,
-    get_pnv_mega_plot_data,
-    subset_sthu_soilt_inplace,
-)
+from .data import get_2d_cubes, get_gfed_regions, get_pnv_mega_plot_data
 from .metrics import calculate_phase, calculate_phase_2d
 from .utils import wrap_phase_diffs
 
@@ -266,7 +261,6 @@ def plotting(
 
     if data_params is not None:
         data_dict = BAModel(**data_params).data_dict
-        subset_sthu_soilt_inplace(data_dict)
         data_2d_cubes = get_2d_cubes(data_dict=data_dict)
     else:
         data_2d_cubes = None

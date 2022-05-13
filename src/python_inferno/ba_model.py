@@ -462,7 +462,7 @@ class GPUBAModel(BAModel):
             t1p5m_tile=self.data_dict["t1p5m_tile"].ravel(),
             q1p5m_tile=self.data_dict["q1p5m_tile"].ravel(),
             pstar=self.data_dict["pstar"].ravel(),
-            sthu_soilt_single=self.data_dict["sthu_soilt"][:, 0, 0].ravel(),
+            sthu_soilt_single=self.data_dict["sthu_soilt_single"].ravel(),
             frac=self.data_dict["frac"].ravel(),
             c_soil_dpm_gb=self.data_dict["c_soil_dpm_gb"].ravel(),
             c_soil_rpm_gb=self.data_dict["c_soil_rpm_gb"].ravel(),

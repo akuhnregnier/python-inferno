@@ -580,7 +580,7 @@ if __name__ == "__main__":
         obs_pftcrop_1d = data_dict.pop("obs_pftcrop_1d")
 
         # Select single soil layer of soil moisture.
-        data_dict["inferno_sm"] = data_dict.pop("sthu_soilt")[:, 0, 0]
+        data_dict["inferno_sm"] = data_dict.pop("sthu_soilt_single")
 
         combined_mask = np.logical_or(
             np.ma.getmaskarray(mon_avg_gfed_ba_1d),

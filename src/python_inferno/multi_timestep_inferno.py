@@ -66,7 +66,7 @@ def _multi_timestep_inferno(
     t1p5m_tile,
     q1p5m_tile,
     pstar,
-    sthu_soilt,
+    sthu_soilt_single,
     frac,
     c_soil_dpm_gb,
     c_soil_rpm_gb,
@@ -114,7 +114,7 @@ def _multi_timestep_inferno(
         t1p5m_tile.shape[0]
         == q1p5m_tile.shape[0]
         == pstar.shape[0]
-        == sthu_soilt.shape[0]
+        == sthu_soilt_single.shape[0]
         == frac.shape[0]
         == c_soil_dpm_gb.shape[0]
         == c_soil_rpm_gb.shape[0]
@@ -149,8 +149,7 @@ def _multi_timestep_inferno(
     dpm_fuel = pmtofuel * c_soil_dpm_gb
 
     # Soil Humidity (inferno_sm)
-    # XXX What does selecting one of the 4 layers change here?
-    inferno_sm = sthu_soilt[:, 0, 0]
+    inferno_sm = sthu_soilt_single
 
     if land_point == -1:
         loop_start = 0
@@ -281,7 +280,7 @@ def multi_timestep_inferno(
     t1p5m_tile,
     q1p5m_tile,
     pstar,
-    sthu_soilt,
+    sthu_soilt_single,
     frac,
     c_soil_dpm_gb,
     c_soil_rpm_gb,
@@ -365,7 +364,7 @@ def multi_timestep_inferno(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,
-        sthu_soilt=sthu_soilt,
+        sthu_soilt_single=sthu_soilt_single,
         frac=frac,
         c_soil_dpm_gb=c_soil_dpm_gb,
         c_soil_rpm_gb=c_soil_rpm_gb,

@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from python_inferno.ba_model import BAModel
 from python_inferno.cache import cache
-from python_inferno.data import load_jules_lats_lons, subset_sthu_soilt_inplace
+from python_inferno.data import load_jules_lats_lons
 from python_inferno.model_params import get_model_params
 
 
@@ -44,7 +44,7 @@ def get_sobol_sis(*, params, land_index_args):
         "t1p5m_tile",
         "q1p5m_tile",
         "pstar",
-        "sthu_soilt",  # Will be subset to have only temporal & land dimensions.
+        "sthu_soilt_single",
         # "frac",
         "c_soil_dpm_gb",
         "c_soil_rpm_gb",
@@ -61,7 +61,6 @@ def get_sobol_sis(*, params, land_index_args):
     ]
 
     data_arrs = dict(**ba_model.data_dict, obs_pftcrop_1d=ba_model.obs_pftcrop_1d)
-    data_arrs = subset_sthu_soilt_inplace(data_arrs)
 
     outputs = []
 
@@ -125,17 +124,7 @@ def get_sobol_sis(*, params, land_index_args):
 
             # Update data variables.
             for key, var in ba_model.data_dict.items():
-                if key == "sthu_soilt":
-                    # TODO - Resolve this inconsistency everywhere this variable is
-                    # used, i.e. simply return the single layer version originally.
-                    x = data_arrs[key]
-                    assert x.ndim == 2
-                    updated = np.repeat(
-                        data_arrs[key].reshape(x.shape[0], 1, 1, x.shape[1]), 4, axis=1
-                    )
-                else:
-                    updated = data_arrs[key]
-
+                updated = data_arrs[key]
                 assert ba_model.data_dict[key].shape == updated.shape
                 ba_model.data_dict[key] = updated
 

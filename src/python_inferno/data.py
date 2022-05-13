@@ -238,7 +238,8 @@ def load_data(
     t1p5m_tile = cubes.extract_cube("t1p5m")
     q1p5m_tile = cubes.extract_cube("q1p5m")
     pstar = cubes.extract_cube("pstar")
-    sthu_soilt = cubes.extract_cube("sthu")
+    # XXX What does selecting one of the 4 layers change here?
+    sthu_soilt_single = cubes.extract_cube("sthu")[:, 0, 0]
     frac = cubes.extract_cube("landCoverFrac")
     c_soil_dpm_gb = cubes.extract_cube("c_dpm_gb")
     c_soil_rpm_gb = cubes.extract_cube("c_rpm_gb")
@@ -294,7 +295,7 @@ def load_data(
         make_contiguous(t1p5m_tile[:N, :, 0].data.data),
         make_contiguous(q1p5m_tile[:N, :, 0].data.data),
         make_contiguous(pstar[:N, 0].data.data),
-        make_contiguous(sthu_soilt[:N].data.data),
+        make_contiguous(sthu_soilt_single[:N].data.data),
         make_contiguous(frac[:N, :, 0].data.data),
         make_contiguous(c_soil_dpm_gb[:N, 0].data.data),
         make_contiguous(c_soil_rpm_gb[:N, 0].data.data),
@@ -487,7 +488,7 @@ def get_processed_climatological_data(
         t1p5m_tile,
         q1p5m_tile,
         pstar,
-        sthu_soilt,
+        sthu_soilt_single,
         frac,
         c_soil_dpm_gb,
         c_soil_rpm_gb,
@@ -533,7 +534,7 @@ def get_processed_climatological_data(
         t1p5m_tile=t1p5m_tile,
         q1p5m_tile=q1p5m_tile,
         pstar=pstar,
-        sthu_soilt=sthu_soilt,
+        sthu_soilt_single=sthu_soilt_single,
         frac=frac,
         c_soil_dpm_gb=c_soil_dpm_gb,
         c_soil_rpm_gb=c_soil_rpm_gb,
@@ -727,9 +728,3 @@ def get_2d_cubes(*, data_dict):
         name: cube_1d_to_2d(get_1d_data_cube(data, lats=jules_lats, lons=jules_lons))
         for name, data in data_dict.items()
     }
-
-
-@cache
-def subset_sthu_soilt_inplace(data_dict):
-    data_dict["sthu_soilt"] = data_dict["sthu_soilt"][:, 0, 0]
-    return data_dict

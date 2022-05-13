@@ -78,7 +78,7 @@ def get_processed_inferno_ba(*, average_samples):
         t1p5m_tile,
         q1p5m_tile,
         pstar,
-        sthu_soilt,
+        sthu_soilt_single,
         frac,
         c_soil_dpm_gb,
         c_soil_rpm_gb,
@@ -321,11 +321,9 @@ def analysis(
     for key, data in data_dict.items():
         if key in ("t1p5m_tile", "q1p5m_tile"):
             proc_data_dict[key] = frac_weighted_mean(data=data, frac=frac)
-        elif key == "sthu_soilt":
-            proc_data_dict[key] = data[:, 0, 0]
         elif key in ("frac", "fapar_diag_pft", "litter_pool"):
             proc_data_dict[key] = get_grouped_average(data[:, :13])
-        elif key in ("grouped_dry_bal", "con_rain"):
+        elif key in ("sthu_soilt_single", "grouped_dry_bal", "con_rain"):
             # Leave as-is.
             proc_data_dict[key] = data
         elif key in (
