@@ -11,6 +11,7 @@ from .py_gpu_inferno import GPUConsAvg as _GPUConsAvg
 from .py_gpu_inferno import GPUConsAvgNoMask as _GPUConsAvgNoMask
 from .py_gpu_inferno import GPUFlam2
 from .py_gpu_inferno import GPUInfernoAvg as _GPUInfernoAvg
+from .py_gpu_inferno import GPUInfernoAvgScore as _GPUInfernoAvgScore
 from .py_gpu_inferno import calculate_phase
 from .py_gpu_inferno import cons_avg_no_mask as _cons_avg_no_mask
 from .py_gpu_inferno import nme as _nme
@@ -162,6 +163,89 @@ class GPUInfernoAvg(GPUInferno):
 
     def _get_out_arr(self):
         return np.empty((12, land_pts), dtype=np.float32)
+
+
+class GPUInfernoAvgScore(GPUInferno):
+    def __init__(self, *args, weights, obs_data, obs_pftcrop, **kwargs):
+        weights[weights < 1e-9] = 0
+
+        self.weights = weights
+        self.obs_data = obs_data
+        self.obs_pftcrop = obs_pftcrop
+        super().__init__(*args, **kwargs)
+
+    def _get_compute(self):
+        return _GPUInfernoAvgScore(
+            land_pts,
+            self.weights.astype(np.float32),
+            self.obs_data.astype(np.float32),
+            self.obs_pftcrop.astype(np.float32),
+        )
+
+    def _get_out_arr(self):
+        return None
+
+    def run(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def score(
+        self,
+        *,
+        crop_f,
+        overall_scale,
+        fapar_factor,
+        fapar_centre,
+        fapar_shape,
+        fuel_build_up_factor,
+        fuel_build_up_centre,
+        fuel_build_up_shape,
+        temperature_factor,
+        temperature_centre,
+        temperature_shape,
+        dry_day_factor,
+        dry_day_centre,
+        dry_day_shape,
+        dry_bal_factor,
+        dry_bal_centre,
+        dry_bal_shape,
+        litter_pool_factor,
+        litter_pool_centre,
+        litter_pool_shape,
+        fapar_weight,
+        dryness_weight,
+        temperature_weight,
+        fuel_weight,
+    ):
+        self.gpu_compute.set_params(
+            fapar_factor=fapar_factor,
+            fapar_centre=fapar_centre,
+            fapar_shape=fapar_shape,
+            fuel_build_up_factor=fuel_build_up_factor,
+            fuel_build_up_centre=fuel_build_up_centre,
+            fuel_build_up_shape=fuel_build_up_shape,
+            temperature_factor=temperature_factor,
+            temperature_centre=temperature_centre,
+            temperature_shape=temperature_shape,
+            dry_day_factor=dry_day_factor,
+            dry_day_centre=dry_day_centre,
+            dry_day_shape=dry_day_shape,
+            dry_bal_factor=dry_bal_factor,
+            dry_bal_centre=dry_bal_centre,
+            dry_bal_shape=dry_bal_shape,
+            litter_pool_factor=litter_pool_factor,
+            litter_pool_centre=litter_pool_centre,
+            litter_pool_shape=litter_pool_shape,
+            fapar_weight=fapar_weight,
+            dryness_weight=dryness_weight,
+            temperature_weight=temperature_weight,
+            fuel_weight=fuel_weight,
+        )
+        score_info = self.gpu_compute.run(overall_scale, crop_f)
+        return dict(
+            arcsinh_nme=score_info[0],
+            mpd=score_info[1],
+            mpd_ignored=score_info[2],
+        )
 
 
 class GPUCalculateMPD:

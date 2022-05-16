@@ -119,9 +119,9 @@ def _calculate_scores_from_avg_ba(*, avg_ba, mon_avg_gfed_ba_1d, requested):
             Metrics.LOGHIST,
         )
     ):
-        sel = ~np.ma.getmaskarray(mon_avg_gfed_ba_1d)
-        y_pred = np.ma.getdata(avg_ba)[sel]
-        y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[sel]
+        assert not np.any(np.ma.getmaskarray(mon_avg_gfed_ba_1d))
+        y_pred = np.ma.getdata(avg_ba).ravel()
+        y_true = np.ma.getdata(mon_avg_gfed_ba_1d).ravel()
         assert y_pred.shape == y_true.shape
 
     scores = {}
@@ -558,11 +558,8 @@ class GPUBAModel(BAModel):
         self._gpu_inferno.release()
 
 
-class GPUConsAvgBAModel(GPUBAModel):
-    def __init__(self, **kwargs):
-        logger.info("GPUConsAvgBAModel init.")
-        super().__init__(**kwargs)
-
+class ModAvgCropMixin:
+    def _mod_avg_crop(self):
         # NOTE This is a workaround based on the assumption that cropland fraction is
         # slowly changing, meaning that there should be little difference between
         # averaging from original timesteps to 12 months, vs. aggregated timesteps to
@@ -573,6 +570,15 @@ class GPUConsAvgBAModel(GPUBAModel):
             np.ma.getdata(self.obs_pftcrop_1d)
         )
         assert self.obs_pftcrop_1d.shape == (12, land_pts)
+        return self.obs_pftcrop_1d
+
+
+class GPUConsAvgBAModel(GPUBAModel, ModAvgCropMixin):
+    def __init__(self, **kwargs):
+        logger.info("GPUConsAvgBAModel init.")
+        super().__init__(**kwargs)
+        # Modify crop variable using temporal averaging.
+        self._mod_avg_crop()
 
     @property
     def _gpu_class(self):
@@ -592,6 +598,48 @@ class GPUConsAvgBAModel(GPUBAModel):
         return dict(
             avg_ba=model_ba,
             scores=scores,
+        )
+
+
+class GPUConsAvgScoreBAModel(GPUBAModel, ModAvgCropMixin):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    @property
+    def _gpu_class(self):
+        from .py_gpu_inferno import GPUInfernoAvgScore
+
+        return partial(
+            GPUInfernoAvgScore,
+            weights=self._cons_monthly_avg.weights,
+            obs_data=self.mon_avg_gfed_ba_1d,
+            # NOTE This also changes the stored instance variable.
+            obs_pftcrop=self._mod_avg_crop(),
+        )
+
+    def get_model_ba(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def run(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def calc_scores(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def get_scores(
+        self,
+        *,
+        requested,
+        crop_f=1.0,
+        **kwargs,
+    ):
+        if set(requested) != set((Metrics.MPD, Metrics.ARCSINH_NME)):
+            raise NotImplementedError
+
+        processed_kwargs = self.process_kwargs(**kwargs)
+
+        return transform_dtype(self._gpu_inferno.score)(
+            **dict(crop_f=crop_f, **processed_kwargs)
         )
 
 

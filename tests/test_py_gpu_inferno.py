@@ -2,9 +2,14 @@
 
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 
-from python_inferno.ba_model import BAModel, GPUBAModel, GPUConsAvgBAModel
+from python_inferno.ba_model import (
+    BAModel,
+    GPUBAModel,
+    GPUConsAvgBAModel,
+    GPUConsAvgScoreBAModel,
+)
 from python_inferno.configuration import (
     N_pft_groups,
     land_pts,
@@ -14,6 +19,7 @@ from python_inferno.configuration import (
     n_cell_tot_pft,
 )
 from python_inferno.inferno import calc_flam
+from python_inferno.metrics import Metrics
 from python_inferno.py_gpu_inferno import (
     GPUCalculateMPD,
     GPUCalculatePhase,
@@ -456,3 +462,43 @@ def test_diagnostics(model_params):
             assert_allclose(metal_diagnostics[i], python_diagnostics[i], rtol=0.6)
 
         metal_model.release()
+
+
+@pytest.mark.parametrize("seed", range(100))
+@pytest.mark.parametrize("index", range(4))
+def test_GPUInfernoConsAvgScore(index, seed, model_params):
+    rng = np.random.default_rng(seed)
+
+    _params = list(model_params.values())[index]
+
+    params = {
+        **_params,
+        **dict(
+            fapar_weight=rng.random(),
+            dryness_weight=rng.random(),
+            temperature_weight=rng.random(),
+            fuel_weight=rng.random(),
+        ),
+    }
+
+    # Set up the models.
+    score_model = GPUConsAvgScoreBAModel(**params)
+    ba_model = BAModel(**params)
+
+    requested = (Metrics.MPD, Metrics.ARCSINH_NME)
+
+    test_scores = score_model.get_scores(requested=requested, **params)
+    assert len(test_scores) == 3
+
+    # Compare against the normal scores.
+    exp_scores = ba_model.calc_scores(
+        model_ba=ba_model.run(**params)["model_ba"], requested=requested
+    )["scores"]
+
+    assert_allclose(
+        exp_scores["arcsinh_nme"], test_scores["arcsinh_nme"], atol=1e-12, rtol=2e-4
+    )
+    assert_allclose(exp_scores["mpd"], test_scores["mpd"], atol=1e-12, rtol=4e-6)
+    assert_array_equal(exp_scores["mpd_ignored"], test_scores["mpd_ignored"])
+
+    score_model.release()

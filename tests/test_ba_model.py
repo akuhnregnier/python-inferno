@@ -4,7 +4,12 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from python_inferno.ba_model import BAModel, GPUBAModel, GPUConsAvgBAModel
+from python_inferno.ba_model import (
+    BAModel,
+    GPUBAModel,
+    GPUConsAvgBAModel,
+    GPUConsAvgScoreBAModel,
+)
 from python_inferno.metrics import Metrics
 
 
@@ -132,7 +137,7 @@ def test_GPUInferno_cons_avg_combined_benchmark(index, params_model_ba, benchmar
 
     def _bench():
         mod_params = params.copy()
-        mod_params["fapar_weight"] += rng.random()
+        mod_params["fapar_weight"] = rng.random()
         return model1.run(**mod_params)
 
     benchmark.pedantic(_bench, iterations=CONS_AVG_ITER, rounds=CONS_AVG_ROUNDS)
@@ -159,7 +164,7 @@ def test_GPUInferno_cons_avg_separate_benchmark(index, params_model_ba, benchmar
 
     def _bench():
         mod_params = params.copy()
-        mod_params["fapar_weight"] += rng.random()
+        mod_params["fapar_weight"] = rng.random()
         return model2._cons_monthly_avg.cons_monthly_average_data(
             model2.run(**mod_params)["model_ba"]
         )
@@ -170,6 +175,8 @@ def test_GPUInferno_cons_avg_separate_benchmark(index, params_model_ba, benchmar
 
 
 def test_calculate_scores_benchmark(benchmark, model_params):
+    rng = np.random.default_rng(0)
+
     params = next(iter(model_params.values()))  # Get first value.
     ba_model = BAModel(**params)
     model_ba = ba_model.run(
@@ -184,11 +191,17 @@ def test_calculate_scores_benchmark(benchmark, model_params):
         }
     )["model_ba"]
 
-    benchmark(
-        ba_model.calc_scores,
-        model_ba=model_ba,
-        requested=(Metrics.MPD, Metrics.ARCSINH_NME),
-    )
+    def _bench():
+        model_ba.ravel()[0] += 1e-5 * rng.random()
+        # Ensure +ve.
+        model_ba.ravel()[0] = abs(model_ba.ravel()[0])
+
+        ba_model.calc_scores(
+            model_ba=model_ba,
+            requested=(Metrics.MPD, Metrics.ARCSINH_NME),
+        )
+
+    benchmark(_bench)
 
 
 TOTAL_ITER = 10
@@ -196,10 +209,12 @@ TOTAL_ROUNDS = 10
 
 
 @pytest.mark.parametrize(
-    "model_class, iter_f", ((BAModel, 1), (GPUBAModel, 10), (GPUConsAvgBAModel, 10))
+    "model_class, iter_f", ((BAModel, 1), (GPUBAModel, 10), (GPUConsAvgBAModel, 20))
 )
 @pytest.mark.parametrize("index", range(4))
 def test_total_opt_benchmark(index, model_class, iter_f, benchmark, model_params):
+    rng = np.random.default_rng(0)
+
     params = {
         **dict(
             fapar_weight=1,
@@ -214,13 +229,13 @@ def test_total_opt_benchmark(index, model_class, iter_f, benchmark, model_params
     def _bench():
         model_ba = ba_model.run(
             **{
-                **dict(
-                    fapar_weight=1,
-                    dryness_weight=1,
-                    temperature_weight=1,
-                    fuel_weight=1,
-                ),
                 **params,
+                **dict(
+                    fapar_weight=rng.random(),
+                    dryness_weight=rng.random(),
+                    temperature_weight=rng.random(),
+                    fuel_weight=rng.random(),
+                ),
             }
         )["model_ba"]
 
@@ -229,4 +244,39 @@ def test_total_opt_benchmark(index, model_class, iter_f, benchmark, model_params
             requested=(Metrics.MPD, Metrics.ARCSINH_NME),
         )
 
-    benchmark.pedantic(_bench, iterations=TOTAL_ITER * iter_f, rounds=TOTAL_ROUNDS)
+    benchmark.pedantic(_bench, iterations=iter_f * TOTAL_ITER, rounds=TOTAL_ROUNDS)
+
+
+@pytest.mark.parametrize("index", range(4))
+def test_gpu_score_total_opt_benchmark(index, benchmark, model_params):
+    rng = np.random.default_rng(0)
+
+    params = {
+        **dict(
+            fapar_weight=1,
+            dryness_weight=1,
+            temperature_weight=1,
+            fuel_weight=1,
+        ),
+        **list(model_params.values())[index],
+    }
+
+    ba_model = GPUConsAvgScoreBAModel(**params)
+
+    def _bench():
+        scores = ba_model.get_scores(
+            requested=(Metrics.MPD, Metrics.ARCSINH_NME),
+            **{
+                **params,
+                **dict(
+                    fapar_weight=rng.random(),
+                    dryness_weight=rng.random(),
+                    temperature_weight=rng.random(),
+                    fuel_weight=rng.random(),
+                ),
+            }
+        )
+
+        return scores
+
+    benchmark.pedantic(_bench, iterations=30 * TOTAL_ITER, rounds=TOTAL_ROUNDS)
