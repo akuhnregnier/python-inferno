@@ -103,17 +103,11 @@ def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run)
     return mpd_val, ignored
 
 
-def calculate_scores(
-    *, model_ba, cons_monthly_avg, mon_avg_gfed_ba_1d, requested=Metrics
-):
+def _calculate_scores_from_avg_ba(*, avg_ba, mon_avg_gfed_ba_1d, requested):
     assert requested
 
-    if np.all(np.abs(model_ba) < 1e-15):
+    if np.all(np.abs(avg_ba) < 1e-15):
         raise BAModelException()
-
-    # Calculate monthly averages.
-    avg_ba = cons_monthly_avg.cons_monthly_average_data(model_ba)
-    assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
 
     if any(
         metric in requested
@@ -169,7 +163,24 @@ def calculate_scores(
     if any(np.ma.is_masked(val) for val in scores.values()):
         raise BAModelException()
 
-    return scores, avg_ba
+    return scores
+
+
+def calculate_scores(
+    *, model_ba, cons_monthly_avg, mon_avg_gfed_ba_1d, requested=Metrics
+):
+    # Calculate monthly averages.
+    avg_ba = cons_monthly_avg.cons_monthly_average_data(model_ba)
+    assert avg_ba.shape == mon_avg_gfed_ba_1d.shape
+
+    return (
+        _calculate_scores_from_avg_ba(
+            avg_ba=avg_ba,
+            mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
+            requested=requested,
+        ),
+        avg_ba,
+    )
 
 
 class BAModel:
@@ -568,6 +579,20 @@ class GPUConsAvgBAModel(GPUBAModel):
         from .py_gpu_inferno import GPUInfernoAvg
 
         return partial(GPUInfernoAvg, weights=self._cons_monthly_avg.weights)
+
+    def calc_scores(self, *, model_ba, requested):
+        # NOTE - `model_ba` ~ `avg_ba` in this case since conservative averaging is
+        # done as part of the kernel.
+        scores = _calculate_scores_from_avg_ba(
+            avg_ba=model_ba,
+            mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
+            requested=requested,
+        )
+
+        return dict(
+            avg_ba=model_ba,
+            scores=scores,
+        )
 
 
 def gen_to_optimise(

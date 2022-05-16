@@ -189,3 +189,44 @@ def test_calculate_scores_benchmark(benchmark, model_params):
         model_ba=model_ba,
         requested=(Metrics.MPD, Metrics.ARCSINH_NME),
     )
+
+
+TOTAL_ITER = 10
+TOTAL_ROUNDS = 10
+
+
+@pytest.mark.parametrize(
+    "model_class, iter_f", ((BAModel, 1), (GPUBAModel, 10), (GPUConsAvgBAModel, 10))
+)
+@pytest.mark.parametrize("index", range(4))
+def test_total_opt_benchmark(index, model_class, iter_f, benchmark, model_params):
+    params = {
+        **dict(
+            fapar_weight=1,
+            dryness_weight=1,
+            temperature_weight=1,
+            fuel_weight=1,
+        ),
+        **list(model_params.values())[index],
+    }
+    ba_model = model_class(**params)
+
+    def _bench():
+        model_ba = ba_model.run(
+            **{
+                **dict(
+                    fapar_weight=1,
+                    dryness_weight=1,
+                    temperature_weight=1,
+                    fuel_weight=1,
+                ),
+                **params,
+            }
+        )["model_ba"]
+
+        return ba_model.calc_scores(
+            model_ba=model_ba,
+            requested=(Metrics.MPD, Metrics.ARCSINH_NME),
+        )
+
+    benchmark.pedantic(_bench, iterations=TOTAL_ITER * iter_f, rounds=TOTAL_ROUNDS)
