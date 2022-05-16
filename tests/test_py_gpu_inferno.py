@@ -40,12 +40,12 @@ def get_compute_data():
         Nt=10,
     ):
         return dict(
-            _ignitionMethod=1,
-            _flammabilityMethod=2,
-            _drynessMethod=drynessMethod,
-            _fuelBuildUpMethod=fuelBuildUpMethod,
-            _includeTemperature=includeTemperature,
-            _Nt=Nt,
+            ignitionMethod=1,
+            flammabilityMethod=2,
+            drynessMethod=drynessMethod,
+            fuelBuildUpMethod=fuelBuildUpMethod,
+            includeTemperature=includeTemperature,
+            Nt=Nt,
             t1p5m_tile=np.zeros(n_cell_tot_pft(Nt), dtype=np.float32) + 300,
             q1p5m_tile=np.zeros(n_cell_tot_pft(Nt), dtype=np.float32),
             pstar=np.zeros(n_cell_no_pft(Nt), dtype=np.float32),
@@ -122,6 +122,17 @@ def test_GPUCompute_synthetic(
     compute.set_params(**compute_params)
 
     compute.run(np.empty((Nt, land_pts), dtype=np.float32))
+
+
+def test_multiple_gpucompute():
+    instances = []
+
+    for i in range(10):
+        compute = _GPUCompute()
+        instances.append(compute)
+
+    for instance in instances:
+        instance.release()
 
 
 @pytest.mark.timeout(45)

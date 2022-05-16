@@ -51,12 +51,12 @@ class GPUInferno:
         assert frac.shape == (self.Nt * n_total_pft * land_pts,)
 
         self.gpu_compute.set_data(
-            _ignitionMethod=ignition_method,
-            _flammabilityMethod=flammability_method,
-            _drynessMethod=dryness_method,
-            _fuelBuildUpMethod=fuel_build_up_method,
-            _includeTemperature=include_temperature,
-            _Nt=Nt,
+            ignitionMethod=ignition_method,
+            flammabilityMethod=flammability_method,
+            drynessMethod=dryness_method,
+            fuelBuildUpMethod=fuel_build_up_method,
+            includeTemperature=include_temperature,
+            Nt=Nt,
             t1p5m_tile=t1p5m_tile,
             q1p5m_tile=q1p5m_tile,
             pstar=pstar,
