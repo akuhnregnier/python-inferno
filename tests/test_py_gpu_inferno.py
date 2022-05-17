@@ -428,7 +428,7 @@ def test_checks_mask(model_params):
         mask = metal_model._gpu_inferno.get_checks_failed_mask()
 
         python_model = BAModel(**params)
-        expected = python_model._get_checks_failed_mask(**params)
+        expected = python_model._get_checks_failed_mask()
 
         assert np.all(mask == expected)
 
@@ -478,6 +478,8 @@ def test_GPUInfernoConsAvgScore(index, seed, model_params):
             dryness_weight=rng.random(),
             temperature_weight=rng.random(),
             fuel_weight=rng.random(),
+            overall_scale=100 * rng.random(),
+            crop_f=rng.random(),
         ),
     }
 

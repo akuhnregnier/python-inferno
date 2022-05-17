@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from loguru import logger
 from numba import njit, prange, set_num_threads
 from wildfires.qstat import get_ncpus
 
 from .calc_c_comps_triffid import calc_c_comps_triffid
-from .configuration import N_pft_groups, avg_ba, land_pts, npft
+from .configuration import avg_ba, land_pts, npft
 from .inferno import calc_burnt_area, calc_flam, calc_ignitions
 from .qsat_wat import qsat_wat
 from .utils import get_pft_group_index, transform_dtype
@@ -58,6 +57,90 @@ def _get_diagnostics(
                 inferno_rhum_out[ti, i, l] = inferno_rhum
 
     return inferno_rain_out, qsat_out, inferno_rhum_out
+
+
+@njit(nogil=True, parallel=True, cache=True, fastmath=True)
+def _get_checks_failed_mask(
+    *,
+    t1p5m_tile,
+    q1p5m_tile,
+    pstar,
+    sthu_soilt_single,
+    ls_rain,
+    con_rain,
+):
+    # Ensure consistency of the time dimension.
+    if not (
+        t1p5m_tile.shape[0]
+        == q1p5m_tile.shape[0]
+        == pstar.shape[0]
+        == sthu_soilt_single.shape[0]
+        == ls_rain.shape[0]
+        == con_rain.shape[0]
+    ):
+        raise ValueError("All arrays need to have the same time dimension.")
+
+    Nt = pstar.shape[0]
+
+    # Ignore mask stored for diagnostic purposes.
+    checks_failed_mask = np.ones((Nt, npft, land_pts), dtype=np.bool_)
+
+    # Tolerance number to filter non-physical rain values
+    rain_tolerance = 1.0e-18  # kg/m2/s
+
+    # Soil Humidity (inferno_sm)
+    inferno_sm = sthu_soilt_single
+
+    for l in prange(land_pts):
+        for ti in range(Nt):
+            # Rainfall (inferno_rain)
+
+            # Rain fall values have a significant impact in the calculation of flammability.
+            # In some cases we may be presented with values that have no significant meaning -
+            # e.g in the UM context negative values or very small values can often be found/
+
+            ls_rain_filtered = ls_rain[ti, l]
+            con_rain_filtered = con_rain[ti, l]
+
+            if ls_rain_filtered < rain_tolerance:
+                ls_rain_filtered = 0.0
+            if con_rain_filtered < rain_tolerance:
+                con_rain_filtered = 0.0
+
+            inferno_rain = ls_rain_filtered + con_rain_filtered
+
+            # The maximum rain rate ever observed is 38mm in one minute,
+            # here we assume 0.5mm/s stops fires altogether
+            if (inferno_rain > 0.5) or (inferno_rain < 0.0):
+                continue
+
+            # Soil moisture is a fraction of saturation
+            if (inferno_sm[ti, l] > 1.0) or (inferno_sm[ti, l] < 0.0):
+                continue
+
+            for i in range(npft):
+                # Conditional statements to make sure we are dealing with
+                # reasonable weather. Note initialisation to 0 already done.
+                # If the driving variables are singularities, we assume
+                # no burnt area.
+
+                # Temperatures constrained akin to qsat (from the WMO)
+                if (t1p5m_tile[ti, i, l] > 338.15) or (t1p5m_tile[ti, i, l] < 183.15):
+                    continue
+
+                # Get the tile relative humidity using saturation routine
+                qsat = qsat_wat(t1p5m_tile[ti, i, l], pstar[ti, l])
+
+                inferno_rhum = (q1p5m_tile[ti, i, l] / qsat) * 100.0
+
+                # Relative Humidity should be constrained to 0-100
+                if (inferno_rhum > 100.0) or (inferno_rhum < 0.0):
+                    continue
+
+                # Record the fact that the checks have passed.
+                checks_failed_mask[ti, i, l] = False
+
+    return checks_failed_mask
 
 
 @njit(nogil=True, parallel=True, cache=True, fastmath=True)
@@ -130,9 +213,6 @@ def _multi_timestep_inferno(
 
     # Store the output BA (averaged over PFTs).
     burnt_area = np.zeros((Nt, land_pts))
-
-    # Ignore mask stored for diagnostic purposes.
-    checks_failed_mask = np.ones((Nt, npft, land_pts), dtype=np.bool_)
 
     # Plant Material that is available as fuel (on the surface)
     pmtofuel = 0.7
@@ -219,8 +299,6 @@ def _multi_timestep_inferno(
                     continue
 
                 # If all these checks are passes, start fire calculations
-                checks_failed_mask[ti, i, l] = False  # Record the fact that the
-                # checks have passed.
 
                 ignitions = calc_ignitions(
                     pop_den[l],
@@ -272,121 +350,17 @@ def _multi_timestep_inferno(
                 # We add pft-specific variables to the gridbox totals
                 burnt_area[ti, l] += frac[ti, i, l] * burnt_area_ft
 
-    return burnt_area, checks_failed_mask
+    return burnt_area
 
 
 def multi_timestep_inferno(
     *,
-    t1p5m_tile,
-    q1p5m_tile,
-    pstar,
-    sthu_soilt_single,
-    frac,
-    c_soil_dpm_gb,
-    c_soil_rpm_gb,
-    canht,
-    ls_rain,
-    con_rain,
-    pop_den,
-    flash_rate,
-    ignition_method,
-    fuel_build_up,
-    fapar_diag_pft,
-    grouped_dry_bal,
-    dry_days,
-    litter_pool,
-    fapar_factor,
-    fapar_centre,
-    fapar_shape,
-    fuel_build_up_factor,
-    fuel_build_up_centre,
-    fuel_build_up_shape,
-    temperature_factor,
-    temperature_centre,
-    temperature_shape,
-    litter_pool_factor,
-    litter_pool_centre,
-    litter_pool_shape,
-    flammability_method,
-    dryness_method,
-    fuel_build_up_method,
-    dry_day_factor,
-    dry_day_centre,
-    dry_day_shape,
-    dry_bal_factor,
-    dry_bal_centre,
-    dry_bal_shape,
-    include_temperature,
-    timestep,
     overall_scale,
-    fapar_weight,
-    dryness_weight,
-    temperature_weight,
-    fuel_weight,
     land_point=-1,
-    return_checks_failed_mask=False,
+    **kwargs,
 ):
-    param_vars = dict(
-        fapar_factor=fapar_factor,
-        fapar_centre=fapar_centre,
-        fapar_shape=fapar_shape,
-        fuel_build_up_factor=fuel_build_up_factor,
-        fuel_build_up_centre=fuel_build_up_centre,
-        fuel_build_up_shape=fuel_build_up_shape,
-        temperature_factor=temperature_factor,
-        temperature_centre=temperature_centre,
-        temperature_shape=temperature_shape,
-        dry_day_factor=dry_day_factor,
-        dry_day_centre=dry_day_centre,
-        dry_day_shape=dry_day_shape,
-        dry_bal_factor=dry_bal_factor,
-        dry_bal_centre=dry_bal_centre,
-        dry_bal_shape=dry_bal_shape,
-        litter_pool_factor=litter_pool_factor,
-        litter_pool_centre=litter_pool_centre,
-        litter_pool_shape=litter_pool_shape,
-        fapar_weight=fapar_weight,
-        dryness_weight=dryness_weight,
-        temperature_weight=temperature_weight,
-        fuel_weight=fuel_weight,
-    )
-
-    # Ensure the parameters are given as arrays with `N_pft_groups` elements.
-    transformed_param_vars = dict()
-    for name, val in param_vars.items():
-        if not hasattr(val, "__iter__"):
-            logger.debug(f"Duplicating: {name}")
-            val = [val] * N_pft_groups
-        transformed_param_vars[name] = np.asarray(val, dtype=np.float64)
-        assert transformed_param_vars[name].shape == (N_pft_groups,)
-
-    raw_ba, checks_failed_mask = transform_dtype(_multi_timestep_inferno)(
-        t1p5m_tile=t1p5m_tile,
-        q1p5m_tile=q1p5m_tile,
-        pstar=pstar,
-        sthu_soilt_single=sthu_soilt_single,
-        frac=frac,
-        c_soil_dpm_gb=c_soil_dpm_gb,
-        c_soil_rpm_gb=c_soil_rpm_gb,
-        canht=canht,
-        ls_rain=ls_rain,
-        con_rain=con_rain,
-        pop_den=pop_den,
-        flash_rate=flash_rate,
-        ignition_method=int(ignition_method),
-        fuel_build_up=fuel_build_up,
-        fapar_diag_pft=fapar_diag_pft,
-        grouped_dry_bal=grouped_dry_bal,
-        dry_days=dry_days,
-        flammability_method=int(flammability_method),
-        dryness_method=int(dryness_method),
-        litter_pool=litter_pool,
-        fuel_build_up_method=int(fuel_build_up_method),
-        include_temperature=int(include_temperature),
+    raw_ba = transform_dtype(_multi_timestep_inferno)(
         land_point=land_point,
-        **transformed_param_vars,
+        **kwargs,
     )
-    ba = overall_scale * raw_ba
-    if return_checks_failed_mask:
-        return ba, checks_failed_mask
-    return ba
+    return overall_scale * raw_ba

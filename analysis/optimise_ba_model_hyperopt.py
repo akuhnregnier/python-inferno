@@ -145,9 +145,11 @@ if __name__ == "__main__":
             fapar_factor=(3, [(-50, -1)], hp.uniform),
             fapar_centre=(3, [(-0.1, 1.1)], hp.uniform),
             fapar_shape=(3, [(0.1, 20.0)], hp.uniform),
-            fapar_weight=(3, [(0.1, 10.0)], hp.uniform),
-            dryness_weight=(3, [(0.1, 10.0)], hp.uniform),
-            fuel_weight=(3, [(0.1, 10.0)], hp.uniform),
+            # NOTE All weights should be in [0, 1], otherwise unintended -ve values
+            # may occur!
+            fapar_weight=(3, [(0.01, 1.0)], hp.uniform),
+            dryness_weight=(3, [(0.01, 1.0)], hp.uniform),
+            fuel_weight=(3, [(0.01, 1.0)], hp.uniform),
             # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
             average_samples=(1, [(40, 160, 60)], mod_quniform),
             # `crop_f` suppresses BA in cropland areas.
@@ -202,7 +204,7 @@ if __name__ == "__main__":
                     temperature_factor=(3, [(0.19, 0.3)], hp.uniform),
                     temperature_centre=(3, [(280, 320)], hp.uniform),
                     temperature_shape=(3, [(0.1, 20.0)], hp.uniform),
-                    temperature_weight=(3, [(0.1, 10.0)], hp.uniform),
+                    temperature_weight=(3, [(0.01, 1.0)], hp.uniform),
                 )
             )
         elif include_temperature == 0:

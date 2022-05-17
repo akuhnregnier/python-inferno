@@ -7,9 +7,13 @@ from loguru import logger
 from sklearn.metrics import r2_score
 
 from .configuration import N_pft_groups, land_pts, npft
-from .data import get_processed_climatological_data, timestep
+from .data import get_processed_climatological_data
 from .metrics import Metrics, loghist, nmse
-from .multi_timestep_inferno import _get_diagnostics, multi_timestep_inferno
+from .multi_timestep_inferno import (
+    _get_checks_failed_mask,
+    _get_diagnostics,
+    multi_timestep_inferno,
+)
 from .py_gpu_inferno import GPUCalculateMPD, cpp_nme
 from .utils import (
     ConsMonthlyAvgNoMask,
@@ -68,7 +72,6 @@ def run_model(
 ):
     return unpack_wrapped(multi_timestep_inferno)(
         ignition_method=1,
-        timestep=timestep,
         flammability_method=2,
         dryness_method=dryness_method,
         fuel_build_up_method=fuel_build_up_method,
@@ -84,6 +87,12 @@ def run_model(
     )
 
 
+def mpd_check(mpd_ignored):
+    if mpd_ignored > MPD_IGNORE_THRES:
+        # Ensure that not too many samples are ignored.
+        raise BAModelException()
+
+
 def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run):
     if mon_avg_gfed_ba_1d.shape[0] == 12:
         pad_func = lambda x: x
@@ -96,9 +105,7 @@ def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run)
     mpd_val, ignored = mpd(
         obs=pad_func(mon_avg_gfed_ba_1d), pred=pad_func(avg_ba), return_ignored=True
     )
-    if ignored > MPD_IGNORE_THRES:
-        # Ensure that not too many samples are ignored.
-        raise BAModelException()
+    mpd_check(ignored)
 
     return mpd_val, ignored
 
@@ -376,23 +383,15 @@ class BAModel:
             **processed_kwargs,
         )
 
-    def _get_checks_failed_mask(
-        self,
-        *,
-        crop_f,
-        **kwargs,
-    ):
-        processed_kwargs = self.process_kwargs(**kwargs)
-        _, checks_failed_mask = BAModel.get_model_ba(
-            self,
-            dryness_method=self.dryness_method,
-            fuel_build_up_method=self.fuel_build_up_method,
-            include_temperature=self.include_temperature,
-            data_dict=self.data_dict,
-            return_checks_failed_mask=True,
-            **processed_kwargs,
+    def _get_checks_failed_mask(self):
+        return transform_dtype(_get_checks_failed_mask)(
+            t1p5m_tile=self.data_dict["t1p5m_tile"],
+            q1p5m_tile=self.data_dict["q1p5m_tile"],
+            pstar=self.data_dict["pstar"],
+            sthu_soilt_single=self.data_dict["sthu_soilt_single"],
+            ls_rain=self.data_dict["ls_rain"],
+            con_rain=self.data_dict["con_rain"],
         )
-        return checks_failed_mask
 
     def _get_diagnostics(self):
         return _get_diagnostics(
@@ -487,7 +486,7 @@ class GPUBAModel(BAModel):
             grouped_dry_bal=self.data_dict["grouped_dry_bal"].ravel(),
             litter_pool=self.data_dict["litter_pool"].ravel(),
             dry_days=self.data_dict["dry_days"].ravel(),
-            checks_failed=BAModel._get_checks_failed_mask(self, **kwargs),
+            checks_failed=BAModel._get_checks_failed_mask(self),
         )
 
     @property
@@ -649,30 +648,43 @@ def gen_to_optimise(
     success_func,
     **model_ba_init_kwargs,
 ):
+    requested = (Metrics.MPD, Metrics.ARCSINH_NME)
     try:
-        ba_model = GPUBAModel(**model_ba_init_kwargs)
+        score_model = GPUConsAvgScoreBAModel(**model_ba_init_kwargs)
+
+        def to_optimise(**run_kwargs):
+            scores = score_model.get_scores(requested=requested, **run_kwargs)
+
+            try:
+                mpd_check(scores["mpd_ignored"])
+            except BAModelException:
+                return fail_func()
+
+            # Aim to minimise the combined score.
+            loss = scores["arcsinh_nme"] + scores["mpd"]
+            if np.isnan(loss):
+                return fail_func()
+
+            return success_func(loss)
+
     except ModuleNotFoundError:
         logger.warning("GPU INFERNO module not found.")
         ba_model = BAModel(**model_ba_init_kwargs)
 
-    def to_optimise(**run_kwargs):
-        # NOTE: It is assumed here that the data being operated on will not change
-        # between runs of the `to_optimise` function. Data-relevant parameters in
-        # `run_kwargs` will be silently ignored!
-        try:
-            model_ba = ba_model.run(**run_kwargs)["model_ba"]
-            scores = ba_model.calc_scores(
-                model_ba=model_ba, requested=(Metrics.MPD, Metrics.ARCSINH_NME)
-            )["scores"]
-        except BAModelException:
-            return fail_func()
+        def to_optimise(**run_kwargs):
+            try:
+                model_ba = ba_model.run(**run_kwargs)["model_ba"]
+                scores = ba_model.calc_scores(model_ba=model_ba, requested=requested)[
+                    "scores"
+                ]
+            except BAModelException:
+                return fail_func()
 
-        # Aim to minimise the combined score.
-        # loss = scores["nme"] + scores["nmse"] + scores["mpd"] + 2 * scores["loghist"]
-        loss = scores["arcsinh_nme"] + scores["mpd"]
-        logger.debug(f"loss: {loss:0.6f}")
-        return success_func(loss)
+            # Aim to minimise the combined score.
+            loss = scores["arcsinh_nme"] + scores["mpd"]
+            return success_func(loss)
 
-    # TODO Call release on GPU class when done?
-
+    # NOTE: It is assumed here that the data being operated on will not change
+    # between runs of the `to_optimise` function. Data-relevant parameters in
+    # `run_kwargs` will be silently ignored!
     return to_optimise
