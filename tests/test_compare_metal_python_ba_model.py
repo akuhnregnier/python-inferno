@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from numpy.testing import assert_allclose
 
 from python_inferno.ba_model import BAModel, GPUBAModel
 
@@ -12,49 +13,35 @@ from python_inferno.ba_model import BAModel, GPUBAModel
         (
             "dry_Dry_Day__fuel_Antec_NPP",
             {
-                "np.abs(np.mean(diffs))": 3.5e-16,
-                "np.mean(np.abs(diffs))": 5.1e-16,
-                "np.max(np.abs(diffs))": 4.2e-13,
+                "allclose_params": {"rtol": 1e-4, "atol": 2e-11},
+                "max zero_atol": 1e-14,
             },
         ),
         (
             "dry_Dry_Day__fuel_Leaf_Litter_Pool",
             {
-                "np.abs(np.mean(diffs))": 2.4e-15,
-                "np.mean(np.abs(diffs))": 3.1e-15,
-                "np.max(np.abs(diffs))": 4.6e-13,
+                "allclose_params": {"rtol": 1e-4, "atol": 1e-11},
+                "max zero_atol": 1e-12,
             },
         ),
         (
             "dry_VPD_Precip__fuel_Antec_NPP",
             {
-                "np.abs(np.mean(diffs))": 4.9e-15,
-                "np.mean(np.abs(diffs))": 9.2e-15,
-                "np.max(np.abs(diffs))": 5.1e-13,
+                "allclose_params": {"rtol": 1e-4, "atol": 1e-13},
+                "max zero_atol": 1e-14,
             },
         ),
         (
             "dry_VPD_Precip__fuel_Leaf_Litter_Pool",
             {
-                "np.abs(np.mean(diffs))": 1.5e-16,
-                "np.mean(np.abs(diffs))": 8.1e-16,
-                "np.max(np.abs(diffs))": 1.5e-13,
+                "allclose_params": {"rtol": 1.1e-5, "atol": 1e-12},
+                "max zero_atol": 1e-14,
             },
         ),
     ],
 )
 def test_GPUBAModel(model_params, exp_key, expected_diffs):
-    _params = model_params[exp_key]
-
-    params = {
-        **dict(
-            fapar_weight=1,
-            dryness_weight=1,
-            temperature_weight=1,
-            fuel_weight=1,
-        ),
-        **_params,
-    }
+    params = model_params[exp_key]
 
     model_bas = {}
 
@@ -71,9 +58,18 @@ def test_GPUBAModel(model_params, exp_key, expected_diffs):
         if name == "metal":
             ba_model._gpu_inferno.release()
 
-    diffs = model_bas["python"] - model_bas["metal"]
+    python_zeros = model_bas["python"] < 1e-30
+    metal_zeros = model_bas["metal"] < 1e-30
 
-    assert np.abs(np.mean(diffs)) <= expected_diffs["np.abs(np.mean(diffs))"]
-    assert np.mean(np.abs(diffs)) <= expected_diffs["np.mean(np.abs(diffs))"]
-    assert np.max(np.abs(diffs)) <= expected_diffs["np.max(np.abs(diffs))"]
-    assert np.allclose(diffs, 0, atol=1e-12, rtol=1e-9)
+    zero_mask = python_zeros | metal_zeros
+
+    python_nonzero = model_bas["python"][~zero_mask]
+    metal_nonzero = model_bas["metal"][~zero_mask]
+
+    max_zero_atol = max(
+        np.max(np.abs(model_bas["metal"][python_zeros])),
+        np.max(np.abs(model_bas["python"][metal_zeros])),
+    )
+
+    assert_allclose(metal_nonzero, python_nonzero, **expected_diffs["allclose_params"])
+    assert max_zero_atol <= expected_diffs["max zero_atol"]

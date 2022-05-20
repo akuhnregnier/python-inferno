@@ -14,6 +14,7 @@ from alepython.ale import ale_plot
 from empirical_fire_modelling.analysis.shap import get_shap_values
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
+from numpy.testing import assert_allclose
 from sklearn import linear_model
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.inspection import partial_dependence
@@ -359,7 +360,7 @@ def analysis(
         inferno_ba, time_coord2 = get_processed_inferno_ba(
             average_samples=params["average_samples"]
         )
-        assert np.all(np.isclose(jules_time_coord.points, time_coord2.points))
+        assert_allclose(jules_time_coord.points, time_coord2.points)
         assert inferno_ba.shape == model_ba.shape
         y = inferno_ba.ravel()
     else:

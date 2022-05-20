@@ -7,6 +7,7 @@ import numpy as np
 from loguru import logger
 from matplotlib.widgets import Slider
 from numba import njit, prange
+from numpy.testing import assert_allclose
 from scipy.optimize import minimize
 from tqdm import tqdm
 
@@ -157,14 +158,14 @@ space = BasinHoppingSpace(generate_space(space_template))
 bins = np.linspace(-1, 1, 20)
 # Need equally spaced bins.
 bin_diff = np.diff(bins)[0]
-assert np.all(np.isclose(np.diff(bins), bin_diff))
+assert_allclose(np.diff(bins), bin_diff)
 
 
 # Histogram bins for `loss1`.
 diff_bins = np.linspace(-2, 2, 10)
 # Need equally spaced bins.
 diff_bin_diff = np.diff(diff_bins)[0]
-assert np.all(np.isclose(np.diff(diff_bins), diff_bin_diff))
+assert_allclose(np.diff(diff_bins), diff_bin_diff)
 
 
 @njit(cache=True, nogil=True, parallel=True, fastmath=True)

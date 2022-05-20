@@ -15,18 +15,9 @@ from python_inferno.metrics import Metrics
 
 def test_BAModel(params_model_ba):
     for params, expected_model_ba in params_model_ba:
-        assert np.allclose(
-            BAModel(**params).run(
-                **{
-                    **dict(
-                        fapar_weight=1,
-                        dryness_weight=1,
-                        temperature_weight=1,
-                        fuel_weight=1,
-                    ),
-                    **params,
-                }
-            )["model_ba"],
+        model_ba = BAModel(**params).run(**params)["model_ba"]
+        assert_allclose(
+            model_ba,
             expected_model_ba["python"],
             atol=1e-12,
             rtol=1e-7,
@@ -38,21 +29,18 @@ def test_BAModel(params_model_ba):
 def test_GPUBAModel(param_index, mod_index, params_model_ba):
     rng = np.random.default_rng(mod_index)
 
-    params, expected_model_ba = list(params_model_ba)[param_index]
+    params, _ = list(params_model_ba)[param_index]
 
-    mod_params = {
-        # Modify parameters using random permutations.
-        **params,
-        **{
-            key: rng.random()
-            for key, val in (
-                ("fapar_weight", 1.0),
-                ("dryness_weight", 1.0),
-                ("temperature_weight", 1.0),
-                ("fuel_weight", 1.0),
-            )
-        },
-    }
+    # Modify parameters using random permutations.
+    mod_params = params.copy()
+    for key in (
+        "fapar_weight",
+        "dryness_weight",
+        "temperature_weight",
+        "fuel_weight",
+    ):
+        mod_params[key] = rng.random()
+
     mod_params["crop_f"] = rng.random()
     mod_params["overall_scale"] = rng.random()
 
@@ -75,21 +63,17 @@ def test_GPUBAModel(param_index, mod_index, params_model_ba):
 def test_GPUInferno_cons_avg(param_index, mod_index, params_model_ba):
     rng = np.random.default_rng(mod_index)
 
-    params, expected_model_ba = list(params_model_ba)[param_index]
+    params, _ = list(params_model_ba)[param_index]
 
-    mod_params = {
-        # Modify parameters using random permutations.
-        **{
-            key: rng.random()
-            for key, val in (
-                ("fapar_weight", 1),
-                ("dryness_weight", 1),
-                ("temperature_weight", 1),
-                ("fuel_weight", 1),
-            )
-        },
-        **params,
-    }
+    # Modify parameters using random permutations.
+    mod_params = params.copy()
+    for key in (
+        "fapar_weight",
+        "dryness_weight",
+        "temperature_weight",
+        "fuel_weight",
+    ):
+        mod_params[key] = rng.random()
 
     gpu_cons_avg_model = GPUConsAvgBAModel(**mod_params)
     gpu_cons_avg_ba = gpu_cons_avg_model.run(**mod_params)["model_ba"]
@@ -120,16 +104,7 @@ CONS_AVG_ROUNDS = 100
 
 @pytest.mark.parametrize("index", range(4))
 def test_GPUInferno_cons_avg_combined_benchmark(index, params_model_ba, benchmark):
-    params, expected_model_ba = list(params_model_ba)[index]
-    params = {
-        **dict(
-            fapar_weight=1,
-            dryness_weight=1,
-            temperature_weight=1,
-            fuel_weight=1,
-        ),
-        **params,
-    }
+    params, _ = list(params_model_ba)[index]
 
     rng = np.random.default_rng(0)
 
@@ -147,16 +122,7 @@ def test_GPUInferno_cons_avg_combined_benchmark(index, params_model_ba, benchmar
 
 @pytest.mark.parametrize("index", range(4))
 def test_GPUInferno_cons_avg_separate_benchmark(index, params_model_ba, benchmark):
-    params, expected_model_ba = list(params_model_ba)[index]
-    params = {
-        **dict(
-            fapar_weight=1,
-            dryness_weight=1,
-            temperature_weight=1,
-            fuel_weight=1,
-        ),
-        **params,
-    }
+    params, _ = list(params_model_ba)[index]
 
     rng = np.random.default_rng(0)
 
@@ -179,17 +145,7 @@ def test_calculate_scores_benchmark(benchmark, model_params):
 
     params = next(iter(model_params.values()))  # Get first value.
     ba_model = BAModel(**params)
-    model_ba = ba_model.run(
-        **{
-            **dict(
-                fapar_weight=1,
-                dryness_weight=1,
-                temperature_weight=1,
-                fuel_weight=1,
-            ),
-            **params,
-        }
-    )["model_ba"]
+    model_ba = ba_model.run(**params)["model_ba"]
 
     def _bench():
         model_ba.ravel()[0] += 1e-5 * rng.random()
@@ -215,15 +171,8 @@ TOTAL_ROUNDS = 10
 def test_total_opt_benchmark(index, model_class, iter_f, benchmark, model_params):
     rng = np.random.default_rng(0)
 
-    params = {
-        **dict(
-            fapar_weight=1,
-            dryness_weight=1,
-            temperature_weight=1,
-            fuel_weight=1,
-        ),
-        **list(model_params.values())[index],
-    }
+    params = list(model_params.values())[index]
+
     ba_model = model_class(**params)
 
     def _bench():
@@ -251,15 +200,7 @@ def test_total_opt_benchmark(index, model_class, iter_f, benchmark, model_params
 def test_gpu_score_total_opt_benchmark(index, benchmark, model_params):
     rng = np.random.default_rng(0)
 
-    params = {
-        **dict(
-            fapar_weight=1,
-            dryness_weight=1,
-            temperature_weight=1,
-            fuel_weight=1,
-        ),
-        **list(model_params.values())[index],
-    }
+    params = list(model_params.values())[index]
 
     ba_model = GPUConsAvgScoreBAModel(**params)
 

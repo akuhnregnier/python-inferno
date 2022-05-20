@@ -726,6 +726,7 @@ def memoize(func):
         cache[hashed] = output
         return output
 
+    wrapped._wrapped_func = func
     return wrapped
 
 

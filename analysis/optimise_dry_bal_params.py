@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 from numba import njit, prange
+from numpy.testing import assert_allclose
 from scipy.optimize import basinhopping
 
 from python_inferno.basinhopping import BasinHoppingSpace, BoundedSteps, Recorder
@@ -31,7 +32,7 @@ else:
 bins = np.linspace(-1, 1, 20)
 # Need equally spaced bins.
 bin_diff = np.diff(bins)[0]
-assert np.all(np.isclose(np.diff(bins), bin_diff))
+assert_allclose(np.diff(bins), bin_diff)
 
 
 @njit(cache=True, nogil=True, parallel=True, fastmath=True)

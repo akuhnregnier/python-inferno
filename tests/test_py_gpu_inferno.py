@@ -151,18 +151,8 @@ def test_many_run(compute, get_compute_data, compute_params):
 
 
 def test_GPUBAModel(params_model_ba):
-    for _params, expected_model_ba in params_model_ba:
+    for params, expected_model_ba in params_model_ba:
         rng = np.random.default_rng(0)
-
-        params = {
-            **dict(
-                fapar_weight=1,
-                dryness_weight=1,
-                temperature_weight=1,
-                fuel_weight=1,
-            ),
-            **_params,
-        }
 
         rand_params = {key: rng.random(1) for key in params}
 
@@ -176,7 +166,7 @@ def test_GPUBAModel(params_model_ba):
         )
         # Set the proper parameters and run.
         model_ba = model.run(**params)["model_ba"]
-        assert np.allclose(model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7)
+        assert_allclose(model_ba, expected_model_ba["metal"], atol=1e-12, rtol=1e-7)
 
         model.release()
 
@@ -281,17 +271,7 @@ def test_GPUInfernoConsAvg_synthetic(
 
 
 def test_GPUInfernoConsAvg(params_model_ba):
-    for _params, expected_model_ba in params_model_ba:
-        params = {
-            **dict(
-                fapar_weight=1,
-                dryness_weight=1,
-                temperature_weight=1,
-                fuel_weight=1,
-            ),
-            **_params,
-        }
-
+    for params, expected_model_ba in params_model_ba:
         # Set up the model.
         model = GPUConsAvgBAModel(**params)
 
@@ -413,17 +393,7 @@ def test_flam():
 
 
 def test_checks_mask(model_params):
-    for _, _params in model_params.items():
-        params = {
-            **dict(
-                fapar_weight=1,
-                dryness_weight=1,
-                temperature_weight=1,
-                fuel_weight=1,
-            ),
-            **_params,
-        }
-
+    for _, params in model_params.items():
         metal_model = GPUBAModel(**params)
         mask = metal_model._gpu_inferno.get_checks_failed_mask()
 
@@ -436,17 +406,7 @@ def test_checks_mask(model_params):
 
 
 def test_diagnostics(model_params):
-    for _, _params in model_params.items():
-        params = {
-            **dict(
-                fapar_weight=1,
-                dryness_weight=1,
-                temperature_weight=1,
-                fuel_weight=1,
-            ),
-            **_params,
-        }
-
+    for _, params in model_params.items():
         metal_model = GPUBAModel(**params)
         metal_diagnostics = metal_model._get_diagnostics()
 

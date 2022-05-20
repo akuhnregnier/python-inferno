@@ -22,8 +22,7 @@ if __name__ == "__main__":
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
-    # XXX - 'opt_record_bak' vs. 'opt_record'
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
+    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
     df, method_iter = get_model_params(
         record_dir=record_dir, progress=True, verbose=False
     )
@@ -77,8 +76,10 @@ if __name__ == "__main__":
 
     TEST_DATA_DIR.mkdir(parents=False, exist_ok=True)
 
-    with (TEST_DATA_DIR / "best_params.pkl").open("wb") as f:
+    suffix = "litter_v2"
+
+    with (TEST_DATA_DIR / f"best_params_{suffix}.pkl").open("wb") as f:
         pickle.dump(params_dict, f, protocol=-1)
 
-    with (TEST_DATA_DIR / "model_ba.pkl").open("wb") as f:
+    with (TEST_DATA_DIR / f"model_ba_{suffix}.pkl").open("wb") as f:
         pickle.dump(model_ba_dict, f, protocol=-1)

@@ -423,6 +423,20 @@ def test_inactive_memoize(monkeypatch):
     assert (memo_fn_side_effects(), memo_fn_side_effects()) == (1, 2)
 
 
+def test_wrapped_func_memoize():
+    @memoize
+    def memo_fn_side_effects():
+        if not hasattr(memo_fn_side_effects, "counter"):
+            memo_fn_side_effects.counter = 0
+        memo_fn_side_effects.counter += 1
+
+        return memo_fn_side_effects.counter
+
+    fn = memo_fn_side_effects._wrapped_func
+
+    assert (fn(), fn()) == (1, 2)
+
+
 @pytest.mark.parametrize("args", [(0, 1, 12), (-10, 20, 4)])
 def test_linspace_no_endpoint(args):
     assert_allclose(np.linspace(*args, endpoint=False), linspace_no_endpoint(*args))
