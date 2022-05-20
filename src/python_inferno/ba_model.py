@@ -198,6 +198,7 @@ class BAModel:
         fuel_build_up_method,
         include_temperature,
         average_samples,
+        _uncached_data=False,
         **kwargs,
     ):
         self.dryness_method = int(dryness_method)
@@ -278,11 +279,13 @@ class BAModel:
             else None
         )
 
-        (
-            data_dict,
-            self.mon_avg_gfed_ba_1d,
-            self.jules_time_coord,
-        ) = get_processed_climatological_data(
+        data_func = (
+            get_processed_climatological_data
+            if not _uncached_data
+            else get_processed_climatological_data._wrapped_func._orig_func
+        )
+
+        (data_dict, self.mon_avg_gfed_ba_1d, self.jules_time_coord,) = data_func(
             litter_tc=self.litter_tc,
             leaf_f=self.leaf_f,
             n_samples_pft=self.n_samples_pft,
@@ -650,7 +653,9 @@ def gen_to_optimise(
 ):
     requested = (Metrics.MPD, Metrics.ARCSINH_NME)
     try:
-        score_model = GPUConsAvgScoreBAModel(**model_ba_init_kwargs)
+        score_model = GPUConsAvgScoreBAModel(
+            _uncached_data=True, **model_ba_init_kwargs
+        )
 
         def to_optimise(**run_kwargs):
             scores = score_model.get_scores(requested=requested, **run_kwargs)
@@ -669,7 +674,7 @@ def gen_to_optimise(
 
     except ModuleNotFoundError:
         logger.warning("GPU INFERNO module not found.")
-        ba_model = BAModel(**model_ba_init_kwargs)
+        ba_model = BAModel(_uncached_data=True, **model_ba_init_kwargs)
 
         def to_optimise(**run_kwargs):
             try:
