@@ -22,7 +22,7 @@ from sklearn.metrics import r2_score
 from tqdm import tqdm
 from wildfires.analysis import cube_plotting
 
-from python_inferno.configuration import land_pts, n_total_pft, npft
+from python_inferno.configuration import land_pts
 from python_inferno.data import load_data, timestep
 from python_inferno.metrics import calculate_factor, loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
@@ -31,6 +31,9 @@ from python_inferno.utils import (
     core_unpack_wrapped,
     expand_pft_params,
     exponential_average,
+)
+from python_inferno.utils import frac_weighted_mean as _frac_weighted_mean
+from python_inferno.utils import (
     monthly_average_data,
     temporal_nearest_neighbour_interp,
     unpack_wrapped,
@@ -238,14 +241,7 @@ if __name__ == "__main__":
         ls_rain, con_rain, threshold=1.0, timestep=timestep
     )
 
-    def frac_weighted_mean(data):
-        assert len(data.shape) == 3, "Need time, PFT, and space coords."
-        assert data.shape[1] in (npft, n_total_pft)
-        assert frac.shape[1] == n_total_pft
-
-        return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
-            frac[:, : data.shape[1]], axis=1
-        )
+    frac_weighted_mean = partial(_frac_weighted_mean, frac=frac)
 
     dryness_method_params = {
         # dryness-method 1 parameters.

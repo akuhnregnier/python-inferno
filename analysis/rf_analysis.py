@@ -23,38 +23,15 @@ from wildfires.analysis import cube_plotting
 
 from python_inferno.ba_model import BAModel
 from python_inferno.cache import cache
-from python_inferno.configuration import N_pft_groups, n_total_pft, npft, pft_groups
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.model_params import get_model_params
 from python_inferno.utils import (
     PartialDateTime,
     get_grouped_average,
+    masked_frac_weighted_mean,
     memoize,
     temporal_processing,
 )
-
-
-def frac_weighted_mean(*, data, frac):
-    assert len(data.shape) == 3, "Need time, PFT, and space coords."
-    assert frac.shape[1] == n_total_pft
-
-    if data.shape[1] in (npft, n_total_pft):
-        frac = frac[:, : data.shape[1]]
-    elif data.shape[1] == N_pft_groups:
-        # Grouped averaging.
-        grouped_frac_shape = list(frac.shape)
-        grouped_frac_shape[1] = N_pft_groups
-        grouped_frac = np.zeros(tuple(grouped_frac_shape))
-        for group_i in range(N_pft_groups):
-            for pft_i in pft_groups[group_i]:
-                grouped_frac[:, group_i] += frac[:, pft_i]
-        frac = grouped_frac
-    else:
-        raise ValueError(f"Unsupported shape '{data.shape}'.")
-    frac_sum = np.sum(frac, axis=1)
-    return np.ma.MaskedArray(
-        np.sum(data * frac, axis=1) / frac_sum, mask=np.isclose(frac_sum, 0)
-    )
 
 
 @cache
@@ -321,7 +298,7 @@ def analysis(
     frac = data_dict["frac"]
     for key, data in data_dict.items():
         if key in ("t1p5m_tile", "q1p5m_tile"):
-            proc_data_dict[key] = frac_weighted_mean(data=data, frac=frac)
+            proc_data_dict[key] = masked_frac_weighted_mean(data=data, frac=frac)
         elif key in ("frac", "fapar_diag_pft", "litter_pool"):
             proc_data_dict[key] = get_grouped_average(data[:, :13])
         elif key in ("sthu_soilt_single", "grouped_dry_bal", "con_rain"):

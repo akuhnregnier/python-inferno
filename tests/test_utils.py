@@ -11,6 +11,7 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from numpy.testing import assert_allclose, assert_array_equal
 
+from python_inferno.configuration import n_total_pft, npft
 from python_inferno.py_gpu_inferno import (
     GPUConsAvg,
     GPUConsAvgNoMask,
@@ -25,8 +26,10 @@ from python_inferno.utils import (
     dict_match,
     expand_pft_params,
     exponential_average,
+    frac_weighted_mean,
     get_pft_group_index,
     linspace_no_endpoint,
+    masked_frac_weighted_mean,
     memoize,
     monthly_average_data,
     moving_sum,
@@ -475,7 +478,10 @@ def test_cons_avg_benchmark(benchmark, get_cons_avg_data):
     benchmark(_cons_avg, *get_cons_avg_data())
 
 
-@pytest.mark.parametrize("seed", list(range(100)))
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
 def test_cons_avg_implementations(get_cons_avg_data, seed):
     (
         Nt,
@@ -504,7 +510,10 @@ def test_cons_avg2_benchmark(benchmark, get_cons_avg_data):
     benchmark(_cons_avg2, *get_cons_avg_data()[:-3])
 
 
-@pytest.mark.parametrize("seed", list(range(100)))
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
 def test_cons_avg2_no_mask(get_cons_avg_data, seed):
     (
         Nt,
@@ -529,7 +538,10 @@ def test_cons_avg2_no_mask_benchmark(benchmark, get_cons_avg_data):
     benchmark(_cons_avg2_no_mask, *get_cons_avg_data()[:-4])
 
 
-@pytest.mark.parametrize("seed", list(range(100)))
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
 def test_cons_avg3_no_mask(get_cons_avg_data, seed):
     (
         Nt,
@@ -586,7 +598,10 @@ def test_gpu_cons_avg_benchmark(benchmark, get_cons_avg_data):
     benchmark(gpu_cons_avg.run, in_data, in_mask)
 
 
-@pytest.mark.parametrize("seed", list(range(100)))
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
 def test_gpu_cons_avg_no_mask(get_cons_avg_data, seed):
     (
         Nt,
@@ -628,7 +643,10 @@ def test_gpu_cons_avg_no_mask_benchmark(benchmark, get_cons_avg_data):
     )
 
 
-@pytest.mark.parametrize("seed", list(range(100)))
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
 def test_cons_avg_no_mask_implementations(get_cons_avg_data, seed):
     (
         Nt,
@@ -744,3 +762,63 @@ def test_cons_avg2_no_mask_benchmark_rand(benchmark, get_cons_avg_data):
         _cons_avg2_no_mask(Nt, Nout, weights, in_data)
 
     benchmark.pedantic(_bench, iterations=N_ITER, rounds=N_ROUNDS)
+
+
+def test_frac_weighted_mean_exceptions():
+    with pytest.raises(ValueError):
+        frac_weighted_mean(data=np.empty((1,)), frac=np.empty((1,)))
+
+    with pytest.raises(ValueError):
+        frac_weighted_mean(data=np.empty((1, 100, 1)), frac=np.empty((1,)))
+
+    with pytest.raises(ValueError):
+        frac_weighted_mean(data=np.empty((1, 100, 1)), frac=np.empty((1, 100, 1)))
+
+    with pytest.raises(ValueError):
+        frac_weighted_mean(data=np.empty((1, npft, 1)), frac=np.empty((1, 100, 1)))
+
+    with pytest.raises(ValueError):
+        frac_weighted_mean(data=np.empty((1, npft, 1)), frac=np.empty((1, npft, 1)))
+
+
+def test_frac_weighted_mean():
+    rng = np.random.default_rng(0)
+
+    x = rng.random((1, n_total_pft, 1))
+    frac = np.zeros((1, n_total_pft, 1))
+
+    frac[0, 0, 0] = 1.0
+
+    weighted_mean = frac_weighted_mean(data=x, frac=frac)
+    assert weighted_mean.shape == (1, 1)
+    assert_allclose(weighted_mean[0, 0], x[0, 0, 0])
+
+
+def test_frac_weighted_mean2():
+    rng = np.random.default_rng(0)
+
+    x = rng.random((1, n_total_pft, 1))
+    frac = np.zeros((1, n_total_pft, 1))
+
+    frac[0, 0, 0] = 0.6
+    frac[0, n_total_pft - 1, 0] = 0.3
+
+    weighted_mean = frac_weighted_mean(data=x, frac=frac)
+    assert weighted_mean.shape == (1, 1)
+    assert_allclose(
+        weighted_mean[0, 0], (2 * x[0, 0, 0] + x[0, n_total_pft - 1, 0]) / 3
+    )
+
+
+def test_masked_frac_weighted_mean():
+    rng = np.random.default_rng(0)
+
+    x = rng.random((1, n_total_pft, 2))
+    frac = np.zeros((1, n_total_pft, 2))
+
+    frac[0, 1, 0] = 1.0
+
+    masked_weighted_mean = masked_frac_weighted_mean(data=x, frac=frac)
+    assert masked_weighted_mean.shape == (1, 2)
+    assert_allclose(masked_weighted_mean.data[0, 0], x[0, 1, 0])
+    assert masked_weighted_mean.mask[0, 1]

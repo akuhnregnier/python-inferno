@@ -25,9 +25,12 @@ def test_BAModel(params_model_ba):
 
 
 @pytest.mark.parametrize("param_index", range(4))
-@pytest.mark.parametrize("mod_index", range(100))
-def test_GPUBAModel(param_index, mod_index, params_model_ba):
-    rng = np.random.default_rng(mod_index)
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
+def test_GPUBAModel(param_index, seed, params_model_ba):
+    rng = np.random.default_rng(seed)
 
     params, _ = list(params_model_ba)[param_index]
 
@@ -59,9 +62,12 @@ def test_GPUBAModel(param_index, mod_index, params_model_ba):
 
 
 @pytest.mark.parametrize("param_index", range(4))
-@pytest.mark.parametrize("mod_index", range(100))
-def test_GPUInferno_cons_avg(param_index, mod_index, params_model_ba):
-    rng = np.random.default_rng(mod_index)
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
+def test_GPUInferno_cons_avg(param_index, seed, params_model_ba):
+    rng = np.random.default_rng(seed)
 
     params, _ = list(params_model_ba)[param_index]
 

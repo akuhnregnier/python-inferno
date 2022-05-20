@@ -10,19 +10,8 @@ from sklearn.metrics import r2_score
 from wildfires.analysis import cube_plotting
 
 from python_inferno.cache import cache
-from python_inferno.configuration import n_total_pft, npft
 from python_inferno.data import load_data, load_jules_lats_lons
-from python_inferno.utils import monthly_average_data
-
-
-def frac_weighted_mean(*, data, frac):
-    assert len(data.shape) == 3, "Need time, PFT, and space coords."
-    assert data.shape[1] in (npft, n_total_pft)
-    assert frac.shape[1] == n_total_pft
-
-    return np.sum(data * frac[:, : data.shape[1]], axis=1) / np.sum(
-        frac[:, : data.shape[1]], axis=1
-    )
+from python_inferno.utils import frac_weighted_mean, monthly_average_data
 
 
 @cache

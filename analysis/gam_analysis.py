@@ -36,44 +36,20 @@ from tqdm import tqdm
 
 from python_inferno.ba_model import Status, calculate_scores, process_params
 from python_inferno.cache import cache
-from python_inferno.configuration import (
-    N_pft_groups,
-    land_pts,
-    n_total_pft,
-    npft,
-    pft_group_names,
-    pft_groups,
-)
+from python_inferno.configuration import N_pft_groups, land_pts, pft_group_names
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics import null_model_analysis
 from python_inferno.plotting import plotting
-from python_inferno.utils import ConsMonthlyAvg, get_exp_key, get_exp_name, memoize
+from python_inferno.utils import (
+    ConsMonthlyAvg,
+    get_exp_key,
+    get_exp_name,
+    masked_frac_weighted_mean,
+    memoize,
+)
 
 NoVal = Enum("NoVal", ["NoVal"])
-
-
-def frac_weighted_mean(*, data, frac):
-    assert len(data.shape) == 3, "Need time, PFT, and space coords."
-    assert frac.shape[1] == n_total_pft
-
-    if data.shape[1] in (npft, n_total_pft):
-        frac = frac[:, : data.shape[1]]
-    elif data.shape[1] == N_pft_groups:
-        # Grouped averaging.
-        grouped_frac_shape = list(frac.shape)
-        grouped_frac_shape[1] = N_pft_groups
-        grouped_frac = np.zeros(tuple(grouped_frac_shape))
-        for group_i in range(N_pft_groups):
-            for pft_i in pft_groups[group_i]:
-                grouped_frac[:, group_i] += frac[:, pft_i]
-        frac = grouped_frac
-    else:
-        raise ValueError(f"Unsupported shape '{data.shape}'.")
-    frac_sum = np.sum(frac, axis=1)
-    return np.ma.MaskedArray(
-        np.sum(data * frac, axis=1) / frac_sum, mask=np.isclose(frac_sum, 0)
-    )
 
 
 def check_params(params, key, value=NoVal.NoVal):
@@ -442,7 +418,9 @@ if __name__ == "__main__":
         # Take frac-average.
         for key in data_dict:
             if len(data_dict[key].shape) == 3:
-                data_dict[key] = frac_weighted_mean(data=data_dict[key], frac=frac)
+                data_dict[key] = masked_frac_weighted_mean(
+                    data=data_dict[key], frac=frac
+                )
 
         combined_mask = np.logical_or(
             np.ma.getmaskarray(mon_avg_gfed_ba_1d),

@@ -288,7 +288,11 @@ def test_GPUInfernoConsAvg(params_model_ba):
         model.release()
 
 
-def test_flam():
+@pytest.mark.parametrize(
+    "n_seed",
+    [100, pytest.param(10000, marks=pytest.mark.slow)],
+)
+def test_flam(n_seed):
     compute = GPUFlam2()
 
     def gpu_calc_flam(**params):
@@ -326,7 +330,7 @@ def test_flam():
             fuel_weight=params["fuel_weight"],
         )
 
-    for seed in range(10000):
+    for seed in range(n_seed):
         rng = np.random.default_rng(seed)
 
         # Use random data and parameters to simulate variability of real nputs.
@@ -424,7 +428,10 @@ def test_diagnostics(model_params):
         metal_model.release()
 
 
-@pytest.mark.parametrize("seed", range(100))
+@pytest.mark.parametrize(
+    "seed",
+    [pytest.param(i, marks=pytest.mark.slow) if i != 0 else i for i in range(100)],
+)
 @pytest.mark.parametrize("index", range(4))
 def test_GPUInfernoConsAvgScore(index, seed, model_params):
     rng = np.random.default_rng(seed)

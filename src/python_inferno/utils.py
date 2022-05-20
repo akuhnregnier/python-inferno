@@ -22,6 +22,7 @@ from .configuration import (
     dryness_keys,
     fuel_descr,
     fuel_keys,
+    n_total_pft,
     npft,
     pft_groups,
     pft_groups_array,
@@ -993,3 +994,37 @@ def transform_dtype(func):
         return func(**out)
 
     return _transform_dtype
+
+
+def frac_weighted_mean(*, data, frac, _return_frac_sum=False):
+    if not (len(data.shape) == len(frac.shape) == 3):
+        raise ValueError(f"Need time, PFT, and space coords, got shape '{data.shape}'.")
+    if frac.shape[1] != n_total_pft:
+        raise ValueError(f"Need frac.shape[1] == {n_total_pft}, got '{frac.shape[1]}'.")
+
+    if data.shape[1] in (npft, n_total_pft):
+        frac = frac[:, : data.shape[1]]
+    elif data.shape[1] == N_pft_groups:
+        # Grouped averaging.
+        grouped_frac_shape = list(frac.shape)
+        grouped_frac_shape[1] = N_pft_groups
+        grouped_frac = np.zeros(tuple(grouped_frac_shape), dtype=frac.dtype)
+        for group_i in range(N_pft_groups):
+            for pft_i in pft_groups[group_i]:
+                grouped_frac[:, group_i] += frac[:, pft_i]
+        frac = grouped_frac
+    else:
+        raise ValueError(f"Unsupported shape '{data.shape}'.")
+
+    frac_sum = np.sum(frac, axis=1)
+    weighted_mean = np.sum(data * frac, axis=1) / frac_sum
+    if _return_frac_sum:
+        return weighted_mean, frac_sum
+    return weighted_mean
+
+
+def masked_frac_weighted_mean(*, data, frac):
+    weighted_mean, frac_sum = frac_weighted_mean(
+        data=data, frac=frac, _return_frac_sum=True
+    )
+    return np.ma.MaskedArray(weighted_mean, mask=frac_sum < 1e-15)
