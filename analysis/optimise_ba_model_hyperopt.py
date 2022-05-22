@@ -244,7 +244,7 @@ if __name__ == "__main__":
                     rstate=np.random.default_rng(0),
                     space=exp_space.render_discrete(),
                     # NOTE: Sometimes the same parameters are sampled repeatedly.
-                    max_evals=min(500, round(2 * exp_space.n_discrete_product)),
+                    max_evals=min(10000, round(2 * exp_space.n_discrete_product)),
                     # NOTE: `leave=True` causes strange duplication of rows after
                     # completion of a set of trials, making the output hard to read.
                     # With `leave=False`, the progress bar of completed trials simply
