@@ -11,7 +11,7 @@ from loguru import logger
 from matplotlib.transforms import offset_copy
 from wildfires.analysis import cube_plotting
 
-from .ba_model import BAModel
+from .ba_model import ARCSINH_FACTOR, BAModel
 from .configuration import pft_group_names
 from .data import get_2d_cubes, get_gfed_regions, get_pnv_mega_plot_data
 from .metrics import calculate_phase, calculate_phase_2d
@@ -20,7 +20,7 @@ from .utils import wrap_phase_diffs
 
 def lin_cube_plotting(*, data, title, label="BA"):
     cube_plotting(
-        data,
+        data * 1e6,
         title=title,
         nbins=9,
         vmin_vmax_percentiles=(5, 95),
@@ -31,7 +31,7 @@ def lin_cube_plotting(*, data, title, label="BA"):
 
 def log_cube_plotting(*, data, title, raw_data, label="log(BA)"):
     cube_plotting(
-        data,
+        data * 1e6,
         title=title,
         boundaries=np.geomspace(*np.quantile(raw_data[raw_data > 0], [0.05, 0.95]), 8),
         fig=plt.figure(figsize=(12, 5)),
@@ -217,8 +217,6 @@ def plotting(
     raw_data,
     model_ba_2d_data,
     hist_bins,
-    arcsinh_adj_factor,
-    arcsinh_factor,
     scores=None,
     save_dir=None,
     ref_2d_data=None,
@@ -342,7 +340,7 @@ def plotting(
 
     # Global BA map with linear bins and arcsinh transform.
     lin_cube_plotting(
-        data=arcsinh_adj_factor * np.arcsinh(arcsinh_factor * model_ba_2d_data),
+        data=np.arcsinh(ARCSINH_FACTOR * model_ba_2d_data),
         title=title,
         label="arcsinh(a*BA)",
     )

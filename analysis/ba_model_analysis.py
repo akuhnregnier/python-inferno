@@ -15,18 +15,18 @@ from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
 from tqdm import tqdm
 
-from python_inferno.ba_model import BAModel, Status, calculate_scores
+from python_inferno.ba_model import BAModel, calculate_scores
 from python_inferno.cache import cache
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data, load_jules_lats_lons
-from python_inferno.metrics import null_model_analysis
+from python_inferno.metrics import Metrics
+from python_inferno.metrics_plotting import null_model_analysis
 from python_inferno.model_params import get_model_params
 from python_inferno.plotting import plotting
 from python_inferno.utils import (
     ConsMonthlyAvg,
     PartialDateTime,
     get_apply_mask,
-    get_ba_mask,
     memoize,
     temporal_processing,
 )
@@ -129,13 +129,14 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
+    requested = (Metrics.MPD, Metrics.ARCSINH_NME)
+
     jules_lats, jules_lons = load_jules_lats_lons()
 
     # To prevent memory accumulation during repeated calculations below.
     memoize.active = False
 
-    # XXX - 'opt_record_bak' vs. 'opt_record'
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
+    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
     df, method_iter = get_model_params(
         record_dir=record_dir, progress=True, verbose=True
     )
@@ -174,34 +175,33 @@ if __name__ == "__main__":
         model_ba, mon_avg_gfed_ba_1d = itemgetter("model_ba", "mon_avg_gfed_ba_1d")(
             ba_model.run(**params)
         )
-        scores, calc_factors = itemgetter("scores", "calc_factors")(
-            ba_model.score(model_ba=model_ba)
+        scores, avg_ba = itemgetter("scores", "avg_ba")(
+            ba_model.calc_scores(model_ba=model_ba, requested=requested)
         )
 
-        model_ba *= calc_factors["adj_factor"]
-
-        ba_mask_1d = get_ba_mask(mon_avg_gfed_ba_1d)
-        apply_ba_mask_1d = get_apply_mask(ba_mask_1d)
+        # NOTE Low BA mask is not used during the optimisation!
+        # ba_mask_1d = get_ba_mask(mon_avg_gfed_ba_1d)
+        # apply_ba_mask_1d = get_apply_mask(ba_mask_1d)
 
         orig_mon_avg_gfed_ba_1d = mon_avg_gfed_ba_1d
-        mon_avg_gfed_ba_1d = apply_ba_mask_1d(mon_avg_gfed_ba_1d)
-        model_ba = apply_ba_mask_1d(model_ba)
+        # mon_avg_gfed_ba_1d = apply_ba_mask_1d(mon_avg_gfed_ba_1d)
+        # model_ba = apply_ba_mask_1d(model_ba)  # ??
+        # avg_ba = apply_ba_mask_1d(avg_ba)  # ??
 
         gc.collect()
 
-        model_ba_1d = get_1d_data_cube(model_ba, lats=jules_lats, lons=jules_lons)
         logger.info("Getting 2D cube")
-        model_ba_2d = cube_1d_to_2d(model_ba_1d)
+        model_ba_2d = cube_1d_to_2d(
+            get_1d_data_cube(avg_ba, lats=jules_lats, lons=jules_lons)
+        )
 
         gc.collect()
 
         plot_data[exp_name] = dict(
             exp_key=exp_key,
-            raw_data=np.ma.getdata(model_ba)[~np.ma.getmaskarray(model_ba)],
+            raw_data=np.ma.getdata(avg_ba)[~np.ma.getmaskarray(avg_ba)],
             model_ba_2d_data=model_ba_2d.data,
             hist_bins=hist_bins,
-            arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
-            arcsinh_factor=calc_factors["arcsinh_factor"],
             scores=scores,
             data_params=params,
         )
@@ -223,24 +223,17 @@ if __name__ == "__main__":
         ],
         model_ba_2d_data=reference_obs,
         hist_bins=hist_bins,
-        # NOTE: Assuming arcsinh_factor is constant across all experiments, which
-        # should be true.
-        arcsinh_adj_factor=1.0,
-        arcsinh_factor=calc_factors["arcsinh_factor"],
     )
     plot_prog.update()
 
     # Old INFERNO BA.
     data_dict, jules_time_coord = get_processed_climatological_jules_ba()
     jules_ba_gb = data_dict.pop("jules_ba_gb")
-    scores, status, avg_jules_ba, calc_factors = calculate_scores(
+    scores, avg_jules_ba = calculate_scores(
         model_ba=jules_ba_gb,
         cons_monthly_avg=ConsMonthlyAvg(jules_time_coord, L=land_pts),
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
     )
-    assert status is Status.SUCCESS, "Score calculation failed!"
-
-    avg_jules_ba *= calc_factors["adj_factor"]
 
     plot_data["Old INFERNO BA"] = dict(
         raw_data=np.ma.getdata(avg_jules_ba)[~np.ma.getmaskarray(avg_jules_ba)],
@@ -250,8 +243,6 @@ if __name__ == "__main__":
             ).data
         ),
         hist_bins=hist_bins,
-        arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
-        arcsinh_factor=calc_factors["arcsinh_factor"],
         scores=scores,
         # TODO Which params to use (combination of all?) - call again with actual
         # old INFERNO params to get corresponding data - is this supported?
@@ -270,7 +261,6 @@ if __name__ == "__main__":
             )
         )
 
-    # TODO For error calculations, do not use the version with the low BA mask?
     orig_reference_obs = cube_1d_to_2d(
         get_1d_data_cube(orig_mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
     ).data
