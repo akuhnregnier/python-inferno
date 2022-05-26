@@ -190,7 +190,7 @@ def calculate_scores(
     )
 
 
-class BAModel:
+class ModelParams:
     def __init__(
         self,
         *,
@@ -285,7 +285,7 @@ class BAModel:
             else get_processed_climatological_data._wrapped_func._orig_func
         )
 
-        (data_dict, self.mon_avg_gfed_ba_1d, self.jules_time_coord,) = data_func(
+        (data_dict, self.mon_avg_gfed_ba_1d, self.jules_time_coord) = data_func(
             litter_tc=self.litter_tc,
             leaf_f=self.leaf_f,
             n_samples_pft=self.n_samples_pft,
@@ -370,22 +370,6 @@ class BAModel:
 
         return processed_kwargs
 
-    def get_model_ba(
-        self,
-        dryness_method,
-        fuel_build_up_method,
-        include_temperature,
-        data_dict,
-        **processed_kwargs,
-    ):
-        return run_model(
-            dryness_method=self.dryness_method,
-            fuel_build_up_method=self.fuel_build_up_method,
-            include_temperature=self.include_temperature,
-            data_dict=self.data_dict,
-            **processed_kwargs,
-        )
-
     def _get_checks_failed_mask(self):
         return transform_dtype(_get_checks_failed_mask)(
             t1p5m_tile=self.data_dict["t1p5m_tile"],
@@ -403,6 +387,24 @@ class BAModel:
             pstar=self.data_dict["pstar"],
             ls_rain=self.data_dict["ls_rain"],
             con_rain=self.data_dict["con_rain"],
+        )
+
+
+class BAModel(ModelParams):
+    def get_model_ba(
+        self,
+        dryness_method,
+        fuel_build_up_method,
+        include_temperature,
+        data_dict,
+        **processed_kwargs,
+    ):
+        return run_model(
+            dryness_method=self.dryness_method,
+            fuel_build_up_method=self.fuel_build_up_method,
+            include_temperature=self.include_temperature,
+            data_dict=self.data_dict,
+            **processed_kwargs,
         )
 
     def run(
