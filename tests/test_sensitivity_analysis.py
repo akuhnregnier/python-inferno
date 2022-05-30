@@ -11,7 +11,27 @@ from python_inferno.sensitivity_analysis import (
 @pytest.mark.parametrize("param_index", range(4))
 @pytest.mark.parametrize(
     "land_index",
-    [0, 100, 200, 300, 500, 1000, 2000, 3000, 3200, 3500, 4000, 5000, 6500, 7000],
+    [
+        pytest.param(l, marks=pytest.mark.slow) if i > 3 else l
+        for i, l in enumerate(
+            [
+                0,
+                100,
+                200,
+                300,
+                500,
+                1000,
+                2000,
+                3000,
+                3200,
+                3500,
+                4000,
+                5000,
+                6500,
+                7000,
+            ]
+        )
+    ],
 )
 @pytest.mark.parametrize("exponent", [6, pytest.param(8, marks=pytest.mark.slow)])
 def test_sa_versions(model_params, param_index, land_index, exponent):

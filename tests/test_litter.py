@@ -31,7 +31,7 @@ def litter_pool_bench_kwargs_iter():
     "comp_delta, target_delta",
     [
         pytest.param(comp_delta, target_delta, marks=pytest.mark.slow)
-        if i == 2
+        if i in (1, 2)
         else (comp_delta, target_delta)
         for (i, (comp_delta, target_delta)) in enumerate(
             [(1e-3, 5e-4), (1e-4, 4e-5), (1e-5, -1)]
