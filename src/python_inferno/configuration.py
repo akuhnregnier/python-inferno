@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Model configuration."""
+from enum import Enum
+
 import numpy as np
 
 # Seconds in a month.
@@ -86,3 +88,5 @@ fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
 
 dryness_keys = {1: "Dry_Day", 2: "VPD_Precip"}
 fuel_keys = {1: "Antec_NPP", 2: "Leaf_Litter_Pool"}
+
+Dims = Enum("Dims", ["TIME", "PFT", "LAND", "SAMPLE"])

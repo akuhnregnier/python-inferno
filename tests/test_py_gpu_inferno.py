@@ -11,16 +11,19 @@ from python_inferno.ba_model import (
     GPUConsAvgScoreBAModel,
 )
 from python_inferno.configuration import (
+    Dims,
     N_pft_groups,
     land_pts,
     n_cell_grp_pft,
     n_cell_nat_pft,
     n_cell_no_pft,
     n_cell_tot_pft,
+    npft,
 )
 from python_inferno.inferno import calc_flam
 from python_inferno.metrics import Metrics
 from python_inferno.py_gpu_inferno import (
+    GPUSA,
     GPUCalculateMPD,
     GPUCalculatePhase,
     GPUFlam2,
@@ -471,3 +474,72 @@ def test_GPUInfernoConsAvgScore(index, seed, model_params):
     assert_array_equal(exp_scores["mpd_ignored"], test_scores["mpd_ignored"])
 
     score_model.release()
+
+
+@pytest.mark.parametrize("param_index", range(4))
+@pytest.mark.parametrize(
+    "land_index",
+    [
+        (index if not i % 1000 else pytest.param(index, marks=pytest.mark.slow))
+        for i, index in enumerate(range(land_pts))
+    ],
+)
+def test_sa_gpu_ba(model_params, param_index, land_index):
+    n_samples = 1
+
+    params = list(model_params.values())[param_index]
+
+    ba_model = BAModel(**params)
+    proc_params = ba_model.process_kwargs(**params)
+
+    gpu_sa = GPUSA(
+        Nt=ba_model.Nt,
+        drynessMethod=ba_model.dryness_method,
+        fuelBuildUpMethod=ba_model.fuel_build_up_method,
+        includeTemperature=ba_model.include_temperature,
+        overallScale=params["overall_scale"],
+        crop_f=params["crop_f"],
+        land_point_checks_failed=ba_model._get_checks_failed_mask()[:, :, land_index],
+    )
+
+    for name in set(ba_model.data_dict).intersection(gpu_sa.sample_data):
+        data = ba_model.data_dict[name]
+
+        if data.ndim == 3:
+            dims = (Dims.TIME, Dims.PFT, Dims.LAND)
+            s = (slice(None), slice(0, npft), land_index)
+        elif data.ndim == 2:
+            dims = (Dims.TIME, Dims.LAND)
+            s = (slice(None), land_index)
+        else:
+            raise ValueError()
+
+        gpu_sa.set_sample_data(
+            index_data={"name": name, "slice": s, "dims": dims},
+            values=data[s],
+            n_samples=n_samples,
+        )
+
+    # Crop.
+    gpu_sa.set_sample_data(
+        index_data={
+            "name": "obs_pftcrop_1d",
+            "slice": (slice(None), land_index),
+            "dims": (Dims.TIME, Dims.LAND),
+        },
+        values=ba_model.obs_pftcrop_1d[:, land_index],
+        n_samples=n_samples,
+    )
+
+    # Params.
+    for name in set(gpu_sa.sample_data).intersection(proc_params):
+        gpu_sa.set_sample_data(
+            index_data={"name": name, "slice": (slice(None),), "dims": (Dims.PFT,)},
+            values=proc_params[name],
+            n_samples=n_samples,
+        )
+
+    ref_ba = ba_model.run(land_point=land_index, **params)["model_ba"][:, land_index]
+    sa_ba = gpu_sa.run(nSamples=n_samples)
+
+    assert_allclose(ref_ba, sa_ba[0], rtol=1e-6, atol=1e-9)

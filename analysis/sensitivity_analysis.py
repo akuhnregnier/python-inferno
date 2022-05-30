@@ -10,9 +10,13 @@ import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 
+from python_inferno.configuration import land_pts
 from python_inferno.data import load_jules_lats_lons
 from python_inferno.model_params import get_model_params
-from python_inferno.sensitivity_analysis import BAModelSensitivityAnalysis
+from python_inferno.sensitivity_analysis import (
+    GPUBAModelSensitivityAnalysis,
+    LandChecksFailed,
+)
 
 if __name__ == "__main__":
     logger.remove()
@@ -42,15 +46,20 @@ if __name__ == "__main__":
     ):
         logger.info(exp_name)
 
-        sa = BAModelSensitivityAnalysis(params=params)
+        sa = GPUBAModelSensitivityAnalysis(params=params, exponent=8)
 
-        sobol_sis = [sa.sobol_sis(land_index=i) for i in tqdm(range(3), desc="land")]
+        sobol_sis = {}
+        for i in tqdm(range(land_pts), desc="land"):
+            try:
+                sobol_sis[i] = sa.sobol_sis(land_index=i, verbose=False)
+            except LandChecksFailed:
+                pass
 
-        group_names = list(sobol_sis[0].to_df()[0].index.values)
+        group_names = list(next(iter(sobol_sis.values())).to_df()[0].index.values)
 
         data = {}
         for name in group_names:
-            vals = [si.to_df()[0]["ST"][name] for si in sobol_sis]
+            vals = [si.to_df()[0]["ST"][name] for si in sobol_sis.values()]
             data[name] = dict(
                 mean=np.nanmean(vals),
                 std=np.nanstd(vals),

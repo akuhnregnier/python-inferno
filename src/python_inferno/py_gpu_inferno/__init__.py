@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
+from operator import itemgetter
 from time import time
 
 import numpy as np
 
-from ..configuration import land_pts, n_total_pft, npft
+from ..configuration import Dims, N_pft_groups, land_pts, n_total_pft, npft
 from .py_gpu_inferno import GPUCalculateMPD as _GPUCalculateMPD
 from .py_gpu_inferno import GPUCalculatePhase
 from .py_gpu_inferno import GPUCompute as _GPUCompute
@@ -12,6 +13,7 @@ from .py_gpu_inferno import GPUConsAvgNoMask as _GPUConsAvgNoMask
 from .py_gpu_inferno import GPUFlam2
 from .py_gpu_inferno import GPUInfernoAvg as _GPUInfernoAvg
 from .py_gpu_inferno import GPUInfernoAvgScore as _GPUInfernoAvgScore
+from .py_gpu_inferno import GPUSACompute as _GPUSACompute
 from .py_gpu_inferno import calculate_phase
 from .py_gpu_inferno import cons_avg_no_mask as _cons_avg_no_mask
 from .py_gpu_inferno import nme as _nme
@@ -308,3 +310,171 @@ def cpp_cons_avg_no_mask_inplace(*, weights, data, out):
         data=np.asarray(data, dtype=np.float32),
         out=out,
     )
+
+
+class GPUSA:
+
+    no_pft_data = ("dry_days", "obs_pftcrop_1d")
+
+    def __init__(
+        self,
+        *,
+        Nt,
+        drynessMethod,
+        fuelBuildUpMethod,
+        includeTemperature,
+        overallScale,
+        crop_f,
+        land_point_checks_failed,
+    ):
+        self.Nt = Nt
+        self.drynessMethod = drynessMethod
+        self.fuelBuildUpMethod = fuelBuildUpMethod
+        self.includeTemperature = includeTemperature
+        self.overallScale = overallScale
+        self.crop_f = crop_f
+
+        self.gpu_sa = _GPUSACompute(Nt, land_point_checks_failed)
+        self.max_n_samples = self.gpu_sa.getMaxNSamples()
+
+        self.out_arr = np.empty(
+            (self.max_n_samples, Nt),
+            dtype=np.float32,
+        )
+
+        self.sample_data = dict(
+            # Data.
+            t1p5m_tile=np.empty((self.max_n_samples, Nt, npft), dtype=np.float32),
+            frac=np.empty((self.max_n_samples, Nt, npft), dtype=np.float32),
+            fuel_build_up=np.empty((self.max_n_samples, Nt, npft), dtype=np.float32),
+            fapar_diag_pft=np.empty((self.max_n_samples, Nt, npft), dtype=np.float32),
+            grouped_dry_bal=np.empty(
+                (self.max_n_samples, Nt, N_pft_groups), dtype=np.float32
+            ),
+            litter_pool=np.empty((self.max_n_samples, Nt, npft), dtype=np.float32),
+            dry_days=np.empty((self.max_n_samples, Nt), dtype=np.float32),
+            obs_pftcrop_1d=np.empty((self.max_n_samples, Nt), dtype=np.float32),
+            # Params.
+            fapar_factor=np.empty((self.max_n_samples, N_pft_groups), dtype=np.float32),
+            fapar_centre=np.empty((self.max_n_samples, N_pft_groups), dtype=np.float32),
+            fapar_shape=np.empty((self.max_n_samples, N_pft_groups), dtype=np.float32),
+            fuel_build_up_factor=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            fuel_build_up_centre=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            fuel_build_up_shape=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            temperature_factor=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            temperature_centre=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            temperature_shape=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            dry_day_factor=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            dry_day_centre=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            dry_day_shape=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            dry_bal_factor=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            dry_bal_centre=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            dry_bal_shape=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            litter_pool_factor=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            litter_pool_centre=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            litter_pool_shape=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            fapar_weight=np.empty((self.max_n_samples, N_pft_groups), dtype=np.float32),
+            dryness_weight=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            temperature_weight=np.empty(
+                (self.max_n_samples, N_pft_groups), dtype=np.float32
+            ),
+            fuel_weight=np.empty((self.max_n_samples, N_pft_groups), dtype=np.float32),
+        )
+
+        self._check_n_samples = {key: 0 for key in self.sample_data}
+
+        # Ensure all arrays have the PFT dimension last (with certain exceptions).
+        for name, arr in self.sample_data.items():
+            if name in self.no_pft_data:
+                continue
+            assert arr.shape[-1] in (npft, N_pft_groups)
+
+    def set_sample_data(self, index_data, values, n_samples):
+        name, s, dims = itemgetter("name", "slice", "dims")(index_data)
+
+        try:
+            pft_index = dims.index(Dims.PFT)
+            pft_s = s[pft_index]
+        except ValueError:
+            if name in self.no_pft_data:
+                # Expect no PFT index.
+                pft_index = None
+                pft_s = None
+            else:
+                raise
+
+        if Dims.TIME in dims:
+            # Ensure all temporal values are targeted.
+            assert s[dims.index(Dims.TIME)] == slice(None)
+
+        if Dims.LAND in dims:
+            # Ensure only a single land point is targeted.
+            assert isinstance(s[dims.index(Dims.LAND)], (int, np.integer))
+
+        if dims == (Dims.TIME, Dims.PFT, Dims.LAND):
+            self.sample_data[name][:n_samples, :, pft_s] = values
+        elif dims == (Dims.TIME, Dims.LAND):
+            self.sample_data[name][:n_samples, :] = values
+        elif dims == (Dims.PFT,):
+            self.sample_data[name][:n_samples, pft_s] = values
+        else:
+            raise ValueError(f"Unhandled dims '{dims}'.")
+
+        self._check_n_samples[name] = n_samples
+
+    def run(
+        self,
+        *,
+        nSamples,
+    ):
+        assert len(set(self._check_n_samples.values())) == 1
+        assert next(iter(self._check_n_samples.values())) == nSamples
+        assert nSamples <= self.max_n_samples
+        assert nSamples >= 1
+
+        self.gpu_sa.setData(
+            drynessMethod=self.drynessMethod,
+            fuelBuildUpMethod=self.fuelBuildUpMethod,
+            includeTemperature=self.includeTemperature,
+            nSamples=nSamples,
+            overallScale=self.overallScale,
+            crop_f=self.crop_f,
+            **self.sample_data,
+        )
+        self.gpu_sa.run(out=self.out_arr)
+        return self.out_arr[:nSamples]
+
+    def release(self):
+        self.gpu_sa.release()

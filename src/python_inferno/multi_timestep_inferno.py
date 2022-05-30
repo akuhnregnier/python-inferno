@@ -191,6 +191,7 @@ def _multi_timestep_inferno(
     temperature_weight,
     fuel_weight,
     land_point,
+    checks_failed,
 ):
     # Ensure consistency of the time dimension.
     if not (
@@ -255,26 +256,11 @@ def _multi_timestep_inferno(
 
             inferno_rain = ls_rain_filtered + con_rain_filtered
 
-            # The maximum rain rate ever observed is 38mm in one minute,
-            # here we assume 0.5mm/s stops fires altogether
-            if (inferno_rain > 0.5) or (inferno_rain < 0.0):
-                continue
-
-            # Soil moisture is a fraction of saturation
-            if (inferno_sm[ti, l] > 1.0) or (inferno_sm[ti, l] < 0.0):
-                continue
-
             for i in range(npft):
-                pft_group_i = get_pft_group_index(i)
-
-                # Conditional statements to make sure we are dealing with
-                # reasonable weather. Note initialisation to 0 already done.
-                # If the driving variables are singularities, we assume
-                # no burnt area.
-
-                # Temperatures constrained akin to qsat (from the WMO)
-                if (t1p5m_tile[ti, i, l] > 338.15) or (t1p5m_tile[ti, i, l] < 183.15):
+                if checks_failed[ti, i, l]:
                     continue
+
+                pft_group_i = get_pft_group_index(i)
 
                 # Diagnose the balanced-growth leaf area index and the carbon
                 # contents of leaves and wood.
@@ -293,12 +279,6 @@ def _multi_timestep_inferno(
                 qsat = qsat_wat(t1p5m_tile[ti, i, l], pstar[ti, l])
 
                 inferno_rhum = (q1p5m_tile[ti, i, l] / qsat) * 100.0
-
-                # Relative Humidity should be constrained to 0-100
-                if (inferno_rhum > 100.0) or (inferno_rhum < 0.0):
-                    continue
-
-                # If all these checks are passes, start fire calculations
 
                 ignitions = calc_ignitions(
                     pop_den[l],

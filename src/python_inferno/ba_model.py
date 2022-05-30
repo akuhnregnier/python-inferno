@@ -303,6 +303,13 @@ class ModelParams:
         # Set up conservative averaging.
         self._cons_monthly_avg = ConsMonthlyAvgNoMask(self.jules_time_coord, L=land_pts)
 
+        self.Nt = self.data_dict["pstar"].shape[0]
+
+        # NOTE This is not recalculated every time the BA model is run. Changes to
+        # relevant quantities (e.g. temperature) will therefore not affect the
+        # times/pfts/points at which the model is run!
+        self.checks_failed = self._get_checks_failed_mask()
+
     def process_kwargs(self, **kwargs):
         n_params = N_pft_groups
         dtype_params = np.float64
@@ -404,6 +411,7 @@ class BAModel(ModelParams):
             fuel_build_up_method=self.fuel_build_up_method,
             include_temperature=self.include_temperature,
             data_dict=self.data_dict,
+            checks_failed=self.checks_failed,
             **processed_kwargs,
         )
 
@@ -464,8 +472,6 @@ class GPUBAModel(BAModel):
         logger.info("GPUBAModel init.")
 
         super().__init__(**kwargs)
-
-        self.Nt = self.data_dict["pstar"].shape[0]
 
         self._gpu_inferno = transform_dtype(self._gpu_class)(
             ignition_method=1,
