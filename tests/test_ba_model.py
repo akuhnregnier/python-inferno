@@ -10,6 +10,7 @@ from python_inferno.ba_model import (
     GPUConsAvgBAModel,
     GPUConsAvgScoreBAModel,
 )
+from python_inferno.configuration import N_pft_groups
 from python_inferno.metrics import Metrics
 
 
@@ -227,3 +228,24 @@ def test_gpu_score_total_opt_benchmark(index, benchmark, model_params):
         return scores
 
     benchmark.pedantic(_bench, iterations=30 * TOTAL_ITER, rounds=TOTAL_ROUNDS)
+
+
+def test_process_kwargs(model_params):
+    params = next(iter(model_params.values()))
+    ba_model = BAModel(**params)
+
+    mod_params = {key: val for key, val in params.items() if "fapar_centre" not in key}
+    mod_params["fapar_centre"] = 0.5
+
+    assert_allclose(
+        ba_model.process_kwargs(**mod_params)["fapar_centre"],
+        np.array([0.5] * N_pft_groups),
+    )
+
+    mod_params["fapar_centre2"] = 0.8
+    mod_params["fapar_centre3"] = 0.9
+
+    assert_allclose(
+        ba_model.process_kwargs(**mod_params)["fapar_centre"],
+        np.array([0.5, 0.8, 0.9]),
+    )

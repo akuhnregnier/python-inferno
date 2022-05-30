@@ -221,60 +221,24 @@ class ModelParams:
             )
         )
 
-        self.rain_f = (
-            process_param_inplace(
-                kwargs=kwargs,
-                name="rain_f",
-                n_source=3 if "rain_f2" in kwargs else 1,
-                n_target=N_pft_groups,
-                dtype=np.float64,
-            )
-            if dryness_method == 2
-            else None
-        )
-        self.vpd_f = (
-            process_param_inplace(
-                kwargs=kwargs,
-                name="vpd_f",
-                n_source=3 if "vpd_f2" in kwargs else 1,
-                n_target=N_pft_groups,
-                dtype=np.float64,
-            )
-            if dryness_method == 2
-            else None
-        )
+        process_key_from_kwargs = self.get_proc_func(kwargs)
+
+        self.rain_f = process_key_from_kwargs("rain_f") if dryness_method == 2 else None
+        self.vpd_f = process_key_from_kwargs("vpd_f") if dryness_method == 2 else None
 
         self.n_samples_pft = (
-            process_param_inplace(
-                kwargs=kwargs,
-                name="fuel_build_up_n_samples",
-                n_source=3 if "fuel_build_up_n_samples2" in kwargs else 1,
-                n_target=N_pft_groups,
-                dtype=np.int64,
-            )
+            process_key_from_kwargs("fuel_build_up_n_samples", dtype=np.int64)
             if fuel_build_up_method == 1
             else None
         )
 
         self.litter_tc = (
-            process_param_inplace(
-                kwargs=kwargs,
-                name="litter_tc",
-                n_source=3 if "litter_tc2" in kwargs else 1,
-                n_target=npft,
-                dtype=np.float64,
-            )
+            process_key_from_kwargs("litter_tc", n_target=npft)
             if fuel_build_up_method == 2
             else None
         )
         self.leaf_f = (
-            process_param_inplace(
-                kwargs=kwargs,
-                name="leaf_f",
-                n_source=3 if "leaf_f2" in kwargs else 1,
-                n_target=npft,
-                dtype=np.float64,
-            )
+            process_key_from_kwargs("leaf_f", n_target=npft)
             if fuel_build_up_method == 2
             else None
         )
@@ -310,24 +274,28 @@ class ModelParams:
         # times/pfts/points at which the model is run!
         self.checks_failed = self._get_checks_failed_mask()
 
+    @staticmethod
+    def get_proc_func(kwargs):
+        def process_key_from_kwargs(key, n_target=N_pft_groups, dtype=np.float64):
+            return process_param_inplace(
+                kwargs=kwargs,
+                name=key,
+                n_source=3 if f"{key}2" in kwargs else 1,
+                n_target=n_target,
+                dtype=dtype,
+            )
+
+        return process_key_from_kwargs
+
     def process_kwargs(self, **kwargs):
-        n_params = N_pft_groups
-        dtype_params = np.float64
-        dummy_params = np.ones(n_params, dtype=dtype_params)
+        dummy_params = np.ones(N_pft_groups, dtype=np.float64)
 
         processed_kwargs = dict(overall_scale=kwargs.pop("overall_scale", 1.0))
 
         if "land_point" in kwargs:
             processed_kwargs["land_point"] = int(kwargs["land_point"])
 
-        def process_key_from_kwargs(key):
-            return process_param_inplace(
-                kwargs=kwargs,
-                name=key,
-                n_source=3 if f"{key}2" in kwargs else 1,
-                n_target=n_params,
-                dtype=dtype_params,
-            )
+        process_key_from_kwargs = self.get_proc_func(kwargs)
 
         # The below may conditionally be present. If not, they need to be provided
         # by 'dummy' variables.
