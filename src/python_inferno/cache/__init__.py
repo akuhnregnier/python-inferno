@@ -10,6 +10,7 @@ from wildfires.cache import (
     mark_dependency,
     process_proxy,
 )
+from wildfires.exceptions import NotCachedError
 
 memory = ProxyMemory(
     Path(os.environ["EPHEMERAL"]) / "python_inferno" / "joblib_cache",

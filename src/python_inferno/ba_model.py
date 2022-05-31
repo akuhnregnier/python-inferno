@@ -197,90 +197,32 @@ class ModelParams:
         dryness_method,
         fuel_build_up_method,
         include_temperature,
-        average_samples,
-        _uncached_data=False,
-        **kwargs,
+        disc_params,
     ):
         self.dryness_method = int(dryness_method)
         self.fuel_build_up_method = int(fuel_build_up_method)
         self.include_temperature = int(include_temperature)
-        self.average_samples = int(average_samples)
-
-        logger.info(
-            "Init: "
-            + ", ".join(
-                map(
-                    str,
-                    (
-                        self.dryness_method,
-                        self.fuel_build_up_method,
-                        self.include_temperature,
-                        self.average_samples,
-                    ),
-                )
-            )
-        )
-
-        process_key_from_kwargs = self.get_proc_func(kwargs)
-
-        self.rain_f = process_key_from_kwargs("rain_f") if dryness_method == 2 else None
-        self.vpd_f = process_key_from_kwargs("vpd_f") if dryness_method == 2 else None
-
-        self.n_samples_pft = (
-            process_key_from_kwargs("fuel_build_up_n_samples", dtype=np.int64)
-            if fuel_build_up_method == 1
-            else None
-        )
-
-        self.litter_tc = (
-            process_key_from_kwargs("litter_tc", n_target=npft)
-            if fuel_build_up_method == 2
-            else None
-        )
-        self.leaf_f = (
-            process_key_from_kwargs("leaf_f", n_target=npft)
-            if fuel_build_up_method == 2
-            else None
-        )
-
-        data_func = (
-            get_processed_climatological_data
-            if not _uncached_data
-            else get_processed_climatological_data._wrapped_func._orig_func
-        )
-
-        (data_dict, self.mon_avg_gfed_ba_1d, self.jules_time_coord) = data_func(
-            litter_tc=self.litter_tc,
-            leaf_f=self.leaf_f,
-            n_samples_pft=self.n_samples_pft,
-            average_samples=self.average_samples,
-            rain_f=self.rain_f,
-            vpd_f=self.vpd_f,
-        )
-
-        # Shallow copy to allow popping of the dictionary without affecting the
-        # memoized copy.
-        self.data_dict = data_dict.copy()
-        # Extract variables not used further below.
-        self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
-
-        # Set up conservative averaging.
-        self._cons_monthly_avg = ConsMonthlyAvgNoMask(self.jules_time_coord, L=land_pts)
-
-        self.Nt = self.data_dict["pstar"].shape[0]
-
-        # NOTE This is not recalculated every time the BA model is run. Changes to
-        # relevant quantities (e.g. temperature) will therefore not affect the
-        # times/pfts/points at which the model is run!
-        self.checks_failed = self._get_checks_failed_mask()
+        self.init_disc_params(**disc_params)
 
     @staticmethod
     def get_proc_func(kwargs):
         def process_key_from_kwargs(key, n_target=N_pft_groups, dtype=np.float64):
+            n_source = None
+
+            if f"{key}2" in kwargs:
+                if f"{key}3" in kwargs:
+                    n_source = 3
+            else:
+                n_source = 1
+
+            if n_source is None:
+                # Prevent cases like key, key2, (and not key3 too).
+                raise ValueError
+
             return process_param_inplace(
                 kwargs=kwargs,
                 name=key,
-                n_source=3 if f"{key}2" in kwargs else 1,
+                n_source=n_source,
                 n_target=n_target,
                 dtype=dtype,
             )
@@ -345,27 +287,110 @@ class ModelParams:
 
         return processed_kwargs
 
-    def _get_checks_failed_mask(self):
-        return transform_dtype(_get_checks_failed_mask)(
-            t1p5m_tile=self.data_dict["t1p5m_tile"],
-            q1p5m_tile=self.data_dict["q1p5m_tile"],
-            pstar=self.data_dict["pstar"],
-            sthu_soilt_single=self.data_dict["sthu_soilt_single"],
-            ls_rain=self.data_dict["ls_rain"],
-            con_rain=self.data_dict["con_rain"],
+    def init_disc_params(self, **kwargs):
+        process_key_from_kwargs = self.get_proc_func(kwargs)
+
+        self.rain_f = (
+            process_key_from_kwargs("rain_f") if self.dryness_method == 2 else None
+        )
+        self.vpd_f = (
+            process_key_from_kwargs("vpd_f") if self.dryness_method == 2 else None
         )
 
-    def _get_diagnostics(self):
-        return _get_diagnostics(
-            t1p5m_tile=self.data_dict["t1p5m_tile"],
-            q1p5m_tile=self.data_dict["q1p5m_tile"],
-            pstar=self.data_dict["pstar"],
-            ls_rain=self.data_dict["ls_rain"],
-            con_rain=self.data_dict["con_rain"],
+        self.n_samples_pft = (
+            process_key_from_kwargs("fuel_build_up_n_samples", dtype=np.int64)
+            if self.fuel_build_up_method == 1
+            else None
+        )
+
+        self.litter_tc = (
+            process_key_from_kwargs("litter_tc", n_target=npft)
+            if self.fuel_build_up_method == 2
+            else None
+        )
+        self.leaf_f = (
+            process_key_from_kwargs("leaf_f", n_target=npft)
+            if self.fuel_build_up_method == 2
+            else None
+        )
+
+        self.average_samples = int(kwargs["average_samples"])
+
+    @property
+    def disc_params(self):
+        return dict(
+            rain_f=self.rain_f,
+            vpd_f=self.vpd_f,
+            n_samples_pft=self.n_samples_pft,
+            litter_tc=self.litter_tc,
+            leaf_f=self.leaf_f,
+            average_samples=self.average_samples,
         )
 
 
 class BAModel(ModelParams):
+    def __init__(
+        self,
+        *,
+        dryness_method,
+        fuel_build_up_method,
+        include_temperature,
+        _uncached_data=False,
+        **kwargs,
+    ):
+        super().__init__(
+            dryness_method=dryness_method,
+            fuel_build_up_method=fuel_build_up_method,
+            include_temperature=include_temperature,
+            disc_params=kwargs,
+        )
+
+        logger.info(
+            "Init: "
+            + ", ".join(
+                map(
+                    str,
+                    (
+                        self.dryness_method,
+                        self.fuel_build_up_method,
+                        self.include_temperature,
+                        self.average_samples,
+                    ),
+                )
+            )
+        )
+
+        data_func = (
+            get_processed_climatological_data
+            if not _uncached_data
+            else get_processed_climatological_data._wrapped_func._orig_func
+        )
+
+        (data_dict, self.mon_avg_gfed_ba_1d, self.jules_time_coord) = data_func(
+            litter_tc=self.litter_tc,
+            leaf_f=self.leaf_f,
+            n_samples_pft=self.n_samples_pft,
+            average_samples=self.average_samples,
+            rain_f=self.rain_f,
+            vpd_f=self.vpd_f,
+        )
+
+        # Shallow copy to allow popping of the dictionary without affecting the
+        # memoized copy.
+        self.data_dict = data_dict.copy()
+        # Extract variables not used further below.
+        self.obs_pftcrop_1d = self.data_dict.pop("obs_pftcrop_1d")
+
+        # Set up conservative averaging.
+        self._cons_monthly_avg = ConsMonthlyAvgNoMask(self.jules_time_coord, L=land_pts)
+
+        self.Nt = self.data_dict["pstar"].shape[0]
+
+        # NOTE This is not recalculated every time the BA model is run. Changes to
+        # relevant quantities (e.g. temperature) will therefore not affect the
+        # times/pfts/points at which the model is run!
+        self.checks_failed = self._get_checks_failed_mask()
+
     def get_model_ba(
         self,
         dryness_method,
@@ -431,6 +456,25 @@ class BAModel(ModelParams):
         return dict(
             avg_ba=avg_ba,
             scores=scores,
+        )
+
+    def _get_checks_failed_mask(self):
+        return transform_dtype(_get_checks_failed_mask)(
+            t1p5m_tile=self.data_dict["t1p5m_tile"],
+            q1p5m_tile=self.data_dict["q1p5m_tile"],
+            pstar=self.data_dict["pstar"],
+            sthu_soilt_single=self.data_dict["sthu_soilt_single"],
+            ls_rain=self.data_dict["ls_rain"],
+            con_rain=self.data_dict["con_rain"],
+        )
+
+    def _get_diagnostics(self):
+        return _get_diagnostics(
+            t1p5m_tile=self.data_dict["t1p5m_tile"],
+            q1p5m_tile=self.data_dict["q1p5m_tile"],
+            pstar=self.data_dict["pstar"],
+            ls_rain=self.data_dict["ls_rain"],
+            con_rain=self.data_dict["con_rain"],
         )
 
 
@@ -625,12 +669,13 @@ def gen_to_optimise(
     *,
     fail_func,
     success_func,
+    _uncached_data=True,
     **model_ba_init_kwargs,
 ):
     requested = (Metrics.MPD, Metrics.ARCSINH_NME)
     try:
         score_model = GPUConsAvgScoreBAModel(
-            _uncached_data=True, **model_ba_init_kwargs
+            _uncached_data=_uncached_data, **model_ba_init_kwargs
         )
 
         def to_optimise(**run_kwargs):
@@ -650,7 +695,7 @@ def gen_to_optimise(
 
     except ModuleNotFoundError:
         logger.warning("GPU INFERNO module not found.")
-        ba_model = BAModel(_uncached_data=True, **model_ba_init_kwargs)
+        ba_model = BAModel(_uncached_data=_uncached_data, **model_ba_init_kwargs)
 
         def to_optimise(**run_kwargs):
             try:

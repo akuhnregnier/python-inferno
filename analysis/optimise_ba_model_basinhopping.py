@@ -18,7 +18,7 @@ from python_inferno.basinhopping import (
     Recorder,
 )
 from python_inferno.cx1 import get_parsers, run
-from python_inferno.space import generate_space
+from python_inferno.space import generate_space_spec
 from python_inferno.utils import memoize
 
 
@@ -199,7 +199,7 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Unknown 'include_temperature' {include_temperature}.")
 
-        space = BasinHoppingSpace(generate_space(space_template))
+        space = BasinHoppingSpace(generate_space_spec(space_template))
 
         exp_desc = (
             f"dry{dryness_method}fuel{fuel_build_up_method}"

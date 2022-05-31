@@ -11,14 +11,14 @@ from scipy.optimize import basinhopping
 
 from python_inferno.basinhopping import BasinHoppingSpace, BoundedSteps, Recorder
 from python_inferno.data import get_climatological_grouped_dry_bal
-from python_inferno.space import generate_space
+from python_inferno.space import generate_space_spec
 
 space_template = dict(
     rain_f=(1, [(0.5, 20.0)], float),
     vpd_f=(1, [(1, 5000)], float),
 )
 
-space = BasinHoppingSpace(generate_space(space_template))
+space = BasinHoppingSpace(generate_space_spec(space_template))
 
 record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
 

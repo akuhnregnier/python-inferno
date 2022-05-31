@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from functools import partial
+from operator import eq, ne
 
 import hyperopt
 import numpy as np
@@ -8,6 +9,7 @@ from hyperopt import Trials, fmin, hp, tpe
 from hyperopt.pyll.stochastic import sample
 
 from python_inferno.hyperopt import HyperoptSpace, mod_quniform
+from python_inferno.space import generate_space_spec
 
 
 def test_uniform_space():
@@ -117,3 +119,61 @@ def test_multi_n_discrete_product():
         ).n_discrete_product
         == 120
     )
+
+
+@pytest.mark.parametrize(
+    "spec_name, comps, var_names",
+    [
+        (
+            "XXY",
+            [("paramA", eq, "paramA2"), ("paramA", ne, "paramA3")],
+            {"paramA", "paramA3"},
+        ),
+        (
+            "XYX",
+            [("paramA", eq, "paramA3"), ("paramA", ne, "paramA2")],
+            {"paramA", "paramA2"},
+        ),
+        (
+            "XYY",
+            [("paramA2", eq, "paramA3"), ("paramA", ne, "paramA2")],
+            {"paramA", "paramA2"},
+        ),
+    ],
+)
+@pytest.mark.parametrize("seed", range(10))
+def test_param_refs(
+    seed,
+    spec_name,
+    comps,
+    var_names,
+):
+    rng = np.random.default_rng(seed)
+    space = HyperoptSpace(
+        generate_space_spec(
+            space_template=dict(
+                paramA=(spec_name, [(-3, 3)], hp.uniform),
+                paramB=(1, [(-10, 0)], hp.uniform),
+                paramC=(1, [(40, 160, 60)], mod_quniform),
+            )
+        )
+    )
+
+    # NOTE Some 'paramAX' may only be produced when calling `inv_map_float_to_0_1`.
+    assert set(space.continuous_param_names) == {"paramB"}.union(var_names)
+
+    mapped = space.inv_map_float_to_0_1(
+        {key: rng.random() for key in space.continuous_param_names}
+    )
+
+    for comp in comps:
+        name1, op, name2 = comp
+        assert op(mapped[name1], mapped[name2])
+
+    assert mapped["paramB"]
+
+    for name, val in mapped.items():
+        if "paramA" in name:
+            assert val >= -3 and val <= 3
+        elif "paramB" in name:
+            assert val >= -10 and val <= 0

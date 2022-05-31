@@ -6,7 +6,7 @@ import optuna
 
 from python_inferno.ba_model import gen_to_optimise
 from python_inferno.optuna import OptunaSpace
-from python_inferno.space import generate_space
+from python_inferno.space import generate_space_spec
 
 space_template = dict(
     fapar_factor=(3, [(-50, -1)], "suggest_float"),
@@ -25,7 +25,9 @@ space_template = dict(
 )
 
 space = OptunaSpace(
-    generate_space(space_template), remap_float_to_0_1=True, replicate_pft_groups=True
+    generate_space_spec(space_template),
+    remap_float_to_0_1=True,
+    replicate_pft_groups=True,
 )
 
 

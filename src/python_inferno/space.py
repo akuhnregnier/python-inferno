@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import numpy as np
+
+from .configuration import N_pft_groups
 
 
 class OptSpace:
@@ -7,14 +10,20 @@ class OptSpace:
         self.continuous_types = continuous_types
         self.discrete_types = discrete_types
 
-        for (arg_type, *args) in spec.values():
-            assert arg_type in self.continuous_types.union(self.discrete_types)
-            if arg_type == self.float_type:
-                assert len(args) == 2
-            elif arg_type in self.discrete_types:
-                assert len(args) >= 1
+        for spec_args in spec.values():
+            arg_type, *args = spec_args
+
+            if isinstance(spec_args, str):
+                assert spec_args in spec
             else:
-                raise NotImplementedError()
+                assert arg_type in self.continuous_types.union(self.discrete_types)
+
+                if arg_type == self.float_type:
+                    assert len(args) == 2
+                elif arg_type in self.discrete_types:
+                    assert len(args) >= 1
+                else:
+                    raise NotImplementedError()
 
         self.spec = spec
 
@@ -24,14 +33,25 @@ class OptSpace:
         This maps the floats back to their original range.
 
         """
+        # NOTE: Returned map will contain more entries than `continuous_param_names`
+        # if there are links (str spec values) between floating point variables.
         remapped = {}
         for name, value in params.items():
-            arg_type, *args = self.spec[name]
+            spec_args = self.spec[name]
+
+            arg_type, *args = spec_args
             if arg_type == self.float_type:
                 minb, maxb = args
                 remapped[name] = (value * (maxb - minb)) + minb
             else:
-                remapped[name] = value
+                raise ValueError(f"{name} is not of floating type.")
+
+        # Resolve any float links.
+        for key, spec_args in self.spec.items():
+            if isinstance(spec_args, str):
+                # Replace details with the intended variable.
+                if spec_args in remapped:
+                    remapped[key] = remapped[spec_args]
 
         return remapped
 
@@ -66,7 +86,61 @@ class OptSpace:
         return str(self.spec)
 
 
-def generate_space(space_template):
+def int_spec(n_params: int, bounds, param_type, name: str):
+    spec = dict()
+
+    if len(bounds) == 1:
+        # Use the same bounds for all PFTs if only one are given.
+        bounds *= n_params
+
+    assert len(bounds) == n_params
+
+    for i, bound in zip(range(1, n_params + 1), bounds):
+        if i == 1:
+            arg_name = name
+        else:
+            arg_name = f"{name}{i}"
+
+        spec[arg_name] = (param_type, *bound)
+
+    return spec
+
+
+def str_spec(n_params_descr: str, bounds, param_type, name: str):
+    spec = dict()
+
+    n_params = len(n_params_descr)
+
+    # NOTE Only use case so far. Would require more complex logic otherwise.
+    assert n_params == N_pft_groups
+    assert len(bounds) == 1
+    n_unique_params = len(set(n_params_descr))
+    assert n_unique_params == 2
+
+    if len(bounds) == 1:
+        # Use the same bounds for all PFTs if only one are given.
+        bounds *= n_params
+
+    assert len(bounds) == n_params
+
+    prev_params = {}
+
+    for i, bound, param_i in zip(range(1, n_params + 1), bounds, n_params_descr):
+        if i == 1:
+            arg_name = name
+        else:
+            arg_name = f"{name}{i}"
+
+        if param_i in prev_params:
+            spec[arg_name] = prev_params[param_i]
+        else:
+            spec[arg_name] = (param_type, *bound)
+            prev_params[param_i] = arg_name
+
+    return spec
+
+
+def generate_space_spec(space_template):
     """Generate the actual `space` from the template.
 
     The first element of each template entry determines how many parameters are to be
@@ -80,7 +154,7 @@ def generate_space(space_template):
         ...     paramA=(3, [(-3, 3)], "suggest_float"),
         ...     paramB=(1, [(40, 160, 60)], "suggest_int"),
         ... )
-        >>> space = generate_space(space_template)
+        >>> space = generate_space_spec(space_template)
         >>> space['paramA']
         ('suggest_float', -3, 3)
         >>> space['paramA2']
@@ -89,19 +163,49 @@ def generate_space(space_template):
         ('suggest_float', -3, 3)
         >>> space['paramB']
         ('suggest_int', 40, 160, 60)
+        >>> space_template = dict(
+        ...     paramA=('XXY', [(-3, 3)], "suggest_float"),
+        ...     paramB=(1, [(40, 160, 60)], "suggest_int"),
+        ... )
+        >>> space = generate_space_spec(space_template)
+        >>> space['paramA']
+        ('suggest_float', -3, 3)
+        >>> space['paramA2']
+        'paramA'
+        >>> space['paramA3']
+        ('suggest_float', -3, 3)
+        >>> space['paramB']
+        ('suggest_int', 40, 160, 60)
+        >>> space_template = dict(
+        ...     paramA=('XYY', [(-3, 3)], "suggest_float"),
+        ...     paramB=(1, [(40, 160, 60)], "suggest_int"),
+        ... )
+        >>> space = generate_space_spec(space_template)
+        >>> space['paramA']
+        ('suggest_float', -3, 3)
+        >>> space['paramA2']
+        ('suggest_float', -3, 3)
+        >>> space['paramA3']
+        'paramA2'
+        >>> space['paramB']
+        ('suggest_int', 40, 160, 60)
 
     """
     spec = dict()
     for name, template in space_template.items():
-        bounds = template[1]
-        if len(bounds) == 1:
-            # Use the same bounds for all PFTs if only one are given.
-            bounds *= template[0]
-        for i, bound in zip(range(1, template[0] + 1), bounds):
-            if i == 1:
-                arg_name = name
-            else:
-                arg_name = name + str(i)
+        n_params, bounds, param_type = template
 
-            spec[arg_name] = (template[2], *bound)
+        if n_params == "XXX":
+            n_params = 1
+        elif n_params == "XYZ":
+            n_params = 3
+
+        if isinstance(n_params, (int, np.integer)):
+            spec.update(int_spec(n_params, bounds, param_type, name))
+        elif isinstance(n_params, str):
+            assert n_params in ("XXY", "XYX", "XYY")
+            spec.update(str_spec(n_params, bounds, param_type, name))
+        else:
+            raise TypeError
+
     return spec

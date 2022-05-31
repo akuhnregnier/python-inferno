@@ -54,8 +54,9 @@ class Recorder:
 
 
 class BoundedSteps:
-    def __init__(self, stepsize=0.5, rng=None):
+    def __init__(self, stepsize=0.5, rng=None, verbose=True):
         self.stepsize = stepsize
+        self.verbose = verbose
 
         if rng is None:
             self.rng = np.random.default_rng()
@@ -65,15 +66,17 @@ class BoundedSteps:
     def __call__(self, x):
         """Return new coordinates relative to existing coordinates `x`."""
         # New coords cannot be outside of [0, 1].
-        logger.info(
-            f"Taking a step with stepsize '{self.stepsize:0.5f}' (in [0, 1] space)"
-        )
-        logger.info(f"Old pos: {x}")
+        if self.verbose:
+            logger.info(
+                f"Taking a step with stepsize '{self.stepsize:0.5f}' (in [0, 1] space)"
+            )
+            logger.info(f"Old pos: {x}")
 
         min_pos = np.clip(x - self.stepsize, 0, 1)
         max_pos = np.clip(x + self.stepsize, 0, 1)
 
         new = self.rng.uniform(low=min_pos, high=max_pos)
 
-        logger.info(f"New pos: {new}")
+        if self.verbose:
+            logger.info(f"New pos: {new}")
         return new

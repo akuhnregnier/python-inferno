@@ -20,7 +20,7 @@ from python_inferno.data import (
     load_single_year_cubes,
     timestep,
 )
-from python_inferno.space import generate_space
+from python_inferno.space import generate_space_spec
 
 
 @njit(nogil=True, parallel=True, cache=True, fastmath=True)
@@ -151,7 +151,7 @@ space_template = dict(
     vpd_f=(1, [(1, 5000)], float),
 )
 
-space = BasinHoppingSpace(generate_space(space_template))
+space = BasinHoppingSpace(generate_space_spec(space_template))
 
 
 # Histogram bins for `loss1`.
