@@ -8,6 +8,7 @@ from SALib.sample import saltelli
 from tqdm import tqdm
 
 from .ba_model import BAModel
+from .cache import cache
 from .configuration import Dims, N_pft_groups, land_pts, npft
 from .py_gpu_inferno import GPUSA
 
@@ -299,3 +300,16 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
         gpu_sa.release()
 
         return sobol.analyze(problem, Y, print_to_console=False)
+
+
+@cache
+def sis_calc(*, params, exponent=8, land_points):
+    sa = GPUBAModelSensitivityAnalysis(params=params, exponent=8)
+    sobol_sis = {}
+    for i in tqdm(land_points, desc="land"):
+        try:
+            sobol_sis[i] = sa.sobol_sis(land_index=i, verbose=False)
+        except LandChecksFailed:
+            pass
+
+    return sobol_sis
