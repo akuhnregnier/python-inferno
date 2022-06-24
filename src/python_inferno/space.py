@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 
+from .cache import mark_dependency
 from .configuration import N_pft_groups
 
 
@@ -140,6 +141,7 @@ def str_spec(n_params_descr: str, bounds, param_type, name: str):
     return spec
 
 
+@mark_dependency
 def generate_space_spec(space_template):
     """Generate the actual `space` from the template.
 

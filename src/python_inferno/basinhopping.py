@@ -10,7 +10,7 @@ import numpy as np
 from loguru import logger
 from wildfires.dask_cx1.dask_rf import safe_write
 
-from python_inferno.space import OptSpace
+from .space import OptSpace
 
 ArgType = Enum("ArgType", ["FLOAT", "CHOICE"])
 

@@ -8,8 +8,9 @@ from hyperopt import hp
 from hyperopt.pyll import rec_eval
 from loguru import logger
 
-from python_inferno.space import OptSpace
-from python_inferno.space_opt import space_opt
+from .cache import mark_dependency
+from .space import OptSpace
+from .space_opt import space_opt
 
 
 def mod_quniform(name, low, high, q):
@@ -113,6 +114,7 @@ class HyperoptSpace(OptSpace):
         return product
 
 
+@mark_dependency
 def get_space_template(*, dryness_method, fuel_build_up_method, include_temperature):
     space_template = dict(
         overall_scale=(1, [(1e-3, 1e3)], hp.uniform),

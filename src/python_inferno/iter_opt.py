@@ -83,6 +83,7 @@ from operator import add
 
 from hyperopt import hp
 
+from .cache import mark_dependency
 from .hyperopt import get_space_template
 from .space import generate_space_spec
 
@@ -231,6 +232,7 @@ def format_configurations(iterator_func):
     return get_formatted_configs
 
 
+@mark_dependency
 @format_configurations
 def next_configurations_iter(start):
     """Get next possible configurations.
@@ -633,6 +635,7 @@ def next_configurations_iter(start):
                     yield (new, 1)
 
 
+@mark_dependency
 def configuration_to_hyperopt_space_spec(configuration):
     space_spec = {}
     constants = {}

@@ -2,15 +2,16 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+from collections import defaultdict
 from multiprocessing import Process, Queue
 from pathlib import Path
-from pprint import pprint
 
+import matplotlib.pyplot as plt
 import numpy as np
 from loguru import logger
 from tqdm import tqdm
 
-from python_inferno.cache import IN_STORE, NotCachedError
+from python_inferno.cache import IN_STORE, NotCachedError, cache
 from python_inferno.hyperopt import HyperoptSpace, get_space_template
 from python_inferno.iter_opt import (
     IGNORED,
@@ -30,6 +31,15 @@ def mp_space_opt(*, q, **kwargs):
     q.put(space_opt(**kwargs))
 
 
+@cache(
+    dependencies=[
+        get_space_template,
+        generate_space_spec,
+        next_configurations_iter,
+        configuration_to_hyperopt_space_spec,
+        space_opt,
+    ]
+)
 def iterative_ba_model_opt(*, params):
     dryness_method = int(params["dryness_method"])
     fuel_build_up_method = int(params["fuel_build_up_method"])
@@ -84,14 +94,11 @@ def iterative_ba_model_opt(*, params):
     results = {}
     init_n_params = 1  # TODO - This initial value should depends on `base_spec`.
 
-    n_configs = None
     steps = 0
 
-    while n_configs != 0:
-        n_configs = 0
-
-        local_best_config = None
-        local_best_loss = np.inf
+    while True:
+        local_best_config = defaultdict(lambda: None)
+        local_best_loss = defaultdict(lambda: np.inf)
 
         for (configuration, n_new) in tqdm(
             list(next_configurations_iter(start_config)),
@@ -135,17 +142,31 @@ def iterative_ba_model_opt(*, params):
                 p.join()
 
             logger.info(f"loss: {loss}")
-            if loss < local_best_loss:
+            if loss < local_best_loss[n_params]:
                 logger.info(f"New best loss: {loss}.")
-                local_best_loss = loss
-                local_best_config = configuration
-                best_n_params = n_params
-                results[n_params] = (local_best_loss, local_best_config)
-            n_configs += 1
+                local_best_loss[n_params] = loss
+                local_best_config[n_params] = configuration
+
+                if n_params not in results:
+                    # New `n_params`.
+                    results[n_params] = (loss, configuration)
+                else:
+                    # Check the old loss.
+                    if loss < results[n_params][0]:
+                        # Only update if the new loss is lower.
+                        results[n_params] = (loss, configuration)
 
             steps_prog.refresh()
 
-        start_config = {**start_config, **local_best_config}
+        if not local_best_config:
+            # No configurations were explored.
+            break
+
+        best_n_params = min(
+            (loss, n_params) for (n_params, loss) in local_best_loss.items()
+        )[1]
+
+        start_config = {**start_config, **local_best_config[best_n_params]}
         init_n_params = best_n_params
 
         steps += 1
@@ -159,7 +180,7 @@ def iterative_ba_model_opt(*, params):
 
 if __name__ == "__main__":
     logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    logger.add(sys.stderr, level="WARNING")
 
     df, method_iter = get_model_params(
         record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record",
@@ -167,8 +188,22 @@ if __name__ == "__main__":
         verbose=False,
     )
 
-    for method_data in method_iter():
+    plt.figure()
+
+    for i, method_data in enumerate(method_iter()):
+        full_opt_loss = method_data[4]
         params = method_data[5]
+        method_name = method_data[6]
+
         results = iterative_ba_model_opt(params=params)
-        print("Results")
-        pprint(results)
+
+        n_params, losses = zip(
+            *[(n_params, float(loss)) for (n_params, (loss, _)) in results.items()]
+        )
+        plt.plot(
+            n_params, losses, marker="x", linestyle="", label=method_name, c=f"C{i}"
+        )
+        plt.hlines(full_opt_loss, 0, max(n_params), colors=f"C{i}")
+
+    plt.legend()
+    plt.show()

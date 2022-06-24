@@ -26,12 +26,11 @@ from wildfires.data import (
     regrid,
 )
 
-from python_inferno.pnv import get_pnv_mega_regions
-
 from .cache import cache, mark_dependency
 from .configuration import N_pft_groups, land_pts, npft
 from .dry_bal import calculate_grouped_dry_bal
 from .litter_pool import _spinup, calculate_litter_old, litter_spinup
+from .pnv import get_pnv_mega_regions
 from .precip_dry_day import calculate_inferno_dry_days, precip_moving_sum
 from .utils import (
     PartialDateTime,

@@ -8,7 +8,7 @@ from scipy.optimize import basinhopping
 
 from .ba_model import gen_to_optimise
 from .basinhopping import BoundedSteps, Recorder
-from .cache import cache
+from .cache import cache, mark_dependency
 
 
 def fail_func(*args, **kwargs):
@@ -19,6 +19,7 @@ def success_func(loss, *args, **kwargs):
     return loss
 
 
+@mark_dependency
 @cache(ignore=["verbose", "_uncached_data"])
 def space_opt(
     *,

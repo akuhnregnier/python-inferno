@@ -10,9 +10,9 @@ from jules_output_analysis.utils import convert_longitudes
 from wildfires.data import ERA5_DryDayPeriod
 from wildfires.utils import match_shape
 
-from python_inferno.data import load_data, timestep
-from python_inferno.precip_dry_day import calculate_inferno_dry_days
-from python_inferno.utils import monthly_average_data, unpack_wrapped
+from ..data import load_data, timestep
+from ..precip_dry_day import calculate_inferno_dry_days
+from ..utils import monthly_average_data, unpack_wrapped
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
 
