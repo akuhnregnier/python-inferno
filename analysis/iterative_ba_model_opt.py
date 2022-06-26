@@ -14,17 +14,22 @@ from tqdm import tqdm
 from python_inferno.cache import IN_STORE, NotCachedError, cache
 from python_inferno.hyperopt import HyperoptSpace, get_space_template
 from python_inferno.iter_opt import (
+    ALWAYS_OPTIMISED,
     IGNORED,
+    any_match,
     configuration_to_hyperopt_space_spec,
+    format_configurations,
+    get_always_optimised,
+    get_ignored,
+    get_sigmoid_names,
+    get_weight_sigmoid_names_map,
+    match,
     next_configurations_iter,
+    reorder,
 )
 from python_inferno.model_params import get_model_params
 from python_inferno.space import generate_space_spec
 from python_inferno.space_opt import space_opt
-
-ALWAYS_OPTIMISED = {
-    "overall_scale",
-}
 
 
 def mp_space_opt(*, q, **kwargs):
@@ -33,14 +38,27 @@ def mp_space_opt(*, q, **kwargs):
 
 @cache(
     dependencies=[
-        get_space_template,
-        generate_space_spec,
-        next_configurations_iter,
+        any_match,
         configuration_to_hyperopt_space_spec,
+        format_configurations,
+        generate_space_spec,
+        get_always_optimised,
+        get_ignored,
+        get_sigmoid_names,
+        get_space_template,
+        get_weight_sigmoid_names_map,
+        match,
+        next_configurations_iter,
+        reorder,
         space_opt,
     ]
 )
-def iterative_ba_model_opt(*, params):
+def iterative_ba_model_opt(
+    *,
+    params,
+    maxiter=60,
+    niter_success=15,
+):
     dryness_method = int(params["dryness_method"])
     fuel_build_up_method = int(params["fuel_build_up_method"])
     include_temperature = int(params["include_temperature"])
@@ -118,9 +136,8 @@ def iterative_ba_model_opt(*, params):
                 discrete_params=discrete_params,
                 opt_record_dir="test",
                 defaults={**defaults, **constants},
-                # XXX
-                minimizer_options=dict(maxiter=30),
-                basinhopping_options=dict(niter_success=5),
+                minimizer_options=dict(maxiter=maxiter),
+                basinhopping_options=dict(niter_success=niter_success),
                 verbose=False,
                 _uncached_data=False,
             )
@@ -195,7 +212,7 @@ if __name__ == "__main__":
         params = method_data[5]
         method_name = method_data[6]
 
-        results = iterative_ba_model_opt(params=params)
+        results = iterative_ba_model_opt(params=params, maxiter=30, niter_success=5)
 
         n_params, losses = zip(
             *[(n_params, float(loss)) for (n_params, (loss, _)) in results.items()]

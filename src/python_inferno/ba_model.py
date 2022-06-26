@@ -6,6 +6,7 @@ import numpy as np
 from loguru import logger
 from sklearn.metrics import r2_score
 
+from .cache import mark_dependency
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data
 from .metrics import Metrics, loghist, nmse
@@ -229,6 +230,7 @@ class ModelParams:
 
         return process_key_from_kwargs
 
+    @mark_dependency
     def process_kwargs(self, **kwargs):
         dummy_params = np.ones(N_pft_groups, dtype=np.float64)
 
@@ -329,6 +331,7 @@ class ModelParams:
 
 
 class BAModel(ModelParams):
+    @mark_dependency
     def __init__(
         self,
         *,

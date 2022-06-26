@@ -90,17 +90,33 @@ from .space import generate_space_spec
 Mode = Enum("Mode", ["R", "N"])
 
 
-IGNORED = (
-    "overall_scale",
-    "average_samples",
-    "rain_f",
-    "vpd_f",
-    "fuel_build_up_n_samples",
-    "litter_tc",
-    "leaf_f",
-)
+@mark_dependency
+def get_always_optimised():
+    return set(("overall_scale",))
 
 
+ALWAYS_OPTIMISED = get_always_optimised()
+
+
+@mark_dependency
+def get_ignored():
+    return set(
+        (
+            "overall_scale",
+            "average_samples",
+            "rain_f",
+            "vpd_f",
+            "fuel_build_up_n_samples",
+            "litter_tc",
+            "leaf_f",
+        )
+    )
+
+
+IGNORED = get_ignored()
+
+
+@mark_dependency
 def reorder(s):
     assert isinstance(s, str)
     assert len(s) >= 2
@@ -130,6 +146,7 @@ def reorder(s):
     return new_s
 
 
+@mark_dependency
 def match(spec, pattern):
     assert isinstance(pattern, str)
     assert {"0", "1"}.issuperset(set(pattern))
@@ -146,6 +163,7 @@ def match(spec, pattern):
     return True
 
 
+@mark_dependency
 def any_match(spec, patterns):
     for pattern in patterns:
         if match(spec, pattern):
@@ -153,10 +171,12 @@ def any_match(spec, patterns):
     return False
 
 
+@mark_dependency
 def get_sigmoid_names(prefix):
     return tuple(f"{prefix}_{suffix}" for suffix in ("factor", "centre", "shape"))
 
 
+@mark_dependency
 def get_weight_sigmoid_names_map(*, dryness_method, fuel_build_up_method):
     out = {
         "fapar_weight": get_sigmoid_names("fapar"),
@@ -181,6 +201,7 @@ def get_weight_sigmoid_names_map(*, dryness_method, fuel_build_up_method):
     return out
 
 
+@mark_dependency
 def format_configurations(iterator_func):
     def get_formatted_configs(*args, **kwargs):
         for config, count in iterator_func(*args, **kwargs):

@@ -421,7 +421,11 @@ class GPUSA:
                 continue
             assert arr.shape[-1] in (npft, N_pft_groups)
 
-    def set_sample_data(self, index_data, values, n_samples):
+    def set_sample_data(self, index_data, values, n_samples, offset_data=None):
+        if offset_data is not None:
+            assert values.ndim == offset_data.ndim
+            values = values + offset_data
+
         name, s, dims = itemgetter("name", "slice", "dims")(index_data)
 
         try:

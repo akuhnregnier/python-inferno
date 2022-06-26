@@ -9,7 +9,6 @@ from operator import itemgetter
 from pathlib import Path
 
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
@@ -21,7 +20,7 @@ from python_inferno.configuration import land_pts
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.metrics import Metrics
 from python_inferno.metrics_plotting import null_model_analysis
-from python_inferno.model_params import get_model_params
+from python_inferno.model_params import get_model_params, plot_param_histograms
 from python_inferno.plotting import plotting
 from python_inferno.utils import (
     ConsMonthlyAvg,
@@ -102,22 +101,6 @@ def get_processed_climatological_jules_ba():
         and jules_time_coord.shape[0] >= 12
     )
     return data_dict, jules_time_coord
-
-
-def plot_param_histograms(df_sel, exp_name, hist_save_dir):
-    for col in [col for col in df_sel.columns if col != "loss"]:
-        if df_sel[col].isna().all():
-            continue
-
-        plt.figure()
-        plt.plot(df_sel[col], df_sel["loss"], linestyle="", marker="o", alpha=0.6)
-        plt.xlabel(col)
-        plt.ylabel("loss")
-        plt.title(exp_name)
-        if col in ("rain_f", "vpd_f", "litter_tc", "leaf_f"):
-            plt.xscale("log")
-        plt.savefig(hist_save_dir / f"{col}.png")
-        plt.close()
 
 
 if __name__ == "__main__":

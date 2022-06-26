@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
+import os
+from itertools import islice
+from pathlib import Path
+
 import pytest
 from numpy.testing import assert_allclose
 
+from python_inferno.hyperopt import get_space_template
+from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
+from python_inferno.model_params import get_model_params
 from python_inferno.sensitivity_analysis import (
     BAModelSensitivityAnalysis,
     GPUBAModelSensitivityAnalysis,
@@ -9,6 +16,7 @@ from python_inferno.sensitivity_analysis import (
 
 
 @pytest.mark.parametrize("param_index", range(4))
+@pytest.mark.parametrize("test_type", ["data", "params"])
 @pytest.mark.parametrize(
     "land_index",
     [
@@ -34,11 +42,52 @@ from python_inferno.sensitivity_analysis import (
     ],
 )
 @pytest.mark.parametrize("exponent", [6, pytest.param(8, marks=pytest.mark.slow)])
-def test_sa_versions(model_params, param_index, land_index, exponent):
-    params = list(model_params.values())[param_index]
+def test_sa_versions(param_index, test_type, land_index, exponent):
+    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
+    df, method_iter = get_model_params(
+        record_dir=record_dir, progress=True, verbose=False
+    )
 
-    sa = BAModelSensitivityAnalysis(params=params, exponent=exponent)
-    gpu_sa = GPUBAModelSensitivityAnalysis(params=params, exponent=exponent)
+    (
+        dryness_method,
+        fuel_build_up_method,
+        df_sel,
+        min_index,
+        min_loss,
+        params,
+        exp_name,
+        exp_key,
+    ) = list(islice(method_iter(), param_index, param_index + 1))[0]
+    assert int(params["include_temperature"]) == 1
+
+    if test_type == "params":
+        space_template = get_space_template(
+            dryness_method=dryness_method,
+            fuel_build_up_method=fuel_build_up_method,
+            include_temperature=int(params["include_temperature"]),
+        )
+
+        param_names = [
+            key for key in space_template if key not in ALWAYS_OPTIMISED.union(IGNORED)
+        ]
+        if "crop_f" in param_names:
+            param_names.remove("crop_f")
+
+        data_variables = param_names
+    else:
+        data_variables = None
+
+    sa_params = dict(
+        params=params,
+        exponent=exponent,
+        data_variables=data_variables,
+        df_sel=df_sel,
+        fuel_build_up_method=int(params["fuel_build_up_method"]),
+        dryness_method=int(params["dryness_method"]),
+    )
+
+    sa = BAModelSensitivityAnalysis(**sa_params)
+    gpu_sa = GPUBAModelSensitivityAnalysis(**sa_params)
 
     si = sa.sobol_sis(land_index=land_index)
     gpu_si = gpu_sa.sobol_sis(land_index=land_index)
