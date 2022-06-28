@@ -21,7 +21,8 @@ from python_inferno.model_params import get_model_params
 from python_inferno.sensitivity_analysis import sis_calc
 
 
-def analyse_sobol_sis(sobol_sis):
+def analyse_sobol_sis(*, sobol_sis, save_dir):
+    jules_lats, jules_lons = load_jules_lats_lons()
     group_names = list(next(iter(sobol_sis.values())).to_df()[0].index.values)
 
     data = {}
@@ -36,9 +37,6 @@ def analyse_sobol_sis(sobol_sis):
     print(df.sort_values("mean", ascending=False))
 
     # Plotting.
-
-    save_dir = sa_plot_dir / exp_key
-    save_dir.mkdir(parents=False, exist_ok=True)
 
     for name in tqdm(group_names, desc="plotting"):
         data = np.ma.MaskedArray(np.zeros(land_pts), mask=True)
@@ -72,13 +70,10 @@ if __name__ == "__main__":
     sa_plot_dir = Path("~/tmp/sa").expanduser()
     sa_plot_dir.mkdir(parents=False, exist_ok=True)
 
-    jules_lats, jules_lons = load_jules_lats_lons()
-
     record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
     df, method_iter = get_model_params(
         record_dir=record_dir, progress=True, verbose=False
     )
-    jules_lats, jules_lons = load_jules_lats_lons()
 
     for (
         dryness_method,
@@ -106,7 +101,17 @@ if __name__ == "__main__":
         if "crop_f" in param_names:
             param_names.remove("crop_f")
 
+        save_dir = sa_plot_dir / exp_key
+        save_dir.mkdir(parents=False, exist_ok=True)
+
         for data_variables in [param_names, None]:
+            if data_variables is None:
+                save_dir2 = save_dir / "data"
+                save_dir2.mkdir(parents=False, exist_ok=True)
+            else:
+                save_dir2 = save_dir / "params"
+                save_dir2.mkdir(parents=False, exist_ok=True)
+
             sobol_sis = sis_calc(
                 params=params,
                 land_points=list(range(land_pts)),
@@ -116,4 +121,4 @@ if __name__ == "__main__":
                 fuel_build_up_method=fuel_build_up_method,
                 dryness_method=dryness_method,
             )
-            analyse_sobol_sis(sobol_sis)
+            analyse_sobol_sis(sobol_sis=sobol_sis, save_dir=save_dir2)

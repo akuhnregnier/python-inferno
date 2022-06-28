@@ -75,6 +75,7 @@ Conditional:
  - average_samples ?? (or fixed from optimised full run?)
 
 """
+from collections.abc import Iterable
 from copy import deepcopy
 from enum import Enum
 from functools import reduce
@@ -254,8 +255,7 @@ def format_configurations(iterator_func):
 
 
 @mark_dependency
-@format_configurations
-def next_configurations_iter(start):
+def _next_configurations_iter(start):
     """Get next possible configurations.
 
     Args:
@@ -487,7 +487,7 @@ def next_configurations_iter(start):
         if (
             "_weight" in key
             and isinstance(spec, tuple)
-            and {0, 1}.issuperset(set(spec))
+            and set((0, 1)).issuperset(set(spec))
         ):
             # Optimise either a single weight parameter, a pair of weight parameters,
             # or all three simultaneously.
@@ -577,6 +577,41 @@ def next_configurations_iter(start):
 
                     yield (new, 1)
 
+                existing_key_counts = {
+                    key: sum(
+                        (
+                            weight_val[2] == key
+                            if isinstance(weight_val, Iterable)
+                            else False
+                        )
+                        for weight_val in spec
+                    )
+                    for key in existing_opt_keys_unique
+                }
+
+                max_count_key = max(
+                    existing_key_counts, key=existing_key_counts.__getitem__
+                )
+
+                if existing_key_counts[max_count_key] >= 2:
+                    # Scope for complexity by increasing weight optimisation
+                    # granularity.
+                    possible_indices = [
+                        i
+                        for i, weight_val in enumerate(spec)
+                        if isinstance(weight_val, Iterable)
+                        and weight_val[2] == max_count_key
+                    ]
+                    if len(possible_indices) == 2:
+                        possible_indices = possible_indices[:1]
+
+                    for index in possible_indices:
+                        new_spec = list(spec)
+                        new_spec[index] = (0, 1, new_opt_key)
+                        new = deepcopy(start)
+                        new[key] = tuple(new_spec)
+                        yield (new, 1)
+
         if (
             key in sigmoid_to_weight_names_map
             and start[sigmoid_to_weight_names_map[key]] != 0
@@ -601,7 +636,7 @@ def next_configurations_iter(start):
                 assert possible_keys
                 # NOTE New key.
                 new_opt_key = sorted(list(possible_keys))[0]
-                assert new_opt_key in {"Y", "Z"}
+                assert new_opt_key in ("Y", "Z")
 
                 # For 'XXX' `max_existing_n=3`.
                 # For 'XXY', `max_existing_n=2`, and only a single index should be tried.
@@ -623,13 +658,13 @@ def next_configurations_iter(start):
 
                 assert target_opt_key
 
-                assert "".join(sorted(existing_opt_keys)) in {
+                assert "".join(sorted(existing_opt_keys)) in (
                     "XXX",
                     "XXY",
                     "XYY",
                     "XX",
                     "YY",
-                }
+                )
 
                 target_indices = [
                     weight_indices[i]
@@ -654,6 +689,11 @@ def next_configurations_iter(start):
                     new[key] = tuple(new_spec)
 
                     yield (new, 1)
+
+
+@format_configurations
+def next_configurations_iter(start):
+    return _next_configurations_iter(start)
 
 
 @mark_dependency
