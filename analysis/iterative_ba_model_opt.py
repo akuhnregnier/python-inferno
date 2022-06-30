@@ -535,4 +535,10 @@ if __name__ == "__main__":
         ax.legend()
         ax.grid()
 
-    plt.show()
+        if i in (0, 2):
+            ax.set_ylabel("performance (loss)")
+        if i in (2, 3):
+            ax.set_xlabel("nr. of optimised parameters")
+
+    fig.savefig(save_dir / "iter_model_perf.png")
+    plt.close(fig)
