@@ -505,6 +505,7 @@ if __name__ == "__main__":
         for key, marker, opt_kwargs in (
             ("30,5", "+", dict(maxiter=30, niter_success=5)),
             ("60,15", "x", dict(maxiter=60, niter_success=15)),
+            ("120,5", "_", dict(maxiter=120, niter_success=5)),
         ):
             results = iterative_ba_model_opt(params=params, **opt_kwargs)
 

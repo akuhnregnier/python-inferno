@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - pylatex
+  - rpy2
   - _py-xgboost-mutex=2.0=cpu_0
   - abseil-cpp=20211102.0=h96cf925_1
   - affine=2.3.1=pyhd8ed1ab_0
@@ -291,7 +291,7 @@ dependencies:
   - pygments=2.11.2=pyhd8ed1ab_0
   - pyhdf=0.10.3=py310ha369d9e_2
   - pylint=2.13.5=pyhd8ed1ab_0
-  - pymongo=3.12.0=py310hc377ac9_0
+  - pymongo
   - pyopenssl=22.0.0=pyhd8ed1ab_0
   - pyparsing=3.0.8=pyhd8ed1ab_0
   - pyperclip=1.8.2=pyhd8ed1ab_2

@@ -1,4 +1,4 @@
-#!/mnt/small-ssd/miniconda3/envs/python-inferno/bin/python
+#!/Users/alexander/separate_miniconda/envs/python-inferno/bin/python
 # -*- coding: utf-8 -*-
 
 # Use the correct R installation.
@@ -6,7 +6,7 @@
 # isort: off
 import os
 
-os.environ["R_HOME"] = "/mnt/small-ssd/miniconda3/envs/python-inferno/lib/R"
+os.environ["R_HOME"] = "/Users/alexander/separate_miniconda/envs/python-inferno/lib/R"
 # isort: on
 
 import gc
@@ -34,12 +34,12 @@ from rpy2.robjects import pandas2ri
 from rpy2.robjects.conversion import localconverter
 from tqdm import tqdm
 
-from python_inferno.ba_model import Status, calculate_scores, process_params
+from python_inferno.ba_model import ModelParams, calculate_scores
 from python_inferno.cache import cache
 from python_inferno.configuration import N_pft_groups, land_pts, pft_group_names
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
-from python_inferno.metrics import null_model_analysis
+from python_inferno.metrics_plotting import null_model_analysis
 from python_inferno.plotting import plotting
 from python_inferno.utils import (
     ConsMonthlyAvg,
@@ -104,7 +104,9 @@ def read_global_param_data():
 def file_hash_calc(path):
     r_gam_hash = hashlib.md5()
     r_gam_hash.update(
-        open("/home/alexander/Documents/PhD/python-inferno/R/gam.R").read().encode()
+        open(str(Path("~/Documents/PhD/python-inferno/R/gam.R").expanduser()))
+        .read()
+        .encode()
     )
     return {"path": path, "value": r_gam_hash.hexdigest()}
 
@@ -362,39 +364,23 @@ if __name__ == "__main__":
         }
         # pprint(params)
 
-        del params["dryness_method"]
-        del params["fuel_build_up_method"]
-        del params["include_temperature"]
-
-        (data_params, single_opt_kwargs, expanded_opt_kwargs) = process_params(
-            opt_kwargs=params,
-            defaults=dict(
-                rain_f=0.3,
-                vpd_f=400,
-                crop_f=0.5,
-                fuel_build_up_n_samples=0,
-                litter_tc=1e-9,
-                leaf_f=1e-3,
-            ),
+        model_params = ModelParams(
+            dryness_method=params.pop("dryness_method"),
+            fuel_build_up_method=params.pop("fuel_build_up_method"),
+            include_temperature=params.pop("include_temperature"),
+            disc_params=params,
         )
 
         # NOTE - This will make parameters deviate from the originally-found minimum
         # (with the new INFERNO model), but is required to get 12 output months for
         # comparison with GFED4 data!
-        data_params["average_samples"] = 183
+        model_params.average_samples = 183
 
         (
             data_dict,
             mon_avg_gfed_ba_1d,
             jules_time_coord,
-        ) = get_processed_climatological_data(
-            litter_tc=data_params["litter_tc"],
-            leaf_f=data_params["leaf_f"],
-            n_samples_pft=data_params["n_samples_pft"],
-            average_samples=data_params["average_samples"],
-            rain_f=data_params["rain_f"],
-            vpd_f=data_params["vpd_f"],
-        )
+        ) = get_processed_climatological_data(**model_params.disc_params)
 
         gc.collect()
 
@@ -487,13 +473,11 @@ if __name__ == "__main__":
         # # given the weather conditions).
         # model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
 
-        scores, status, avg_ba, calc_factors = calculate_scores(
+        scores, avg_ba = calculate_scores(
             model_ba=pred_y_1d,
             cons_monthly_avg=ConsMonthlyAvg(jules_time_coord, L=land_pts),
             mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
         )
-        assert status is Status.SUCCESS
-        avg_ba *= calc_factors["adj_factor"]
 
         gc.collect()
 
@@ -508,8 +492,6 @@ if __name__ == "__main__":
             raw_data=np.ma.getdata(avg_ba)[~np.ma.getmaskarray(avg_ba)],
             model_ba_2d_data=model_ba_2d.data,
             hist_bins=hist_bins,
-            arcsinh_adj_factor=calc_factors["arcsinh_adj_factor"],
-            arcsinh_factor=calc_factors["arcsinh_factor"],
             scores=scores,
         )
         gc.collect()
