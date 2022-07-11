@@ -743,3 +743,29 @@ def configuration_to_hyperopt_space_spec(configuration):
 
     # NOTE: `space_spec` defines variables that are optimised, `constants` are not.
     return space_spec, constants
+
+
+@mark_dependency
+def get_next_x0(*, new_space, x0_dict, prev_spec, prev_constants):
+    x0 = []
+    for key in new_space.continuous_param_names:
+        if key in x0_dict:
+            x0.append(x0_dict[key])
+        else:
+            # Add missing entries to replicate the exact previous minimum.
+            if key in prev_spec:
+                # String mapping.
+                x0.append(x0_dict[prev_spec[key]])
+            elif key in prev_constants:
+                # String mapping.
+                x0.append(prev_constants[key])
+            elif key.strip("2") in prev_spec:
+                # Transition akin to XXX -> XYZ
+                x0.append(x0_dict[key.strip("2")])
+            elif key.strip("3") in prev_spec:
+                # Transition akin to XXX -> XYZ
+                x0.append(x0_dict[key.strip("3")])
+            else:
+                raise ValueError(f"key '{key}' not found.")
+
+    return x0

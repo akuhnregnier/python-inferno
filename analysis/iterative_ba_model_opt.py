@@ -23,6 +23,7 @@ from python_inferno.iter_opt import (
     format_configurations,
     get_always_optimised,
     get_ignored,
+    get_next_x0,
     get_sigmoid_names,
     get_weight_sigmoid_names_map,
     match,
@@ -47,6 +48,7 @@ def mp_space_opt(*, q, **kwargs):
         generate_space_spec,
         get_always_optimised,
         get_ignored,
+        get_next_x0,
         get_sigmoid_names,
         get_space_template,
         get_weight_sigmoid_names_map,
@@ -116,6 +118,14 @@ def iterative_ba_model_opt(
 
     steps = 0
 
+    # x0 variables.
+    x0_dict = None
+    prev_spec = None
+    prev_constants = None
+    x0_dict_vals = {}
+    prev_spec_vals = {}
+    prev_constants_vals = {}
+
     while True:
         local_best_config = defaultdict(lambda: None)
         local_best_loss = defaultdict(lambda: np.inf)
@@ -130,6 +140,18 @@ def iterative_ba_model_opt(
             space_spec, constants = configuration_to_hyperopt_space_spec(configuration)
             space = HyperoptSpace({**base_spec, **space_spec})
 
+            if x0_dict is not None:
+                assert prev_spec is not None
+                assert prev_constants is not None
+                x0 = get_next_x0(
+                    new_space=space,
+                    x0_dict=x0_dict,
+                    prev_spec=prev_spec,
+                    prev_constants=prev_constants,
+                )
+            else:
+                x0 = None
+
             opt_kwargs = dict(
                 space=space,
                 dryness_method=dryness_method,
@@ -140,6 +162,8 @@ def iterative_ba_model_opt(
                 defaults={**defaults, **constants},
                 minimizer_options=dict(maxiter=maxiter),
                 basinhopping_options=dict(niter_success=niter_success),
+                x0=x0,
+                return_res=True,
                 verbose=False,
                 _uncached_data=False,
             )
@@ -152,19 +176,27 @@ def iterative_ba_model_opt(
                 pass
 
             if is_cached:
-                loss = space_opt(**opt_kwargs)
+                res = space_opt(**opt_kwargs)
             else:
                 # Avoid memory leaks by running each trial in a new process.
                 p = Process(target=mp_space_opt, kwargs={"q": q, **opt_kwargs})
                 p.start()
-                loss = q.get()
+                res = q.get()
                 p.join()
+
+            loss = res.fun
 
             logger.info(f"loss: {loss}")
             if loss < local_best_loss[n_params]:
                 logger.info(f"New best loss: {loss}.")
                 local_best_loss[n_params] = loss
                 local_best_config[n_params] = configuration
+
+                x0_dict_vals[n_params] = {
+                    key: val for key, val in zip(space.continuous_param_names, res.x)
+                }
+                prev_spec_vals[n_params] = space_spec
+                prev_constants_vals[n_params] = constants
 
                 if n_params not in results:
                     # New `n_params`.
@@ -187,6 +219,11 @@ def iterative_ba_model_opt(
 
         start_config = {**start_config, **local_best_config[best_n_params]}
         init_n_params = best_n_params
+
+        # Set up x0 variables for the next iteration.
+        x0_dict = x0_dict_vals[best_n_params]
+        prev_spec = prev_spec_vals[best_n_params]
+        prev_constants = prev_constants_vals[best_n_params]
 
         steps += 1
         steps_prog.update()
@@ -503,9 +540,8 @@ if __name__ == "__main__":
         method_dir.mkdir(parents=False, exist_ok=True)
 
         for key, marker, opt_kwargs in (
-            ("30,5", "+", dict(maxiter=30, niter_success=5)),
-            ("60,15", "x", dict(maxiter=60, niter_success=15)),
-            ("120,5", "_", dict(maxiter=120, niter_success=5)),
+            ("100,1", "^", dict(maxiter=100, niter_success=1)),
+            ("200,5", "_", dict(maxiter=200, niter_success=5)),
         ):
             results = iterative_ba_model_opt(params=params, **opt_kwargs)
 

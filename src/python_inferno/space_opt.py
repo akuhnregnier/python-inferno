@@ -32,6 +32,8 @@ def space_opt(
     defaults=None,
     basinhopping_options=None,
     minimizer_options=None,
+    x0=None,
+    return_res=False,
     verbose=True,
     _uncached_data=True,
 ):
@@ -89,7 +91,7 @@ def space_opt(
 
     res = basinhopping(
         to_optimise_with_discrete,
-        x0=space.continuous_x0_mid,
+        x0=space.continuous_x0_mid if x0 is None else x0,
         seed=0,
         callback=basinhopping_callback,
         take_step=BoundedSteps(
@@ -115,5 +117,6 @@ def space_opt(
         },
     )
 
-    loss = res.fun
-    return loss
+    if return_res:
+        return res
+    return res.fun
