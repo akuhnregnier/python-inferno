@@ -16,7 +16,7 @@ make install
 A separate miniconda installation was used for `rpy2` since it was found that installing `rpy2` broke `pyenv`.
 This used the conda requirements file: `arm64_requirements_rpy2.yaml`.
 
-See: https://mac.r-project.org/openmp/ regarding R installation on MAC M1 (although not everything works correctly at the moment).
+See: https://mac.r-project.org/openmp/ regarding R installation on MAC M1.
 Note also the following contents of `~/.R/Makevars`:
 ```
 BLDSHARED=clang -bundle -undefined
@@ -44,6 +44,8 @@ cppcompiler=clang++
 CPPFLAGS+=-Xclang -fopenmp
 LDFLAGS+=-lomp
 ```
-Note that `<miniconda_dir>/envs/python-inferno/lib/R/etc/Makeconf` was also modified to use `clang`, `clang++` (instead of equivalent names prefixed like 'arm64-...' or similar), and `-fopenmp` -> `-Xclang -fopenmp`.
+Note that `<miniconda_dir>/envs/python-inferno/lib/R/etc/Makeconf` and similar files were modified to use `clang`, `clang++` (instead of equivalent names prefixed like 'arm64-...' or similar), and `-fopenmp` -> `-Xclang -fopenmp`.
 
-Run `install.packages(c("mgcv", "import"), dependencies=TRUE)` to install R dependencies.
+Run `install.packages(c("mgcv", "import", "purrr"), dependencies=TRUE)` to install R dependencies.
+
+See also https://github.com/kharchenkolab/conos/wiki/Installing-Conos-for-Mac-OS.

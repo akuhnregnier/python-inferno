@@ -1,9 +1,12 @@
 #!/Users/alexander/separate_miniconda/envs/python-inferno/bin/python
 # -*- coding: utf-8 -*-
 
+# NOTE: Does not work on M1 (yet)
+
 # Use the correct R installation.
 
 # isort: off
+
 import os
 
 os.environ["R_HOME"] = "/Users/alexander/separate_miniconda/envs/python-inferno/lib/R"
@@ -136,6 +139,8 @@ def gam_analysis(
     partial_preds = {}
     partial_pred_errs = {}
 
+    # XXX
+    # with localconverter(ro.default_converter):
     with localconverter(ro.default_converter + pandas2ri.converter):
         # Call the sourced R GAM fitting function while automatically converting the
         # pandas df to R.
@@ -180,7 +185,7 @@ def partial_dependence_plots(
     fig_height=6.9,
     se_factor=0.1,
     feature_names,
-    expanded_opt_kwargs,
+    proc_params,
     name_map,
     partial_plot_vals,
     partial_preds,
@@ -207,7 +212,7 @@ def partial_dependence_plots(
             ("centres", "_centre"),
             ("shapes", "_shape"),
         ]:
-            sigmoid_params[key] = expanded_opt_kwargs[name_map[feature_name] + suffix]
+            sigmoid_params[key] = proc_params[name_map[feature_name] + suffix]
 
         assert all(len(values) == N_pft_groups for values in sigmoid_params.values())
 
@@ -286,7 +291,7 @@ if __name__ == "__main__":
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
+    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
     assert record_dir.is_dir()
 
     # To prevent memory accumulation during repeated calculations below.
@@ -362,7 +367,7 @@ if __name__ == "__main__":
             for key, val in df_sel.iloc[min_index].to_dict().items()
             if not pd.isna(val) and key not in ("loss",)
         }
-        # pprint(params)
+        orig_params = params.copy()
 
         model_params = ModelParams(
             dryness_method=params.pop("dryness_method"),
@@ -441,15 +446,12 @@ if __name__ == "__main__":
             gam_data_df
         )
 
-        # NOTE Unsupported (for now).
-        assert not single_opt_kwargs
-
         # Partial dependence plots.
         futures.append(
             executor.submit(
                 partial_dependence_plots,
                 feature_names=feature_names,
-                expanded_opt_kwargs=expanded_opt_kwargs,
+                proc_params=model_params.process_kwargs(**params),
                 name_map=name_map,
                 partial_plot_vals=partial_plot_vals,
                 partial_preds=partial_preds,
@@ -493,6 +495,7 @@ if __name__ == "__main__":
             model_ba_2d_data=model_ba_2d.data,
             hist_bins=hist_bins,
             scores=scores,
+            data_params=orig_params,
         )
         gc.collect()
 

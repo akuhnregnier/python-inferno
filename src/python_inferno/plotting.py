@@ -424,16 +424,17 @@ def plotting(
             plt.savefig(phase_diff_map_dir / f"phase_diff_map_{exp_key}.png")
         plt.close()
 
-        # Global phase difference map with focus on individual locations.
-        plot_phase_diff_locs(
-            model_ba_2d_data=model_ba_2d_data,
-            ref_2d_data=ref_2d_data,
-            phase_diff=phase_diff,
-            title=title,
-            label=xlabel,
-            save_dir=save_dir / "phase_diff_locs",
-            exp_key=exp_key,
-            data_2d_cubes=data_2d_cubes,
-        )
+        if data_2d_cubes is not None:
+            # Global phase difference map with focus on individual locations.
+            plot_phase_diff_locs(
+                model_ba_2d_data=model_ba_2d_data,
+                ref_2d_data=ref_2d_data,
+                phase_diff=phase_diff,
+                title=title,
+                label=xlabel,
+                save_dir=save_dir / "phase_diff_locs",
+                exp_key=exp_key,
+                data_2d_cubes=data_2d_cubes,
+            )
     else:
         logger.debug("'ref_2d_data' not given.")

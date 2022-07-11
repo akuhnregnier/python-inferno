@@ -127,9 +127,20 @@ def _calculate_scores_from_avg_ba(*, avg_ba, mon_avg_gfed_ba_1d, requested):
             Metrics.LOGHIST,
         )
     ):
-        assert not np.any(np.ma.getmaskarray(mon_avg_gfed_ba_1d))
-        y_pred = np.ma.getdata(avg_ba).ravel()
-        y_true = np.ma.getdata(mon_avg_gfed_ba_1d).ravel()
+        is_masked = np.any(np.ma.getmaskarray(mon_avg_gfed_ba_1d))
+        if not is_masked:
+            y_pred = np.ma.getdata(avg_ba).ravel()
+            y_true = np.ma.getdata(mon_avg_gfed_ba_1d).ravel()
+        else:
+            logger.warning(
+                "Masked elements detected (deviates from optimisation behaviour)!"
+            )
+            shared_mask = np.ma.getmaskarray(avg_ba) | np.ma.getmaskarray(
+                mon_avg_gfed_ba_1d
+            )
+            shared_sel = ~shared_mask
+            y_pred = np.ma.getdata(avg_ba)[shared_sel]
+            y_true = np.ma.getdata(mon_avg_gfed_ba_1d)[shared_sel]
         assert y_pred.shape == y_true.shape
 
     scores = {}
