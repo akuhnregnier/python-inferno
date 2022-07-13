@@ -11,7 +11,10 @@ from tqdm import tqdm
 from .cache import cache, mark_dependency
 from .utils import linspace_no_endpoint
 
-Metrics = Enum("Metrics", ["NME", "NMSE", "MPD", "R2", "LOGHIST", "ARCSINH_NME"])
+Metrics = Enum(
+    "Metrics",
+    ["NME", "NMSE", "MPD", "R2", "LOGHIST", "ARCSINH_NME", "SSE", "ARCSINH_SSE"],
+)
 
 
 @njit(nogil=True, cache=True, fastmath=True)
@@ -67,6 +70,19 @@ def nmse(*, obs, pred):
     obs = np.asarray(obs)
     pred = np.asarray(pred)
     return np.sum((pred - obs) ** 2) / np.sum((obs - np.mean(obs)) ** 2)
+
+
+def sse(*, obs, pred):
+    """Sum of squared errors.
+
+    Args:
+        obs (array-like): Observations.
+        pred (array-like): Predictions.
+
+    """
+    obs = np.asarray(obs)
+    pred = np.asarray(pred)
+    return np.sum((pred - obs) ** 2)
 
 
 @njit(nogil=True, cache=True)

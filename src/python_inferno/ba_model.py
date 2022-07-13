@@ -9,7 +9,7 @@ from sklearn.metrics import r2_score
 from .cache import mark_dependency
 from .configuration import N_pft_groups, land_pts, npft
 from .data import get_processed_climatological_data
-from .metrics import Metrics, loghist, nmse
+from .metrics import Metrics, loghist, nmse, sse
 from .multi_timestep_inferno import (
     _get_checks_failed_mask,
     _get_diagnostics,
@@ -111,7 +111,9 @@ def calculate_mpd(avg_ba, mon_avg_gfed_ba_1d, mpd=GPUCalculateMPD(land_pts).run)
     return mpd_val, ignored
 
 
-def _calculate_scores_from_avg_ba(*, avg_ba, mon_avg_gfed_ba_1d, requested):
+def _calculate_scores_from_avg_ba(
+    *, avg_ba, mon_avg_gfed_ba_1d, requested, n_params=None
+):
     assert requested
 
     if np.all(np.abs(avg_ba) < 1e-15):
@@ -125,6 +127,7 @@ def _calculate_scores_from_avg_ba(*, avg_ba, mon_avg_gfed_ba_1d, requested):
             Metrics.ARCSINH_NME,
             Metrics.NMSE,
             Metrics.LOGHIST,
+            Metrics.SSE,
         )
     ):
         is_masked = np.any(np.ma.getmaskarray(mon_avg_gfed_ba_1d))
@@ -173,6 +176,25 @@ def _calculate_scores_from_avg_ba(*, avg_ba, mon_avg_gfed_ba_1d, requested):
                 obs=y_true, pred=y_pred, edges=np.linspace(0, 0.4, 20)
             )
 
+        if Metrics.SSE in requested:
+            sse_val = sse(obs=y_true, pred=y_pred)
+            scores["sse"] = sse_val
+            if n_params is not None:
+                # Calculate AIC if number of parameters is given.
+                N = y_true.size
+                scores["aic"] = 2 * n_params + N * np.log(sse_val / N)
+
+        if Metrics.ARCSINH_SSE in requested:
+            arcsinh_sse_val = sse(
+                obs=np.arcsinh(ARCSINH_FACTOR * y_true),
+                pred=np.arcsinh(ARCSINH_FACTOR * y_pred),
+            )
+            scores["arcsinh_sse"] = arcsinh_sse_val
+            if n_params is not None:
+                # Calculate AIC if number of parameters is given.
+                N = y_true.size
+                scores["arcsinh_aic"] = 2 * n_params + N * np.log(arcsinh_sse_val / N)
+
         if Metrics.MPD in requested:
             scores["mpd"], scores["mpd_ignored"] = mpd_future.result()
 
@@ -186,7 +208,12 @@ def _calculate_scores_from_avg_ba(*, avg_ba, mon_avg_gfed_ba_1d, requested):
 
 
 def calculate_scores(
-    *, model_ba, cons_monthly_avg, mon_avg_gfed_ba_1d, requested=Metrics
+    *,
+    model_ba,
+    cons_monthly_avg,
+    mon_avg_gfed_ba_1d,
+    requested=Metrics,
+    n_params=None,
 ):
     # Calculate monthly averages.
     avg_ba = cons_monthly_avg.cons_monthly_average_data(model_ba)
@@ -197,6 +224,7 @@ def calculate_scores(
             avg_ba=avg_ba,
             mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
             requested=requested,
+            n_params=n_params,
         ),
         avg_ba,
     )
@@ -459,12 +487,13 @@ class BAModel(ModelParams):
             data_dict=self.data_dict,
         )
 
-    def calc_scores(self, *, model_ba, requested):
+    def calc_scores(self, *, model_ba, requested, n_params=None):
         scores, avg_ba = calculate_scores(
             model_ba=model_ba,
             cons_monthly_avg=self._cons_monthly_avg,
             mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
             requested=requested,
+            n_params=n_params,
         )
 
         return dict(
@@ -622,13 +651,14 @@ class GPUConsAvgBAModel(GPUBAModel, ModAvgCropMixin):
 
         return partial(GPUInfernoAvg, weights=self._cons_monthly_avg.weights)
 
-    def calc_scores(self, *, model_ba, requested):
+    def calc_scores(self, *, model_ba, requested, n_params=None):
         # NOTE - `model_ba` ~ `avg_ba` in this case since conservative averaging is
         # done as part of the kernel.
         scores = _calculate_scores_from_avg_ba(
             avg_ba=model_ba,
             mon_avg_gfed_ba_1d=self.mon_avg_gfed_ba_1d,
             requested=requested,
+            n_params=n_params,
         )
 
         return dict(

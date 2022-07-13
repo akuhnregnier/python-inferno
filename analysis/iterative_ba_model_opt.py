@@ -5,13 +5,16 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from multiprocessing import Process, Queue
+from operator import itemgetter
 from pathlib import Path
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from loguru import logger
 from tqdm import tqdm
 
+from python_inferno.ba_model import GPUBAModel
 from python_inferno.cache import IN_STORE, NotCachedError, cache
 from python_inferno.hyperopt import HyperoptSpace, get_space_template
 from python_inferno.iter_opt import (
@@ -30,6 +33,7 @@ from python_inferno.iter_opt import (
     next_configurations_iter,
     reorder,
 )
+from python_inferno.metrics import Metrics
 from python_inferno.model_params import get_model_params
 from python_inferno.space import generate_space_spec
 from python_inferno.space_opt import space_opt
@@ -114,6 +118,7 @@ def iterative_ba_model_opt(
     steps_prog = tqdm(desc="Steps", position=0)
 
     results = {}
+    aic_results = {}
     init_n_params = 1  # TODO - This initial value should depends on `base_spec`.
 
     steps = 0
@@ -125,6 +130,8 @@ def iterative_ba_model_opt(
     x0_dict_vals = {}
     prev_spec_vals = {}
     prev_constants_vals = {}
+    # 'Real' (i.e. not [0, 1]) params for BA calculation.
+    param_vals = {}
 
     while True:
         local_best_config = defaultdict(lambda: None)
@@ -192,11 +199,21 @@ def iterative_ba_model_opt(
                 local_best_loss[n_params] = loss
                 local_best_config[n_params] = configuration
 
+                # x0 values are in [0, 1].
                 x0_dict_vals[n_params] = {
                     key: val for key, val in zip(space.continuous_param_names, res.x)
                 }
                 prev_spec_vals[n_params] = space_spec
                 prev_constants_vals[n_params] = constants
+
+                param_vals[n_params] = {
+                    **space.inv_map_float_to_0_1(x0_dict_vals[n_params]),
+                    **discrete_params,
+                    **defaults,
+                    **constants,
+                }
+
+                assert n_params == len(space.continuous_param_names)
 
                 if n_params not in results:
                     # New `n_params`.
@@ -225,13 +242,47 @@ def iterative_ba_model_opt(
         prev_spec = prev_spec_vals[best_n_params]
         prev_constants = prev_constants_vals[best_n_params]
 
+        # Calculate BA, scores.
+        params = param_vals[best_n_params]
+        try:
+            ba_model = GPUBAModel(**params)
+            # ba_model = BAModel(**params)  # NOTE Further exceptions are raised here
+            model_ba, mon_avg_gfed_ba_1d = itemgetter("model_ba", "mon_avg_gfed_ba_1d")(
+                ba_model.run(**params)
+            )
+            scores, avg_ba = itemgetter("scores", "avg_ba")(
+                ba_model.calc_scores(
+                    model_ba=model_ba,
+                    requested=(
+                        Metrics.MPD,
+                        Metrics.ARCSINH_NME,
+                        Metrics.SSE,
+                        Metrics.ARCSINH_SSE,
+                    ),
+                    n_params=len(discrete_params) + best_n_params,
+                )
+            )
+
+            aic_results[best_n_params] = {
+                "aic": scores["aic"],
+                "arcsinh_aic": scores["arcsinh_aic"],
+            }
+
+            # NOTE Parameters only change minutely most of the time,
+            # resulting in exactly 0 performance changes - local minimisation failure?
+            # pprint(x0_dict)
+        # XXX
+        # except BAModelException:
+        except Exception:
+            print("exception!!!")
+
         steps += 1
         steps_prog.update()
 
     q.close()
     q.join_thread()
 
-    return results
+    return results, aic_results
 
 
 @dataclass
@@ -514,6 +565,7 @@ def vis_result(
 
 
 if __name__ == "__main__":
+    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 
@@ -541,9 +593,18 @@ if __name__ == "__main__":
 
         for key, marker, opt_kwargs in (
             ("100,1", "^", dict(maxiter=100, niter_success=1)),
-            ("200,5", "_", dict(maxiter=200, niter_success=5)),
+            ("200,5", "x", dict(maxiter=200, niter_success=5)),
         ):
-            results = iterative_ba_model_opt(params=params, **opt_kwargs)
+            results, aic_results = iterative_ba_model_opt(params=params, **opt_kwargs)
+
+            n_params, aics, arcsinh_aics = zip(
+                *(
+                    (n_params, data["aic"], data["arcsinh_aic"])
+                    for (n_params, data) in aic_results.items()
+                )
+            )
+            aics = np.asarray(aics)
+            arcsinh_aics = np.asarray(arcsinh_aics)
 
             opt_dir = method_dir / key.replace(",", "_")
             opt_dir.mkdir(parents=False, exist_ok=True)
@@ -568,9 +629,32 @@ if __name__ == "__main__":
                 label=key,
                 ms=8,
             )
+
+            min_aic_i = np.argmin(aics)
+            min_arcsinh_aic_i = np.argmin(arcsinh_aics)
+            print("mins:")
+            print(min_aic_i, min_arcsinh_aic_i)
+            ax.plot(
+                n_params[min_aic_i],
+                losses[min_aic_i],
+                marker=marker,
+                linestyle="",
+                ms=10,
+                c="r",
+                zorder=4,
+            )
+            ax.plot(
+                n_params[min_arcsinh_aic_i],
+                losses[min_arcsinh_aic_i],
+                marker=marker,
+                linestyle="",
+                ms=10,
+                c="g",
+                zorder=5,
+            )
+
         ax.hlines(full_opt_loss, 0, max(n_params), colors="g")
         ax.legend()
-        ax.grid()
 
         if i in (0, 2):
             ax.set_ylabel("performance (loss)")
