@@ -5,7 +5,6 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from multiprocessing import Process, Queue
-from operator import itemgetter
 from pathlib import Path
 
 import matplotlib as mpl
@@ -14,8 +13,9 @@ import numpy as np
 from loguru import logger
 from tqdm import tqdm
 
-from python_inferno.ba_model import GPUBAModel
+from python_inferno.ba_model import ARCSINH_FACTOR, GPUConsAvgBAModel
 from python_inferno.cache import IN_STORE, NotCachedError, cache
+from python_inferno.cv import get_ba_cv_splits
 from python_inferno.hyperopt import HyperoptSpace, get_space_template
 from python_inferno.iter_opt import (
     ALWAYS_OPTIMISED,
@@ -36,7 +36,11 @@ from python_inferno.iter_opt import (
 from python_inferno.metrics import Metrics
 from python_inferno.model_params import get_model_params
 from python_inferno.space import generate_space_spec
-from python_inferno.space_opt import space_opt
+from python_inferno.space_opt import (
+    calculate_split_loss,
+    space_opt,
+    split_min_space_opt,
+)
 
 
 def mp_space_opt(*, q, **kwargs):
@@ -59,6 +63,8 @@ def mp_space_opt(*, q, **kwargs):
         match,
         reorder,
         space_opt,
+        split_min_space_opt,
+        calculate_split_loss,
     ]
 )
 def iterative_ba_model_opt(
@@ -113,12 +119,29 @@ def iterative_ba_model_opt(
         else:
             start_config[key] = 0
 
+    # BA Model for AIC and CV calculations.
+    ba_model = GPUConsAvgBAModel(
+        _uncached_data=False,
+        dryness_method=dryness_method,
+        fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
+        **discrete_params,
+    )
+
+    # CV setup.
+    assert np.ma.isMaskedArray(ba_model.mon_avg_gfed_ba_1d)
+    assert not np.any(ba_model.mon_avg_gfed_ba_1d.mask)
+    gfed_ba_1d = ba_model.mon_avg_gfed_ba_1d.data
+
+    train_grids, test_grids, test_grid_map = get_ba_cv_splits(gfed_ba_1d)
+
     q = Queue()
 
     steps_prog = tqdm(desc="Steps", position=0)
 
     results = {}
     aic_results = {}
+    cv_results = {}
     init_n_params = 1  # TODO - This initial value should depends on `base_spec`.
 
     steps = 0
@@ -132,6 +155,10 @@ def iterative_ba_model_opt(
     prev_constants_vals = {}
     # 'Real' (i.e. not [0, 1]) params for BA calculation.
     param_vals = {}
+    space_vals = {}
+    default_vals = {}
+    constant_vals = {}
+    x0_vals = {}
 
     while True:
         local_best_config = defaultdict(lambda: None)
@@ -199,12 +226,17 @@ def iterative_ba_model_opt(
                 local_best_loss[n_params] = loss
                 local_best_config[n_params] = configuration
 
+                x0_vals[n_params] = res.x
+
                 # x0 values are in [0, 1].
                 x0_dict_vals[n_params] = {
                     key: val for key, val in zip(space.continuous_param_names, res.x)
                 }
                 prev_spec_vals[n_params] = space_spec
                 prev_constants_vals[n_params] = constants
+                space_vals[n_params] = space
+                default_vals[n_params] = defaults
+                constant_vals[n_params] = constants
 
                 param_vals[n_params] = {
                     **space.inv_map_float_to_0_1(x0_dict_vals[n_params]),
@@ -234,34 +266,32 @@ def iterative_ba_model_opt(
             (loss, n_params) for (n_params, loss) in local_best_loss.items()
         )[1]
 
-        start_config = {**start_config, **local_best_config[best_n_params]}
-        init_n_params = best_n_params
-
-        # Set up x0 variables for the next iteration.
+        # Set up x0 variables for the next iteration / AIC / CV calculations.
         x0_dict = x0_dict_vals[best_n_params]
         prev_spec = prev_spec_vals[best_n_params]
         prev_constants = prev_constants_vals[best_n_params]
-
-        # Calculate BA, scores.
         params = param_vals[best_n_params]
+        space = space_vals[best_n_params]
+        defaults = default_vals[best_n_params]
+        constants = constant_vals[best_n_params]
+        x0 = x0_vals[best_n_params]
+
+        # AIC calculation.
+
         try:
-            ba_model = GPUBAModel(**params)
+            # Calculate BA, scores.
+
             # ba_model = BAModel(**params)  # NOTE Further exceptions are raised here
-            model_ba, mon_avg_gfed_ba_1d = itemgetter("model_ba", "mon_avg_gfed_ba_1d")(
-                ba_model.run(**params)
-            )
-            scores, avg_ba = itemgetter("scores", "avg_ba")(
-                ba_model.calc_scores(
-                    model_ba=model_ba,
-                    requested=(
-                        Metrics.MPD,
-                        Metrics.ARCSINH_NME,
-                        Metrics.SSE,
-                        Metrics.ARCSINH_SSE,
-                    ),
-                    n_params=len(discrete_params) + best_n_params,
-                )
-            )
+            scores = ba_model.calc_scores(
+                model_ba=ba_model.run(**params)["model_ba"],
+                requested=(
+                    Metrics.MPD,
+                    Metrics.ARCSINH_NME,
+                    Metrics.SSE,
+                    Metrics.ARCSINH_SSE,
+                ),
+                n_params=len(discrete_params) + best_n_params,
+            )["scores"]
 
             aic_results[best_n_params] = {
                 "aic": scores["aic"],
@@ -271,10 +301,59 @@ def iterative_ba_model_opt(
             # NOTE Parameters only change minutely most of the time,
             # resulting in exactly 0 performance changes - local minimisation failure?
             # pprint(x0_dict)
-        # XXX
-        # except BAModelException:
         except Exception:
-            print("exception!!!")
+            logger.exception("Exception during AIC.")
+
+        # CV.
+
+        try:
+            test_losses = []
+
+            for train_grid, test_grid in zip(train_grids, test_grids):
+                # Optimise model on training set using the previous minimum as a
+                # starting point.
+                cv_res = split_min_space_opt(
+                    space=space,
+                    dryness_method=dryness_method,
+                    fuel_build_up_method=fuel_build_up_method,
+                    include_temperature=include_temperature,
+                    discrete_params=discrete_params,
+                    train_grid=train_grid,
+                    defaults={**defaults, **constants},
+                    x0=x0,
+                    minimizer_options=dict(maxiter=maxiter),
+                )
+
+                # x0 values are in [0, 1].
+                cv_x0_dict = {
+                    key: val for key, val in zip(space.continuous_param_names, cv_res.x)
+                }
+
+                # Test.
+                test_gfed_ba_1d = np.ascontiguousarray(gfed_ba_1d[:, test_grid])
+                test_arcsinh_y_true = np.arcsinh(
+                    ARCSINH_FACTOR * test_gfed_ba_1d.ravel()
+                )
+                test_loss = calculate_split_loss(
+                    pred_ba=ba_model.run(
+                        **space.inv_map_float_to_0_1(cv_x0_dict),
+                        **defaults,
+                        **constants,
+                    )["model_ba"],
+                    point_grid=test_grid,
+                    sel_true_1d=test_gfed_ba_1d,
+                    sel_arcsinh_y_true=test_arcsinh_y_true,
+                )
+
+                test_losses.append(test_loss)
+
+            cv_results[best_n_params] = np.mean(test_losses)
+        except Exception:
+            logger.exception("Exception during CV.")
+
+        # Next loop setup.
+        start_config = {**start_config, **local_best_config[best_n_params]}
+        init_n_params = best_n_params
 
         steps += 1
         steps_prog.update()
@@ -282,24 +361,12 @@ def iterative_ba_model_opt(
     q.close()
     q.join_thread()
 
-    return results, aic_results
+    ba_model.release()
+
+    return results, aic_results, cv_results
 
 
-@dataclass
-class Box:
-    color: str
-
-    def plot(self, *, ax, xy, width, height, **kwargs):
-        rect = plt.Rectangle(xy, width, height, **kwargs)
-        ax.add_patch(rect)
-        return rect
-
-
-@dataclass
-class BoxElement:
-    colors: list[str | tuple]
-
-
+@cache(dependencies=[get_weight_sigmoid_names_map])
 def vis_result(
     *,
     result,
@@ -308,6 +375,19 @@ def vis_result(
     save_key,
     save_dir,
 ):
+    @dataclass
+    class Box:
+        color: str
+
+        def plot(self, *, ax, xy, width, height, **kwargs):
+            rect = plt.Rectangle(xy, width, height, **kwargs)
+            ax.add_patch(rect)
+            return rect
+
+    @dataclass
+    class BoxElement:
+        colors: list[str | tuple]
+
     spec = result[1]
 
     weight_to_sigmoid_names_map = get_weight_sigmoid_names_map(
@@ -591,11 +671,13 @@ if __name__ == "__main__":
         method_dir = save_dir / method_name
         method_dir.mkdir(parents=False, exist_ok=True)
 
-        for key, marker, opt_kwargs in (
-            ("100,1", "^", dict(maxiter=100, niter_success=1)),
-            ("200,5", "x", dict(maxiter=200, niter_success=5)),
+        for key, marker, colors, opt_kwargs in (
+            ("50,1", "^", ("C0", "C1"), dict(maxiter=50, niter_success=1)),
+            ("1000,5", "x", ("C2", "C3"), dict(maxiter=1000, niter_success=5)),
         ):
-            results, aic_results = iterative_ba_model_opt(params=params, **opt_kwargs)
+            results, aic_results, cv_results = iterative_ba_model_opt(
+                params=params, **opt_kwargs
+            )
 
             n_params, aics, arcsinh_aics = zip(
                 *(
@@ -619,27 +701,33 @@ if __name__ == "__main__":
                 )
 
             n_params, losses = zip(
-                *((n_params, float(loss)) for (n_params, (loss, _)) in results.items())
+                *((n, float(loss)) for (n, (loss, _)) in results.items())
             )
+
+            ms = 6
+            aic_ms = 8
+
             ax.plot(
                 n_params,
                 losses,
                 marker=marker,
                 linestyle="",
                 label=key,
-                ms=8,
+                ms=ms,
+                c=colors[0],
             )
 
             min_aic_i = np.argmin(aics)
             min_arcsinh_aic_i = np.argmin(arcsinh_aics)
-            print("mins:")
-            print(min_aic_i, min_arcsinh_aic_i)
+
+            print("AIC indices:", min_aic_i, min_arcsinh_aic_i)
+
             ax.plot(
                 n_params[min_aic_i],
                 losses[min_aic_i],
                 marker=marker,
                 linestyle="",
-                ms=10,
+                ms=aic_ms,
                 c="r",
                 zorder=4,
             )
@@ -648,10 +736,28 @@ if __name__ == "__main__":
                 losses[min_arcsinh_aic_i],
                 marker=marker,
                 linestyle="",
-                ms=10,
+                ms=aic_ms,
                 c="g",
                 zorder=5,
             )
+
+            # CV plotting.
+            cv_n_params, cv_test_losses = zip(*cv_results.items())
+            ax.plot(
+                cv_n_params,
+                cv_test_losses,
+                marker=marker,
+                linestyle="",
+                label=f"{key} CV",
+                ms=ms,
+                c=colors[1],
+            )
+
+            print(method_name, key)
+            for (n, (loss, _)) in results.items():
+                if n in cv_results:
+                    # print(n, loss - cv_results[n])
+                    print(n, cv_results[n])
 
         ax.hlines(full_opt_loss, 0, max(n_params), colors="g")
         ax.legend()

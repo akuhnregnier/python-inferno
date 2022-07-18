@@ -13,6 +13,16 @@ make py_gpu_inferno
 make install
 ```
 
+### Useful environment variables
+
+```sh
+KMP_WARNINGS=off
+LOGURU_LEVEL=WARNING
+```
+
+
+### rpy2
+
 A separate miniconda installation was used for `rpy2` since it was found that installing `rpy2` broke `pyenv`.
 This used the conda requirements file: `arm64_requirements_rpy2.yaml`.
 

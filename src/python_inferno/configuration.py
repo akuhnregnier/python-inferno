@@ -83,6 +83,11 @@ for i, indices in enumerate(pft_groups):
     pft_groups_array[i][: len(indices)] = indices
     pft_groups_lengths[i] = len(indices)
 
+pft_group_map = np.zeros(13, dtype=np.int64)
+for pft_group_i, indices in enumerate(pft_groups):
+    for i in indices:
+        pft_group_map[i] = pft_group_i
+
 dryness_descr = {1: "Dry Day", 2: "VPD & Precip"}
 fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
 

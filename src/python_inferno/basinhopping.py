@@ -1,18 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import pickle
 import random
+import shutil
 import string
 from enum import Enum
 from itertools import product
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import numpy as np
 from loguru import logger
-from wildfires.dask_cx1.dask_rf import safe_write
 
 from .space import OptSpace
 
 ArgType = Enum("ArgType", ["FLOAT", "CHOICE"])
+
+
+def safe_write(obj, target, prefix=None, suffix=None):
+    """Write `obj` to the path `target` via a temporary file using pickle.
+
+    Args:
+        obj: Object to pickle.
+        target (str or pathlib.Path): Destination path.
+        prefix (str or None): String to prepend to the temporary filename.
+        suffix (str or None): String to append to the temporary filename.
+
+    """
+    with NamedTemporaryFile(
+        mode="wb", prefix=prefix, suffix=suffix, delete=False
+    ) as tmp_file:
+        pickle.dump(obj, tmp_file, -1)
+    shutil.move(tmp_file.name, target)
 
 
 class BasinHoppingSpace(OptSpace):

@@ -228,13 +228,15 @@ def main_opt(
     if hyperopt_res is not None:
         return hyperopt_res
 
-    loss = space_opt(
-        space=space,
-        dryness_method=dryness_method,
-        fuel_build_up_method=fuel_build_up_method,
-        include_temperature=include_temperature,
-        discrete_params=discrete_params,
-        opt_record_dir=opt_record_dir,
+    loss = float(
+        space_opt(
+            space=space,
+            dryness_method=dryness_method,
+            fuel_build_up_method=fuel_build_up_method,
+            include_temperature=include_temperature,
+            discrete_params=discrete_params,
+            opt_record_dir=opt_record_dir,
+        )
     )
 
     if loss > 100.0:

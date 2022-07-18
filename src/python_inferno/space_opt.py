@@ -4,11 +4,13 @@ from pathlib import Path
 
 import numpy as np
 from loguru import logger
-from scipy.optimize import basinhopping
+from scipy.optimize import basinhopping, minimize
 
-from .ba_model import gen_to_optimise
+from .ba_model import ARCSINH_FACTOR, GPUConsAvgBAModel, gen_to_optimise
 from .basinhopping import BoundedSteps, Recorder
 from .cache import cache, mark_dependency
+from .configuration import land_pts
+from .metrics import mpd, nme
 
 
 def fail_func(*args, **kwargs):
@@ -16,7 +18,7 @@ def fail_func(*args, **kwargs):
 
 
 def success_func(loss, *args, **kwargs):
-    return loss
+    return float(loss)
 
 
 @mark_dependency
@@ -104,9 +106,9 @@ def space_opt(
                 jac=None,
                 bounds=[(0, 1)] * len(space.continuous_param_names),
                 options={
-                    "maxiter": 60,
-                    "ftol": 1e-5,
-                    "eps": 1e-3,
+                    "maxiter": 1000,
+                    "ftol": 5e-9,
+                    "eps": 3.6e-4,
                     **minimizer_options_dict,
                 },
             ),
@@ -120,3 +122,113 @@ def space_opt(
     if return_res:
         return res
     return res.fun
+
+
+@mark_dependency
+@cache(dependencies=[mpd, nme])
+def calculate_split_loss(*, pred_ba, point_grid, sel_true_1d, sel_arcsinh_y_true):
+    assert pred_ba.shape == (12, land_pts)
+    sel_pred_ba = pred_ba[:, point_grid]
+
+    assert not np.ma.isMaskedArray(sel_pred_ba)
+
+    # Calculate MPD.
+    assert sel_pred_ba.shape[0] == sel_true_1d.shape[0] == 12
+    assert sel_pred_ba.size == sel_true_1d.size
+
+    mpd_val = mpd(obs=sel_true_1d, pred=sel_pred_ba)
+
+    # Calculate ARCSINH NME.
+    y_pred = sel_pred_ba.ravel()
+    arcsinh_nme_val = nme(
+        obs=sel_arcsinh_y_true,
+        pred=np.arcsinh(ARCSINH_FACTOR * y_pred),
+    )
+
+    # Aim to minimise the combined score.
+    loss = float(arcsinh_nme_val + mpd_val)
+    return loss
+
+
+@mark_dependency
+@cache(dependencies=[calculate_split_loss])
+def split_min_space_opt(
+    *,
+    space,
+    dryness_method,
+    fuel_build_up_method,
+    include_temperature,
+    discrete_params,
+    train_grid,
+    defaults=None,
+    minimizer_options=None,
+    x0,
+):
+    """Optimisation of the continuous (float) part of a given `space`.
+
+    NOTE - x0 should be given in [0,1] space, e.g. the result of a previous call to an
+        optimisation routine.
+
+    train_grid - array of integers specifying which land points should be used for
+        optimisation.
+
+    """
+    # NOTE This routine is specialised for calculation of MPD and ARCSINH_NME.
+
+    ba_model = GPUConsAvgBAModel(
+        _uncached_data=False,
+        dryness_method=dryness_method,
+        fuel_build_up_method=fuel_build_up_method,
+        include_temperature=include_temperature,
+        **discrete_params,
+    )
+
+    if np.ma.isMaskedArray(ba_model.mon_avg_gfed_ba_1d):
+        assert not np.any(ba_model.mon_avg_gfed_ba_1d.mask)
+        mon_avg_gfed_ba_1d = ba_model.mon_avg_gfed_ba_1d.data
+
+    sel_gfed_ba_1d = np.ascontiguousarray(mon_avg_gfed_ba_1d[:, train_grid])
+    sel_arcsinh_y_true = np.arcsinh(ARCSINH_FACTOR * sel_gfed_ba_1d.ravel())
+
+    def to_optimise(**run_kwargs):
+        loss = float(
+            calculate_split_loss(
+                pred_ba=ba_model.run(**run_kwargs)["model_ba"],
+                point_grid=train_grid,
+                sel_true_1d=sel_gfed_ba_1d,
+                sel_arcsinh_y_true=sel_arcsinh_y_true,
+            )
+        )
+
+        if np.isnan(loss):
+            return fail_func()
+
+        return success_func(loss)
+
+    defaults_dict = defaults if defaults is not None else {}
+
+    def to_optimise_with_discrete(x):
+        return to_optimise(
+            **space.inv_map_float_to_0_1(dict(zip(space.continuous_param_names, x))),
+            **defaults_dict,
+        )
+
+    minimizer_options_dict = minimizer_options if minimizer_options is not None else {}
+
+    res = minimize(
+        to_optimise_with_discrete,
+        x0=x0,
+        method="L-BFGS-B",
+        jac=None,
+        bounds=[(0, 1)] * len(space.continuous_param_names),
+        options={
+            "maxiter": 1000,
+            "ftol": 5e-9,
+            "eps": 3.6e-4,
+            **minimizer_options_dict,
+        },
+    )
+
+    ba_model.release()
+
+    return res

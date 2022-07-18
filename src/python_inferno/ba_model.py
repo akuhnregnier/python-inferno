@@ -731,7 +731,7 @@ def gen_to_optimise(
                 return fail_func()
 
             # Aim to minimise the combined score.
-            loss = scores["arcsinh_nme"] + scores["mpd"]
+            loss = float(scores["arcsinh_nme"] + scores["mpd"])
             if np.isnan(loss):
                 return fail_func()
 
@@ -751,7 +751,7 @@ def gen_to_optimise(
                 return fail_func()
 
             # Aim to minimise the combined score.
-            loss = scores["arcsinh_nme"] + scores["mpd"]
+            loss = float(scores["arcsinh_nme"] + scores["mpd"])
             return success_func(loss)
 
     # NOTE: It is assumed here that the data being operated on will not change
