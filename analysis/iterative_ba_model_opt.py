@@ -16,6 +16,7 @@ from tqdm import tqdm
 from python_inferno.ba_model import ARCSINH_FACTOR, GPUConsAvgBAModel
 from python_inferno.cache import IN_STORE, NotCachedError, cache
 from python_inferno.cv import get_ba_cv_splits
+from python_inferno.data import get_processed_climatological_data
 from python_inferno.hyperopt import HyperoptSpace, get_space_template
 from python_inferno.iter_opt import (
     ALWAYS_OPTIMISED,
@@ -51,12 +52,14 @@ def mp_space_opt(*, q, **kwargs):
     dependencies=[
         _next_configurations_iter,
         any_match,
+        calculate_split_loss,
         configuration_to_hyperopt_space_spec,
         format_configurations,
         generate_space_spec,
         get_always_optimised,
         get_ignored,
         get_next_x0,
+        get_processed_climatological_data,
         get_sigmoid_names,
         get_space_template,
         get_weight_sigmoid_names_map,
@@ -64,7 +67,6 @@ def mp_space_opt(*, q, **kwargs):
         reorder,
         space_opt,
         split_min_space_opt,
-        calculate_split_loss,
     ]
 )
 def iterative_ba_model_opt(

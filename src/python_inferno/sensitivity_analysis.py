@@ -11,6 +11,7 @@ from tqdm import tqdm
 from .ba_model import BAModel
 from .cache import cache, mark_dependency
 from .configuration import Dims, N_pft_groups, land_pts, npft
+from .data import get_data_yearly_stdev
 from .hyperopt import get_space_template
 from .iter_opt import ALWAYS_OPTIMISED, IGNORED
 from .model_params import get_param_uncertainties
@@ -21,24 +22,24 @@ class LandChecksFailed(RuntimeError):
     """Raised when checks are failed at a given location."""
 
 
-@mark_dependency
-def min_max_bound_func(values):
-    min_val = np.min(values)
-    max_val = np.max(values)
-    if np.isclose(min_val, max_val):
-        print("Close bounds:", min_val)
-        return [min_val, min_val + 1]
-
-    return [min_val, max_val]
+def map_keys(source_data, key_mapping):
+    out = {}
+    for target_key, source_key in key_mapping.items():
+        if source_key in source_data:
+            out[target_key] = source_data[source_key]
+    return out
 
 
 class SAParams:
     @mark_dependency
-    def __init__(self, *, dryness_method, fuel_build_up_method, df_sel):
+    def __init__(
+        self, *, dryness_method, fuel_build_up_method, df_sel, data_stats_params
+    ):
         self._variable_indices = []
         self._variable_bounds = []
         self._variable_names = []
         self._variable_groups = []
+        self._dists = []
 
         # Param bound setup.
         space_template = get_space_template(
@@ -58,7 +59,29 @@ class SAParams:
             if any(name_root in col for name_root in param_names)
         ] + ["loss"]
 
+        key_mapping = {
+            # TARGET: SOURCE
+            "t1p5m_tile": "t1p5m",
+            # NOTE - 'fapar_diag_pft' is the name used in `data_dict` and similar
+            # structures which are passed around internally, named as such for
+            # historical reasons. NPP is the variable that is actually being used.
+            "fapar_diag_pft": "npp_pft",
+            # NOTE See above. Also, distributions of NPP and antecedent NPP are
+            # expected to be incredibly similar.
+            "fuel_build_up": "npp_pft",
+            "obs_pftcrop_1d": "obs_pftcrop_1d",
+            "litter_pool": "litter_pool",
+            "dry_days": "dry_days",
+            "grouped_dry_bal": "grouped_dry_bal",
+        }
+
         self.param_uncertainties = get_param_uncertainties(df_sel=df_sel[new_cols])
+        # NOTE Missing keys will be silently ignored. The keys present in
+        # `data_yearly_stdev` are therefore determined by `data_stats_params`
+        # indirectly.
+        self.data_yearly_stdev = map_keys(
+            get_data_yearly_stdev(params=data_stats_params), key_mapping
+        )
 
     @mark_dependency
     def add_param_vars(
@@ -84,6 +107,7 @@ class SAParams:
 
             self._variable_indices.append({"name": name, "slice": s, "dims": dims})
             self._variable_bounds.append(bounds)
+            self._dists.append("unif")
             self._variable_names.append(f"{name}_{i}")
             # Group all PFTs.
             self._variable_groups.append(name)
@@ -97,7 +121,6 @@ class SAParams:
         name: str,
         data: np.ndarray,
         land_index: int,
-        bound_func: callable,
         max_pft=npft,
     ):
         if data.ndim == 3:
@@ -114,7 +137,11 @@ class SAParams:
 
         for (i, s) in enumerate(slices):
             self._variable_indices.append({"name": name, "slice": s, "dims": dims})
-            self._variable_bounds.append(bound_func(data[s]))
+            # Ignore the temporal index when selecting the stdev.
+            # Specify (mean, stdev) for normal distribution - sampled values
+            # correspond to an offset applied to the data spanning a year.
+            self._variable_bounds.append((0, self.data_yearly_stdev[name][s[1:]]))
+            self._dists.append("norm")
             self._variable_names.append(f"{name}_{i}")
             # Group all PFTs.
             self._variable_groups.append(name)
@@ -129,6 +156,7 @@ class SAParams:
             == len(self._variable_bounds)
             == len(self._variable_names)
             == len(self._variable_groups)
+            == len(self._dists)
         )
 
     @mark_dependency
@@ -138,6 +166,7 @@ class SAParams:
             names=self._variable_names,
             num_vars=len(self._variable_names),
             bounds=self._variable_bounds,
+            dists=self._dists,
         )
 
     @property
@@ -152,7 +181,6 @@ class SensitivityAnalysis:
         *,
         params,
         data_variables=None,
-        bound_func=None,
         exponent=6,
         df_sel,
         fuel_build_up_method,
@@ -162,6 +190,7 @@ class SensitivityAnalysis:
         self.ba_model = BAModel(**self.params)
         self.exponent = exponent
         self.df_sel = df_sel
+        self.data_stats_params = {}
 
         # NOTE Prevent side effects.
         self.ba_model.data_dict = deepcopy(self.ba_model.data_dict)
@@ -182,6 +211,11 @@ class SensitivityAnalysis:
                 self.data_variables.append("fuel_build_up")
             elif fuel_build_up_method == 2:
                 self.data_variables.append("litter_pool")
+
+                self.data_stats_params["litter_pool"] = {
+                    "litter_tc": self.ba_model.disc_params["litter_tc"],
+                    "leaf_f": self.ba_model.disc_params["leaf_f"],
+                }
             else:
                 raise ValueError
 
@@ -189,15 +223,38 @@ class SensitivityAnalysis:
                 self.data_variables.append("dry_days")
             elif dryness_method == 2:
                 self.data_variables.append("grouped_dry_bal")
+
+                self.data_stats_params["grouped_dry_bal"] = {
+                    "rain_f": self.ba_model.disc_params["rain_f"],
+                    "vpd_f": self.ba_model.disc_params["vpd_f"],
+                }
             else:
                 raise ValueError
         else:
             self.data_variables = data_variables
 
-        if bound_func is None:
-            self.bound_func = min_max_bound_func
-        else:
-            self.bound_func = bound_func
+        # Checks.
+        if "fuel_build_up" in self.data_variables:
+            assert fuel_build_up_method == 1
+
+        if "litter_pool" in self.data_variables:
+            assert fuel_build_up_method == 2
+
+            self.data_stats_params["litter_pool"] = {
+                "litter_tc": self.ba_model.disc_params["litter_tc"],
+                "leaf_f": self.ba_model.disc_params["leaf_f"],
+            }
+
+        if "dry_days" in self.data_variables:
+            assert dryness_method == 1
+
+        if "grouped_dry_bal" in self.data_variables:
+            assert dryness_method == 2
+
+            self.data_stats_params["grouped_dry_bal"] = {
+                "rain_f": self.ba_model.disc_params["rain_f"],
+                "vpd_f": self.ba_model.disc_params["vpd_f"],
+            }
 
         self.source_data = deepcopy(self._get_data_shallow())
 
@@ -237,6 +294,7 @@ class SensitivityAnalysis:
             dryness_method=self.ba_model.dryness_method,
             fuel_build_up_method=self.ba_model.fuel_build_up_method,
             df_sel=self.df_sel,
+            data_stats_params=self.data_stats_params,
         )
         # For each of the variables to be investigated, define bounds associated with
         # the variable, its name, and the group it belongs to. For variables with
@@ -250,7 +308,6 @@ class SensitivityAnalysis:
                     name=name,
                     data=self.source_data[name],
                     land_index=land_index,
-                    bound_func=self.bound_func,
                 )
             elif name in self.proc_params:
                 sa_params.add_param_vars(
@@ -271,7 +328,6 @@ class BAModelSensitivityAnalysis(SensitivityAnalysis):
 
         param_values = saltelli.sample(problem, 2**self.exponent)
         assert len(param_values.shape) == 2
-        mean_param_vals = np.mean(param_values, axis=0)
 
         Y = np.zeros(param_values.shape[0])
 
@@ -285,14 +341,15 @@ class BAModelSensitivityAnalysis(SensitivityAnalysis):
                 name, index_dims, index_slice = itemgetter("name", "dims", "slice")(
                     index_data
                 )
+                param_val = param_values[i, j]
 
                 if name in self.source_data:
-                    param_vals = param_values[i, j] - mean_param_vals[j]
+                    # For data, the sampled parameter values represent offsets.
                     if self.source_data[name].ndim == 3:
                         pft_i = index_slice[index_dims.index(Dims.PFT)]
-                        vals = self.source_data[name][:, pft_i, land_index] + param_vals
+                        vals = self.source_data[name][:, pft_i, land_index] + param_val
                     elif self.source_data[name].ndim == 2:
-                        vals = self.source_data[name][:, land_index] + param_vals
+                        vals = self.source_data[name][:, land_index] + param_val
                     else:
                         raise RuntimeError
 
@@ -303,9 +360,7 @@ class BAModelSensitivityAnalysis(SensitivityAnalysis):
                     else:
                         pft_i = None
 
-                    mod_params[f"{name}{pft_i + 1}" if pft_i else name] = param_values[
-                        i, j
-                    ]
+                    mod_params[f"{name}{pft_i + 1}" if pft_i else name] = param_val
 
             # Run the model with the new variables.
             model_ba = self.ba_model.run(
@@ -378,9 +433,6 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
                 arr_s
                 # Double check - the time dimension is `arr.shape[0]`.
             ].reshape(1, arr.shape[0])
-
-            # NOTE If we are offsetting data, rescale the offset values.
-            values -= np.mean(param_values[:, index])
         else:
             assert name in self.proc_params
             offset_data = None
@@ -512,23 +564,23 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
 # needed.
 @cache(
     dependencies=[
-        GPUBAModelSensitivityAnalysis.__init__,
-        GPUBAModelSensitivityAnalysis.sobol_sis,
-        GPUBAModelSensitivityAnalysis.set_defaults,
-        GPUBAModelSensitivityAnalysis.set_index_data,
-        GPUBAModelSensitivityAnalysis._get_data_shallow,
-        GPUBAModelSensitivityAnalysis.mod_model_data,
-        GPUBAModelSensitivityAnalysis.get_sa_params,
-        min_max_bound_func,
-        SAParams.__init__,
-        SAParams.add_param_vars,
-        SAParams.add_vars,
-        SAParams._check,
-        SAParams.get_problem,
         BAModel.__init__,
         BAModel.process_kwargs,
-        get_space_template,
+        GPUBAModelSensitivityAnalysis.__init__,
+        GPUBAModelSensitivityAnalysis._get_data_shallow,
+        GPUBAModelSensitivityAnalysis.get_sa_params,
+        GPUBAModelSensitivityAnalysis.mod_model_data,
+        GPUBAModelSensitivityAnalysis.set_defaults,
+        GPUBAModelSensitivityAnalysis.set_index_data,
+        GPUBAModelSensitivityAnalysis.sobol_sis,
+        SAParams.__init__,
+        SAParams._check,
+        SAParams.add_param_vars,
+        SAParams.add_vars,
+        SAParams.get_problem,
+        get_data_yearly_stdev,
         get_param_uncertainties,
+        get_space_template,
     ]
 )
 def sis_calc(

@@ -6,10 +6,18 @@ import numpy as np
 from loguru import logger
 from scipy.optimize import basinhopping, minimize
 
-from .ba_model import ARCSINH_FACTOR, GPUConsAvgBAModel, gen_to_optimise
+from .ba_model import (
+    ARCSINH_FACTOR,
+    BAModel,
+    GPUConsAvgBAModel,
+    ModAvgCropMixin,
+    ModelParams,
+    gen_to_optimise,
+)
 from .basinhopping import BoundedSteps, Recorder
 from .cache import cache, mark_dependency
 from .configuration import land_pts
+from .data import get_processed_climatological_data
 from .metrics import mpd, nme
 
 
@@ -21,8 +29,19 @@ def success_func(loss, *args, **kwargs):
     return float(loss)
 
 
+# NOTE CPP dependencies (amongst others) are not taken into account here, so some code
+# changes will require manual cache deletion!
 @mark_dependency
-@cache(ignore=["verbose", "_uncached_data"])
+@cache(
+    dependencies=[
+        BAModel.__init__,
+        ModAvgCropMixin._mod_avg_crop,
+        ModelParams.process_kwargs,
+        gen_to_optimise,
+        get_processed_climatological_data,
+    ],
+    ignore=["verbose", "_uncached_data"],
+)
 def space_opt(
     *,
     space,

@@ -27,15 +27,15 @@ from python_inferno.ba_model import BAModel, GPUBAModel
         (
             "dry_VPD_Precip__fuel_Antec_NPP",
             {
-                "allclose_params": {"rtol": 1e-4, "atol": 1e-13},
+                "allclose_params": {"rtol": 1e-4, "atol": 1e-12},
                 "max zero_atol": 1e-14,
             },
         ),
         (
             "dry_VPD_Precip__fuel_Leaf_Litter_Pool",
             {
-                "allclose_params": {"rtol": 1.1e-5, "atol": 1e-12},
-                "max zero_atol": 1e-14,
+                "allclose_params": {"rtol": 1.1e-5, "atol": 1e-10},
+                "max zero_atol": 7e-13,
             },
         ),
     ],

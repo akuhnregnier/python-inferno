@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     TEST_DATA_DIR.mkdir(parents=False, exist_ok=True)
 
-    suffix = "litter_v2"
+    suffix = "litter_v2_clim_data_v2"
 
     with (TEST_DATA_DIR / f"best_params_{suffix}.pkl").open("wb") as f:
         pickle.dump(params_dict, f, protocol=-1)

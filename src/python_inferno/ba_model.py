@@ -624,6 +624,7 @@ class GPUBAModel(BAModel):
 
 
 class ModAvgCropMixin:
+    @mark_dependency
     def _mod_avg_crop(self):
         # NOTE This is a workaround based on the assumption that cropland fraction is
         # slowly changing, meaning that there should be little difference between
@@ -709,6 +710,7 @@ class GPUConsAvgScoreBAModel(GPUBAModel, ModAvgCropMixin):
         )
 
 
+@mark_dependency
 def gen_to_optimise(
     *,
     fail_func,

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
-SUFFIX = "litter_v2"
+SUFFIX = "litter_v2_clim_data_v2"
 
 
 @pytest.fixture

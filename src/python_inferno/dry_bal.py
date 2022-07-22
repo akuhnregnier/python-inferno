@@ -20,6 +20,7 @@ def calculate_grouped_dry_bal(
     cum_rain,
     rain_f,
     vpd_f,
+    init,  # (N_pft_groups, land_pts) array
     # NOTE This is where the output is placed and should be an (Nt, N_pft_groups,
     # land_pts) np.float64 array.
     out,
@@ -34,7 +35,7 @@ def calculate_grouped_dry_bal(
         for ti in range(Nt):
             for i in range(N_pft_groups):
                 if ti == 0:
-                    prev_dry_bal = 0
+                    prev_dry_bal = init[i, l]
                 else:
                     prev_dry_bal = out[ti - 1, i, l]
 

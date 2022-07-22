@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from enum import Enum
 from functools import partial
 from pathlib import Path
+from typing import Literal
 
+import dask.array as da
 import iris
 import numpy as np
 from dateutil.relativedelta import relativedelta
@@ -34,7 +37,6 @@ from .pnv import get_pnv_mega_regions
 from .precip_dry_day import calculate_inferno_dry_days, precip_moving_sum
 from .utils import (
     PartialDateTime,
-    key_cache,
     make_contiguous,
     memoize,
     monthly_average_data,
@@ -44,6 +46,8 @@ from .utils import (
 )
 from .vpd import calculate_grouped_vpd
 
+ProcMode = Enum("ProcMode", ["SINGLE_PFT", "YEAR_MEAN", "CLIMATOLOGY"])
+
 # Time step in seconds (for the 'Instant' output profile, which outputs every 4 hours).
 timestep = 4 * 60 * 60
 
@@ -52,10 +56,10 @@ class ConvergenceError(RuntimeError):
     """Raised when spinup did not converge."""
 
 
-@memoize
-@cache
 @mark_dependency
-def load_single_year_cubes(*, filename, variable_name_slices, temporal_subsampling=1):
+def load_single_year_cubes(
+    *, filename, variable_name_slices, temporal_subsampling=1, lazy=False
+):
     logger.info(f"Loading '{', '.join(variable_name_slices)}' from {filename}.")
 
     cubes = iris.load_raw(filename)
@@ -95,6 +99,11 @@ def load_single_year_cubes(*, filename, variable_name_slices, temporal_subsampli
         s[0] = slice(0, N, temporal_subsampling)
         return tuple(s)
 
+    if lazy:
+        return {
+            name: cube[modify_slices(variable_name_slices[name])].lazy_data()
+            for name, cube in data_dict.items()
+        }
     return {
         name: np.asarray(
             make_contiguous(cube[modify_slices(variable_name_slices[name])].data.data),
@@ -104,6 +113,7 @@ def load_single_year_cubes(*, filename, variable_name_slices, temporal_subsampli
     }
 
 
+@mark_dependency
 def load_obs_data(dataset, obs_dates=None, climatology=False, Nt=None):
     jules_lats, jules_lons = load_jules_lats_lons()
 
@@ -324,21 +334,25 @@ def load_data(
 
 @cache(dependencies=[load_single_year_cubes, calculate_inferno_dry_days])
 @mark_dependency
-def get_climatological_dry_days(
+def process_dry_days(
+    *,
+    # NOTE 1 cube (i.e. 1 file) per year - ordering NOT relevant since we are only
+    # looking at isolated days
     filenames=tuple(
-        str(Path(s).expanduser())
-        for s in (
-            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
-            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
-        )
+        sorted(map(str, Path("~/tmp/new-with-antec6").expanduser().glob("*.nc")))
     ),
     threshold=1.0,
+    proc_mode: Literal[ProcMode.CLIMATOLOGY, ProcMode.YEAR_MEAN],
 ):
     # Load instantaneous values from the files below, then calculate dry days, then
     # perform climatological averaging
 
-    clim_dry_days = None
-    n_avg = 0
+    if proc_mode is ProcMode.CLIMATOLOGY:
+        clim_dry_days = None
+    elif proc_mode is ProcMode.YEAR_MEAN:
+        out = []
+    else:
+        raise ValueError(f"Unsupported mode '{proc_mode}'.")
 
     for f in tqdm(list(map(str, filenames)), desc="Processing dry-days"):
         data_dict = load_single_year_cubes(
@@ -356,14 +370,20 @@ def get_climatological_dry_days(
             threshold=threshold,
             timestep=timestep,
         )
-        if clim_dry_days is None:
-            clim_dry_days = dry_days
-            assert n_avg == 0
-        else:
-            clim_dry_days += dry_days
-        n_avg += 1
 
-    return clim_dry_days / n_avg
+        if proc_mode is ProcMode.CLIMATOLOGY:
+            if clim_dry_days is None:
+                clim_dry_days = dry_days.copy()
+            else:
+                clim_dry_days += dry_days
+        elif proc_mode is ProcMode.YEAR_MEAN:
+            out.append(dry_days.mean(axis=0))
+
+    if proc_mode is ProcMode.CLIMATOLOGY:
+        return clim_dry_days / len(filenames)
+
+    if proc_mode is ProcMode.YEAR_MEAN:
+        return np.stack(out)
 
 
 def handle_param(param, N_params=N_pft_groups):
@@ -376,78 +396,107 @@ def handle_param(param, N_params=N_pft_groups):
     return param
 
 
-key_cached_calculate_grouped_vpd = key_cache(calculate_grouped_vpd)
-key_cached_precip_moving_sum = key_cache(precip_moving_sum)
+@mark_dependency
+@cache(dependencies=[load_single_year_cubes, calculate_grouped_vpd])
+def get_grouped_vpd_from_file(*, filename):
+    data_dict = load_single_year_cubes(
+        filename=filename,
+        variable_name_slices={
+            "t1p5m": (slice(None), slice(None), 0),
+            "q1p5m": (slice(None), slice(None), 0),
+            "pstar": (slice(None), 0),
+            "ls_rain": (slice(None), 0),
+            "con_rain": (slice(None), 0),
+        },
+    )
+
+    return calculate_grouped_vpd(
+        t1p5m_tile=data_dict["t1p5m"],
+        q1p5m_tile=data_dict["q1p5m"],
+        pstar=data_dict["pstar"],
+    )
+
+
+@mark_dependency
+@cache(dependencies=[load_single_year_cubes, precip_moving_sum])
+def get_precip_moving_sum_from_file(*, filename):
+    data_dict = load_single_year_cubes(
+        filename=filename,
+        variable_name_slices={
+            "ls_rain": (slice(None), 0),
+            "con_rain": (slice(None), 0),
+        },
+    )
+
+    return precip_moving_sum(
+        ls_rain=data_dict["ls_rain"],
+        con_rain=data_dict["con_rain"],
+        timestep=timestep,
+    )
 
 
 @cache(
+    ignore=["verbose"],
     dependencies=[
-        load_single_year_cubes,
-        calculate_grouped_vpd,
         calculate_grouped_dry_bal,
+        get_grouped_vpd_from_file,
+        load_single_year_cubes,
         precip_moving_sum,
-    ]
+    ],
 )
 @mark_dependency
-def get_climatological_grouped_dry_bal(
+def process_grouped_dry_bal(
     *,
+    # NOTE 1 cube (i.e. 1 file) per year, years must be IN ORDER!
     filenames=tuple(
-        str(Path(s).expanduser())
-        for s in (
-            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2010.nc",
-            "~/tmp/new-with-antec6/JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.SPINUPD0.Instant.2011.nc",
+        str(
+            list(
+                Path("~/tmp/new-with-antec6")
+                .expanduser()
+                .glob(f"JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.*.Instant.{year}.nc")
+            )[0]
         )
+        for year in range(2000, 2017)
     ),
     rain_f,
     vpd_f,
+    proc_mode: Literal[ProcMode.CLIMATOLOGY, ProcMode.YEAR_MEAN],
     verbose=True,
 ):
     """Load instantaneous values from the files below, then calculate dry_bal, then
-    perform climatological averaging."""
+    perform climatological / yearly averaging."""
 
     rain_f = handle_param(rain_f, N_params=N_pft_groups)
     vpd_f = handle_param(vpd_f, N_params=N_pft_groups)
 
-    clim_dry_bal = None
-    n_avg = 0
+    if proc_mode is ProcMode.CLIMATOLOGY:
+        clim_dry_bal = None
+    elif proc_mode is ProcMode.YEAR_MEAN:
+        # Store the mean litter pool for each year.
+        out = []
+    else:
+        raise ValueError(f"Unsupported mode '{proc_mode}'.")
 
     # Array used to store and calculate dry_bal.
     grouped_dry_bal = None
+    init = None
 
     for f in tqdm(
         list(map(str, filenames)), desc="Processing dry_bal", disable=not verbose
     ):
-        data_dict = load_single_year_cubes(
-            filename=f,
-            variable_name_slices={
-                "t1p5m": (slice(None), slice(None), 0),
-                "q1p5m": (slice(None), slice(None), 0),
-                "pstar": (slice(None), 0),
-                "ls_rain": (slice(None), 0),
-                "con_rain": (slice(None), 0),
-            },
-        )
-
-        grouped_vpd = key_cached_calculate_grouped_vpd(
-            t1p5m_tile=data_dict["t1p5m"],
-            q1p5m_tile=data_dict["q1p5m"],
-            pstar=data_dict["pstar"],
-            # NOTE Special key used to store and retrieve memoized results.
-            cache_key=f,
-        )
-        cum_rain = key_cached_precip_moving_sum(
-            ls_rain=data_dict["ls_rain"],
-            con_rain=data_dict["con_rain"],
-            timestep=timestep,
-            # NOTE Special key used to store and retrieve memoized results.
-            cache_key=f,
-        )
+        grouped_vpd = np.asarray(get_grouped_vpd_from_file(filename=f))
+        cum_rain = np.asarray(get_precip_moving_sum_from_file(filename=f))
 
         if grouped_dry_bal is None:
             # This array only needs to be allocated once for the first file.
             grouped_dry_bal = np.zeros(
-                (data_dict["pstar"].shape[0], N_pft_groups, land_pts), dtype=np.float64
+                (grouped_vpd.shape[0], N_pft_groups, land_pts), dtype=np.float64
             )
+            init = np.zeros((N_pft_groups, land_pts), dtype=np.float64)
+        else:
+            # Use the final result from the previous year as the initial state for the
+            # current year (if available).
+            init = grouped_dry_bal[-1]
 
         # Calculate grouped dry_bal.
         grouped_dry_bal = calculate_grouped_dry_bal(
@@ -455,16 +504,23 @@ def get_climatological_grouped_dry_bal(
             cum_rain=cum_rain,
             rain_f=rain_f,
             vpd_f=vpd_f,
+            init=init,
             out=grouped_dry_bal,
         )
-        if clim_dry_bal is None:
-            clim_dry_bal = grouped_dry_bal
-            assert n_avg == 0
-        else:
-            clim_dry_bal += grouped_dry_bal
-        n_avg += 1
 
-    return clim_dry_bal / n_avg
+        if proc_mode is ProcMode.CLIMATOLOGY:
+            if clim_dry_bal is None:
+                clim_dry_bal = grouped_dry_bal.copy()
+            else:
+                clim_dry_bal += grouped_dry_bal
+        elif proc_mode is ProcMode.YEAR_MEAN:
+            out.append(grouped_dry_bal.mean(axis=0))
+
+    if proc_mode is ProcMode.CLIMATOLOGY:
+        return clim_dry_bal / len(filenames)
+
+    if proc_mode is ProcMode.YEAR_MEAN:
+        return np.stack(out)
 
 
 @memoize
@@ -605,17 +661,136 @@ def calc_litter_pool(
     return litter_pool
 
 
+@cache(
+    ignore=["verbose"],
+    dependencies=[load_single_year_cubes, litter_spinup, calculate_litter_old],
+)
+@mark_dependency
+def process_litter_pool(
+    *,
+    # NOTE 1 cube (i.e. 1 file) per year, years must be IN ORDER!
+    filenames=tuple(
+        str(
+            list(
+                Path("~/tmp/new-with-antec6")
+                .expanduser()
+                .glob(f"JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.*.Instant.{year}.nc")
+            )[0]
+        )
+        for year in range(2000, 2017)
+    ),
+    litter_tc,
+    leaf_f,
+    proc_mode: Literal[ProcMode.SINGLE_PFT, ProcMode.CLIMATOLOGY, ProcMode.YEAR_MEAN],
+    pft_i=0,
+    verbose=True,
+    spinup_relative_delta=1e-3,
+    max_spinup_cycles=int(1e3),
+):
+    litter_tc = handle_param(litter_tc, N_params=npft)
+    leaf_f = handle_param(leaf_f, N_params=npft)
+
+    # Load the first year's data.
+    data_dict = cache(load_single_year_cubes)(
+        filename=filenames[0],
+        variable_name_slices={
+            "leaf_litC": (slice(None), slice(None), 0),
+            "t1p5m": (slice(None), slice(npft), 0),
+            "sthu": (slice(None), 0, 0),
+        },
+    )
+
+    Nt = data_dict["leaf_litC"].shape[0]
+    litter_pool = np.zeros((Nt, npft, land_pts), dtype=np.float32)
+
+    # Perform spinup to determine the first year's litter pool.
+    success = litter_spinup(
+        leaf_litC=data_dict["leaf_litC"],
+        T=data_dict["t1p5m"],
+        sm=data_dict["sthu"],
+        dt=timestep,
+        litter_tc=litter_tc,
+        leaf_f=leaf_f,
+        spinup_relative_delta=spinup_relative_delta,
+        max_spinup_cycles=max_spinup_cycles,
+        out=litter_pool,
+    )
+
+    if not success and spinup_relative_delta >= 0:
+        raise ConvergenceError(
+            f"Spinup did not converge within {max_spinup_cycles} cycles."
+        )
+
+    if proc_mode is ProcMode.SINGLE_PFT:
+        total_litter_pool = np.zeros((Nt * len(filenames), land_pts), dtype=np.float32)
+
+        # Initialise overall litter pool variable, selecting the single PFT as specified.
+        total_litter_pool[:Nt] = litter_pool[:, pft_i].copy()
+    elif proc_mode is ProcMode.YEAR_MEAN:
+        # Store the mean litter pool for each year.
+        out = [np.mean(litter_pool, axis=0)]
+    elif proc_mode is ProcMode.CLIMATOLOGY:
+        # Initialise climatological litter pool variable which will hold the
+        # climatological average.
+        clim_litter_pool = litter_pool.copy()
+    else:
+        raise ValueError(f"Unsupported mode '{proc_mode}'.")
+
+    for i, filename in enumerate(tqdm(filenames[1:], desc="Calculating litter pool")):
+        # Load data.
+        data_dict = cache(load_single_year_cubes)(
+            filename=filename,
+            variable_name_slices={
+                "leaf_litC": (slice(None), slice(None), 0),
+                "t1p5m": (slice(None), slice(npft), 0),
+                "sthu": (slice(None), 0, 0),
+            },
+        )
+        calculate_litter_old(
+            leaf_litC=data_dict["leaf_litC"],
+            T=data_dict["t1p5m"],
+            sm=data_dict["sthu"],
+            dt=timestep,
+            litter_tc=litter_tc,
+            leaf_f=leaf_f,
+            # Initialise using the previous year's litter pool.
+            init=litter_pool[-1],
+            # Overwrite the litter pool variable.
+            out=litter_pool,
+        )
+
+        if proc_mode is ProcMode.SINGLE_PFT:
+            # Add record.
+            total_litter_pool[(i + 1) * Nt : (i + 2) * Nt] = litter_pool[:, pft_i]
+        elif proc_mode is ProcMode.YEAR_MEAN:
+            out.append(np.mean(litter_pool, axis=0))
+        elif proc_mode is ProcMode.CLIMATOLOGY:
+            # Accumulate.
+            clim_litter_pool += litter_pool
+
+    if proc_mode is ProcMode.SINGLE_PFT:
+        # Return the total litter pool.
+        return total_litter_pool
+
+    if proc_mode is ProcMode.YEAR_MEAN:
+        return np.stack(out)
+
+    if proc_mode is ProcMode.CLIMATOLOGY:
+        # Return the averaged litter pool.
+        return clim_litter_pool / len(filenames)
+
+
+@mark_dependency
 @memoize
 @cache(
     dependencies=[
         _spinup,
-        calc_litter_pool,
-        get_climatological_dry_days,
-        get_climatological_grouped_dry_bal,
-        litter_spinup,
         load_data,
         load_single_year_cubes,
         monthly_average_data,
+        process_dry_days,
+        process_grouped_dry_bal,
+        process_litter_pool,
         temporal_processing,
     ]
 )
@@ -670,9 +845,15 @@ def get_processed_climatological_data(
     logger.debug("Got data")
 
     dry_bal_func = (
-        get_climatological_grouped_dry_bal
+        process_grouped_dry_bal
         if (rain_f is None and vpd_f is None)
-        else get_climatological_grouped_dry_bal._orig_func
+        else process_grouped_dry_bal._orig_func
+    )
+
+    litter_pool_func = (
+        process_litter_pool
+        if (litter_tc is None and leaf_f is None)
+        else process_litter_pool._orig_func
     )
 
     data_dict = dict(
@@ -689,16 +870,17 @@ def get_processed_climatological_data(
         # NOTE NPP is used here now, NOT FAPAR!
         fuel_build_up=npp_pft,  # Note this is shifted below.
         fapar_diag_pft=npp_pft,
-        litter_pool=calc_litter_pool(
+        litter_pool=litter_pool_func(
             litter_tc=litter_tc if litter_tc is not None else tuple([1e-9] * npft),
             leaf_f=leaf_f if leaf_f is not None else tuple([1e-3] * npft),
-            Nt=None,
+            proc_mode=ProcMode.CLIMATOLOGY,
         ),
-        dry_days=get_climatological_dry_days(),
+        dry_days=process_dry_days(proc_mode=ProcMode.CLIMATOLOGY),
         grouped_dry_bal=dry_bal_func(
             rain_f=rain_f if rain_f is not None else tuple([0.3] * N_pft_groups),
             vpd_f=vpd_f if vpd_f is not None else tuple([40] * N_pft_groups),
             verbose=False,
+            proc_mode=ProcMode.CLIMATOLOGY,
         ),
         # NOTE The target BA is only included here to ease processing. It will be
         # removed prior to the modelling function.
@@ -760,6 +942,7 @@ def get_processed_climatological_data(
     return data_dict, mon_avg_gfed_ba_1d, jules_time_coord
 
 
+@mark_dependency
 @memoize
 @cache
 def load_jules_lats_lons(filename=str(Path("~/tmp/climatology6.nc").expanduser())):
@@ -799,3 +982,143 @@ def get_2d_cubes(*, data_dict):
         name: cube_1d_to_2d(get_1d_data_cube(data, lats=jules_lats, lons=jules_lons))
         for name, data in data_dict.items()
     }
+
+
+@mark_dependency
+def _yearly_stdev(*, yearly_data, n_years):
+    assert yearly_data.shape[0] == n_years
+    return np.array(yearly_data.std(axis=0))
+
+
+@mark_dependency
+@cache(dependencies=[load_single_year_cubes, _yearly_stdev])
+def calc_yearly_stdev(
+    *,
+    source_files,
+    variable_name: str,
+    slices,
+    n_years: int,
+):
+    """Load data from cubes in `source_files` and calculate stats.
+
+    `slices` is applied to each cube, i.e. cube -> cube[slices] before calculation.
+
+    """
+    # NOTE code assumes there is 1 cube (i.e. 1 file) per year
+    year_data = [
+        load_single_year_cubes(
+            filename=file,
+            variable_name_slices={
+                variable_name: slices,
+            },
+            lazy=True,
+        )[variable_name]
+        for file in source_files
+    ]
+
+    shapes = [data.shape for data in year_data]
+    assert len(set(shapes)) == 1
+    shape = shapes[0]
+
+    assert len(year_data) == n_years
+    assert shape[0] == 2189
+
+    # Stack along the first (temporal) dimension.
+
+    yearly = da.stack([data.mean(axis=0) for data in year_data])
+    return _yearly_stdev(yearly_data=yearly, n_years=n_years)
+
+
+@mark_dependency
+@cache(
+    dependencies=[
+        _yearly_stdev,
+        calc_yearly_stdev,
+        load_jules_lats_lons,
+        load_obs_data,
+        process_dry_days,
+        process_grouped_dry_bal,
+        process_litter_pool,
+    ]
+)
+def get_data_yearly_stdev(*, params=None):
+    output = {}
+
+    obs_dates = (PartialDateTime(2000, 1), PartialDateTime(2016, 12))
+    n_years = 17
+    assert (obs_dates[1].year - obs_dates[0].year) == (n_years - 1)
+    assert obs_dates[0].month == 1
+    assert obs_dates[-1].month == 12
+
+    years = list(range(2000, 2017))
+    filenames = [
+        list(
+            Path("~/tmp/new-with-antec6")
+            .expanduser()
+            .glob(f"JULES-ES.1p0.vn5.4.50.CRUJRA1.365.HYDE33.*.Instant.{year}.nc")
+        )[0]
+        for year in years
+    ]
+
+    input_slices = {
+        "t1p5m": (slice(None), slice(None), 0, slice(None)),
+        "npp_pft": (slice(None), slice(None), 0, slice(None)),
+    }
+
+    for variable_name in tqdm(input_slices, desc="JULES output variables"):
+        # Use `np.asarray` to unpack cached value if needed.
+        output[variable_name] = np.asarray(
+            calc_yearly_stdev(
+                source_files=filenames,
+                variable_name=variable_name,
+                slices=input_slices[variable_name],
+                n_years=n_years,
+            )
+        )
+        if variable_name == "npp_pft":
+            output[variable_name] /= 1e-7
+
+    # Crop.
+    obs_pftcrop_1d = load_obs_data(
+        Datasets(Ext_ESA_CCI_Landcover_PFT()).select_variables("pftCrop").dataset,
+        # Since this is a yearly dataset, 'select' the first month, which avoids
+        # selecting the following year.
+        obs_dates=(obs_dates[0], PartialDateTime(obs_dates[1].year, 1)),
+    )
+
+    yearly_stdev = partial(_yearly_stdev, n_years=n_years)
+
+    output["obs_pftcrop_1d"] = yearly_stdev(yearly_data=obs_pftcrop_1d)
+
+    # Dry days.
+    output["dry_days"] = yearly_stdev(
+        yearly_data=process_dry_days(proc_mode=ProcMode.YEAR_MEAN)
+    )
+
+    # Dry-bal.
+    if params is not None and "grouped_dry_bal" in params:
+        output["grouped_dry_bal"] = yearly_stdev(
+            yearly_data=process_grouped_dry_bal(
+                rain_f=params["grouped_dry_bal"]["rain_f"],
+                vpd_f=params["grouped_dry_bal"]["vpd_f"],
+                proc_mode=ProcMode.YEAR_MEAN,
+            )
+        )
+
+    # Litter pool.
+    if params is not None and "litter_pool" in params:
+        output["litter_pool"] = yearly_stdev(
+            yearly_data=process_litter_pool(
+                litter_tc=params["litter_pool"]["litter_tc"],
+                leaf_f=params["litter_pool"]["leaf_f"],
+                proc_mode=ProcMode.YEAR_MEAN,
+            )
+        )
+
+    # Enforce a minimum standard deviation such that later stages (e.g. sampling
+    # algorithm) will not complain about standard deviations being 0.
+
+    for key in output:
+        np.clip(output[key], a_min=1e-30, a_max=None, out=output[key])
+
+    return output

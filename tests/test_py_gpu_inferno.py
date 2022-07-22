@@ -468,9 +468,9 @@ def test_GPUInfernoConsAvgScore(index, seed, model_params):
     )["scores"]
 
     assert_allclose(
-        exp_scores["arcsinh_nme"], test_scores["arcsinh_nme"], atol=1e-12, rtol=2e-4
+        exp_scores["arcsinh_nme"], test_scores["arcsinh_nme"], atol=1e-8, rtol=2e-4
     )
-    assert_allclose(exp_scores["mpd"], test_scores["mpd"], atol=1e-12, rtol=4e-6)
+    assert_allclose(exp_scores["mpd"], test_scores["mpd"], atol=2e-5, rtol=5e-4)
     assert_array_equal(exp_scores["mpd_ignored"], test_scores["mpd_ignored"])
 
     score_model.release()
