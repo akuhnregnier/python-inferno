@@ -4,6 +4,7 @@ from functools import partial
 from operator import itemgetter
 
 import numpy as np
+from loguru import logger
 from SALib.analyze import sobol
 from SALib.sample import saltelli
 from tqdm import tqdm
@@ -511,9 +512,6 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
             includeTemperature=self.ba_model.include_temperature,
             overallScale=self.params["overall_scale"],
             crop_f=self.params["crop_f"],
-            land_point_checks_failed=self.ba_model._get_checks_failed_mask()[
-                :, :, land_index
-            ],
         )
 
         # Call in batches of `max_n_samples`
@@ -605,7 +603,7 @@ def sis_calc(
     for i in tqdm(land_points, desc="land"):
         try:
             sobol_sis[i] = sa.sobol_sis(land_index=i, verbose=False)
-        except LandChecksFailed:
-            pass
+        except LandChecksFailed as exc:
+            logger.warning(exc)
 
     return sobol_sis

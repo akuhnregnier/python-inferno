@@ -325,7 +325,6 @@ class GPUSA:
         includeTemperature,
         overallScale,
         crop_f,
-        land_point_checks_failed,
     ):
         self.Nt = Nt
         self.drynessMethod = drynessMethod
@@ -334,7 +333,7 @@ class GPUSA:
         self.overallScale = overallScale
         self.crop_f = crop_f
 
-        self.gpu_sa = _GPUSACompute(Nt, land_point_checks_failed)
+        self.gpu_sa = _GPUSACompute(Nt)
         self.max_n_samples = self.gpu_sa.getMaxNSamples()
 
         self.out_arr = np.empty(

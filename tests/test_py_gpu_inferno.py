@@ -490,6 +490,10 @@ def test_sa_gpu_ba(model_params, param_index, land_index):
     params = list(model_params.values())[param_index]
 
     ba_model = BAModel(**params)
+
+    if np.any(ba_model._get_checks_failed_mask()[:, :, land_index]):
+        return
+
     proc_params = ba_model.process_kwargs(**params)
 
     gpu_sa = GPUSA(
@@ -499,7 +503,6 @@ def test_sa_gpu_ba(model_params, param_index, land_index):
         includeTemperature=ba_model.include_temperature,
         overallScale=params["overall_scale"],
         crop_f=params["crop_f"],
-        land_point_checks_failed=ba_model._get_checks_failed_mask()[:, :, land_index],
     )
 
     for name in set(ba_model.data_dict).intersection(gpu_sa.sample_data):
