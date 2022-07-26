@@ -19,6 +19,10 @@ from .model_params import get_param_uncertainties
 from .py_gpu_inferno import GPUSA
 
 
+class SobolQCError(RuntimeError):
+    """Raised when Sobol values fail checks."""
+
+
 class LandChecksFailed(RuntimeError):
     """Raised when checks are failed at a given location."""
 
@@ -372,10 +376,23 @@ class BAModelSensitivityAnalysis(SensitivityAnalysis):
             # NOTE Mean BA at the location used as a proxy.
             Y[i] = np.mean(model_ba[:, land_index])
 
-        return sobol.analyze(problem, Y, print_to_console=False)
+        return sobol.analyze(problem, Y, print_to_console=False, seed=0)
 
 
 class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
+    @mark_dependency
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.gpu_sa = GPUSA(
+            Nt=self.ba_model.Nt,
+            drynessMethod=self.ba_model.dryness_method,
+            fuelBuildUpMethod=self.ba_model.fuel_build_up_method,
+            includeTemperature=self.ba_model.include_temperature,
+            overallScale=self.params["overall_scale"],
+            crop_f=self.params["crop_f"],
+        )
+
     @mark_dependency
     def set_index_data(
         self,
@@ -387,7 +404,6 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
         n_samples,
         index,
         index_data,
-        gpu_sa,
         land_index,
     ):
         # Broadcasting rules:
@@ -419,7 +435,7 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
             assert name not in self.proc_params
 
             arr = self.source_data[name]
-            sample_shape = gpu_sa.sample_data[name].shape
+            sample_shape = self.gpu_sa.sample_data[name].shape
             sample_ndim = len(sample_shape)
             assert arr.ndim == sample_ndim
 
@@ -438,7 +454,7 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
             assert name in self.proc_params
             offset_data = None
 
-        gpu_sa.set_sample_data(
+        self.gpu_sa.set_sample_data(
             index_data=index_data,
             values=values,
             n_samples=n_samples,
@@ -456,12 +472,11 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
         self,
         *,
         name,
-        gpu_sa,
         land_index,
         n_samples,
     ):
         def gpu_set_sample_data(*, source_arr, s, dims):
-            gpu_sa.set_sample_data(
+            self.gpu_sa.set_sample_data(
                 index_data={"name": name, "slice": s, "dims": dims},
                 values=source_arr[s],
                 n_samples=n_samples,
@@ -476,7 +491,7 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
             arr = self.source_data[name]
             gpu_set_sample_data = partial(gpu_set_sample_data, source_arr=arr)
 
-            sample_shape = gpu_sa.sample_data[name].shape
+            sample_shape = self.gpu_sa.sample_data[name].shape
             sample_ndim = len(sample_shape)
             assert arr.ndim == sample_ndim
 
@@ -505,26 +520,17 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
         total_n_samples = param_values.shape[0]
         Y = np.zeros(total_n_samples)
 
-        gpu_sa = GPUSA(
-            Nt=self.ba_model.Nt,
-            drynessMethod=self.ba_model.dryness_method,
-            fuelBuildUpMethod=self.ba_model.fuel_build_up_method,
-            includeTemperature=self.ba_model.include_temperature,
-            overallScale=self.params["overall_scale"],
-            crop_f=self.params["crop_f"],
-        )
-
         # Call in batches of `max_n_samples`
         for sl in tqdm(
-            range(0, total_n_samples, gpu_sa.max_n_samples),
+            range(0, total_n_samples, self.gpu_sa.max_n_samples),
             desc="Batched samples",
             disable=not verbose,
         ):
-            su = min(sl + gpu_sa.max_n_samples, total_n_samples)
+            su = min(sl + self.gpu_sa.max_n_samples, total_n_samples)
             n_samples = su - sl
 
             # Modify data.
-            names_to_set = set(gpu_sa.sample_data)
+            names_to_set = set(self.gpu_sa.sample_data)
             for (index, index_data) in enumerate(sa_params.indices):
                 self.set_index_data(
                     names_to_set=names_to_set,
@@ -534,7 +540,6 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
                     n_samples=n_samples,
                     index=index,
                     index_data=index_data,
-                    gpu_sa=gpu_sa,
                     land_index=land_index,
                 )
 
@@ -542,20 +547,49 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
             for name in names_to_set:
                 self.set_defaults(
                     name=name,
-                    gpu_sa=gpu_sa,
                     land_index=land_index,
                     n_samples=n_samples,
                 )
 
             # Run the model with the new variables.
-            model_ba = gpu_sa.run(nSamples=n_samples)
+            model_ba = self.gpu_sa.run(nSamples=n_samples)
 
             # NOTE Mean BA at the location is used as a proxy.
             Y[sl:su] = np.mean(model_ba, axis=1)
 
-        gpu_sa.release()
+        return sobol.analyze(problem, Y, print_to_console=False, seed=0)
 
-        return sobol.analyze(problem, Y, print_to_console=False)
+    def release(self):
+        self.gpu_sa.release()
+
+
+@mark_dependency
+def sobol_qc(sobol_output):
+    """Quality control for Sobol SA output."""
+
+    def raise_error(details: str):
+        raise SobolQCError(f"Sobol values failed checks: {details}")
+
+    for key in ("S1", "ST"):
+        vals = sobol_output[key]
+        conf_vals = sobol_output[f"{key}_conf"]
+
+        # Check effect values.
+        if np.any(vals < -1e-1):
+            raise_error(f"{key} {vals} below threshold.")
+        if np.any(vals > 100):
+            raise_error(f"{key} {vals} above threshold.")
+
+        # Check conf.
+        ratios = conf_vals / vals
+
+        max_ratio = np.max(ratios)
+
+        if max_ratio > 1:
+            if max_ratio > 100:
+                raise_error(f"{key} excessive conf ratio {max_ratio}.")
+            else:
+                logger.warning(f"{key} large conf ratio {max_ratio}.")
 
 
 # NOTE Due to complications with cpp dependencies, cache should be reset manually when
@@ -576,9 +610,11 @@ class GPUBAModelSensitivityAnalysis(SensitivityAnalysis):
         SAParams.add_param_vars,
         SAParams.add_vars,
         SAParams.get_problem,
+        SensitivityAnalysis.__init__,
         get_data_yearly_stdev,
         get_param_uncertainties,
         get_space_template,
+        sobol_qc,
     ]
 )
 def sis_calc(
@@ -593,17 +629,27 @@ def sis_calc(
 ):
     sa = GPUBAModelSensitivityAnalysis(
         params=params,
-        exponent=8,
+        exponent=9,
         data_variables=data_variables,
         df_sel=df_sel,
         fuel_build_up_method=fuel_build_up_method,
         dryness_method=dryness_method,
     )
     sobol_sis = {}
-    for i in tqdm(land_points, desc="land"):
+    fail = 0
+    success = 0
+    for i in (prog := tqdm(land_points, desc="land")):
         try:
             sobol_sis[i] = sa.sobol_sis(land_index=i, verbose=False)
-        except LandChecksFailed as exc:
+            sobol_qc(sobol_sis[i])
+        except (SobolQCError, LandChecksFailed) as exc:
             logger.warning(exc)
+            fail += 1
+        else:
+            success += 1
+
+        prog.set_description(f"land fail - {fail} success - {success}")
+
+    sa.release()
 
     return sobol_sis
