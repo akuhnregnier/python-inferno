@@ -247,6 +247,7 @@ class GPUInfernoAvgScore(GPUInferno):
             arcsinh_nme=score_info[0],
             mpd=score_info[1],
             mpd_ignored=score_info[2],
+            arcsinh_sse=score_info[3],
         )
 
 

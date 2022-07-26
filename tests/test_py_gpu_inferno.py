@@ -457,10 +457,10 @@ def test_GPUInfernoConsAvgScore(index, seed, model_params):
     score_model = GPUConsAvgScoreBAModel(**params)
     ba_model = BAModel(**params)
 
-    requested = (Metrics.MPD, Metrics.ARCSINH_NME)
+    requested = (Metrics.MPD, Metrics.ARCSINH_NME, Metrics.ARCSINH_SSE)
 
     test_scores = score_model.get_scores(requested=requested, **params)
-    assert len(test_scores) == 3
+    assert len(test_scores) == 4
 
     # Compare against the normal scores.
     exp_scores = ba_model.calc_scores(
@@ -470,8 +470,11 @@ def test_GPUInfernoConsAvgScore(index, seed, model_params):
     assert_allclose(
         exp_scores["arcsinh_nme"], test_scores["arcsinh_nme"], atol=1e-8, rtol=2e-4
     )
-    assert_allclose(exp_scores["mpd"], test_scores["mpd"], atol=2e-5, rtol=5e-4)
+    assert_allclose(exp_scores["mpd"], test_scores["mpd"], atol=2e-4, rtol=1e-3)
     assert_array_equal(exp_scores["mpd_ignored"], test_scores["mpd_ignored"])
+    assert_allclose(
+        exp_scores["arcsinh_sse"], test_scores["arcsinh_sse"], atol=1e-8, rtol=1e-4
+    )
 
     score_model.release()
 

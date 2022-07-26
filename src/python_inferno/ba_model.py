@@ -700,7 +700,9 @@ class GPUConsAvgScoreBAModel(GPUBAModel, ModAvgCropMixin):
         crop_f=1.0,
         **kwargs,
     ):
-        if set(requested) != set((Metrics.MPD, Metrics.ARCSINH_NME)):
+        if not set((Metrics.MPD, Metrics.ARCSINH_NME, Metrics.ARCSINH_SSE)).issuperset(
+            set(requested)
+        ):
             raise NotImplementedError
 
         processed_kwargs = self.process_kwargs(**kwargs)
