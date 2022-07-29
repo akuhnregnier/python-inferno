@@ -177,3 +177,11 @@ def test_param_refs(
             assert val >= -3 and val <= 3
         elif "paramB" in name:
             assert val >= -10 and val <= 0
+
+
+def test_space_mapping():
+    space = HyperoptSpace({"x": (hp.uniform, -10, 2)})
+    assert np.isclose(space.inv_map_float_to_0_1({"x": 0.0})["x"], -10)
+    assert np.isclose(space.inv_map_float_to_0_1({"x": 1.0})["x"], 2)
+    assert np.isclose(space.map_float_to_0_1({"x": -10})["x"], 0)
+    assert np.isclose(space.map_float_to_0_1({"x": 2})["x"], 1)

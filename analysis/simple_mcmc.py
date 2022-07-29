@@ -78,7 +78,6 @@ if __name__ == "__main__":
 
     new_data = gen_correlated_samples(
         N=int(1e3),
-        n_params=chain.shape[1],
         F_invs=[inverse_cdf_from_kde(chain[:, i]) for i in range(chain.shape[1])],
         R=np.array([[1, corr], [corr, 1]]),
         rng=np.random.default_rng(0),

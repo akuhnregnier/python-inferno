@@ -56,6 +56,21 @@ class OptSpace:
 
         return remapped
 
+    def map_float_to_0_1(self, params):
+        """Map floats to [0, 1]."""
+        remapped = {}
+        for name, value in params.items():
+            spec_args = self.spec[name]
+
+            arg_type, *args = spec_args
+            if arg_type == self.float_type:
+                minb, maxb = args
+                remapped[name] = (value - minb) / (maxb - minb)
+            else:
+                raise ValueError(f"{name} is not of floating type.")
+
+        return remapped
+
     @property
     def continuous_param_names(self):
         """Return the list of floating point parameters which are to be optimised."""

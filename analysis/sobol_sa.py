@@ -20,7 +20,7 @@ from python_inferno.data import load_jules_lats_lons
 from python_inferno.hyperopt import get_space_template
 from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 from python_inferno.model_params import get_model_params
-from python_inferno.sensitivity_analysis import sis_calc
+from python_inferno.sobol_sa import sis_calc
 
 
 @cache

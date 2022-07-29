@@ -9,10 +9,7 @@ from numpy.testing import assert_allclose
 from python_inferno.hyperopt import get_space_template
 from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 from python_inferno.model_params import get_model_params
-from python_inferno.sensitivity_analysis import (
-    BAModelSensitivityAnalysis,
-    GPUBAModelSensitivityAnalysis,
-)
+from python_inferno.sobol_sa import BAModelSobolSA, GPUBAModelSobolSA
 
 
 @pytest.mark.parametrize("param_index", range(4))
@@ -86,8 +83,8 @@ def test_sa_versions(param_index, test_type, land_index, exponent):
         dryness_method=int(params["dryness_method"]),
     )
 
-    sa = BAModelSensitivityAnalysis(**sa_params)
-    gpu_sa = GPUBAModelSensitivityAnalysis(**sa_params)
+    sa = BAModelSobolSA(**sa_params)
+    gpu_sa = GPUBAModelSobolSA(**sa_params)
 
     si = sa.sobol_sis(land_index=land_index)
     gpu_si = gpu_sa.sobol_sis(land_index=land_index)

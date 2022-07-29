@@ -85,6 +85,7 @@ def sse(*, obs, pred):
     return np.sum((pred - obs) ** 2)
 
 
+@mark_dependency
 @njit(nogil=True, cache=True)
 def calculate_phase(x):
     if len(x.shape) != 2 or x.shape[0] != 12:

@@ -1028,3 +1028,11 @@ def masked_frac_weighted_mean(*, data, frac):
         data=data, frac=frac, _return_frac_sum=True
     )
     return np.ma.MaskedArray(weighted_mean, mask=frac_sum < 1e-15)
+
+
+def map_keys(source_data, key_mapping):
+    out = {}
+    for target_key, source_key in key_mapping.items():
+        if source_key in source_data:
+            out[target_key] = source_data[source_key]
+    return out

@@ -991,8 +991,8 @@ def _yearly_stdev(*, yearly_data, n_years):
 
 
 @mark_dependency
-@cache(dependencies=[load_single_year_cubes, _yearly_stdev])
-def calc_yearly_stdev(
+@cache(dependencies=[load_single_year_cubes])
+def calc_yearly_data(
     *,
     source_files,
     variable_name: str,
@@ -1024,16 +1024,13 @@ def calc_yearly_stdev(
     assert shape[0] == 2189
 
     # Stack along the first (temporal) dimension.
-
-    yearly = da.stack([data.mean(axis=0) for data in year_data])
-    return _yearly_stdev(yearly_data=yearly, n_years=n_years)
+    return np.array(da.stack([data.mean(axis=0) for data in year_data]))
 
 
 @mark_dependency
 @cache(
     dependencies=[
-        _yearly_stdev,
-        calc_yearly_stdev,
+        calc_yearly_data,
         load_jules_lats_lons,
         load_obs_data,
         process_dry_days,
@@ -1041,14 +1038,13 @@ def calc_yearly_stdev(
         process_litter_pool,
     ]
 )
-def get_data_yearly_stdev(*, params=None):
-    output = {}
-
+def get_yearly_data(*, params=None):
     obs_dates = (PartialDateTime(2000, 1), PartialDateTime(2016, 12))
     n_years = 17
     assert (obs_dates[1].year - obs_dates[0].year) == (n_years - 1)
     assert obs_dates[0].month == 1
     assert obs_dates[-1].month == 12
+    yearly_data = {}
 
     years = list(range(2000, 2017))
     filenames = [
@@ -1067,53 +1063,61 @@ def get_data_yearly_stdev(*, params=None):
 
     for variable_name in tqdm(input_slices, desc="JULES output variables"):
         # Use `np.asarray` to unpack cached value if needed.
-        output[variable_name] = np.asarray(
-            calc_yearly_stdev(
+        yearly_data[variable_name] = np.asarray(
+            calc_yearly_data(
                 source_files=filenames,
                 variable_name=variable_name,
                 slices=input_slices[variable_name],
                 n_years=n_years,
             )
         )
-        if variable_name == "npp_pft":
-            output[variable_name] /= 1e-7
+
+    yearly_data["npp_pft"] /= 1e-7
 
     # Crop.
-    obs_pftcrop_1d = load_obs_data(
+    yearly_data["obs_pftcrop_1d"] = load_obs_data(
         Datasets(Ext_ESA_CCI_Landcover_PFT()).select_variables("pftCrop").dataset,
         # Since this is a yearly dataset, 'select' the first month, which avoids
         # selecting the following year.
         obs_dates=(obs_dates[0], PartialDateTime(obs_dates[1].year, 1)),
     )
 
-    yearly_stdev = partial(_yearly_stdev, n_years=n_years)
-
-    output["obs_pftcrop_1d"] = yearly_stdev(yearly_data=obs_pftcrop_1d)
-
     # Dry days.
-    output["dry_days"] = yearly_stdev(
-        yearly_data=process_dry_days(proc_mode=ProcMode.YEAR_MEAN)
-    )
+    yearly_data["dry_days"] = process_dry_days(proc_mode=ProcMode.YEAR_MEAN)
 
     # Dry-bal.
     if params is not None and "grouped_dry_bal" in params:
-        output["grouped_dry_bal"] = yearly_stdev(
-            yearly_data=process_grouped_dry_bal(
-                rain_f=params["grouped_dry_bal"]["rain_f"],
-                vpd_f=params["grouped_dry_bal"]["vpd_f"],
-                proc_mode=ProcMode.YEAR_MEAN,
-            )
+        yearly_data["grouped_dry_bal"] = process_grouped_dry_bal(
+            rain_f=params["grouped_dry_bal"]["rain_f"],
+            vpd_f=params["grouped_dry_bal"]["vpd_f"],
+            proc_mode=ProcMode.YEAR_MEAN,
         )
 
     # Litter pool.
     if params is not None and "litter_pool" in params:
-        output["litter_pool"] = yearly_stdev(
-            yearly_data=process_litter_pool(
-                litter_tc=params["litter_pool"]["litter_tc"],
-                leaf_f=params["litter_pool"]["leaf_f"],
-                proc_mode=ProcMode.YEAR_MEAN,
-            )
+        yearly_data["litter_pool"] = process_litter_pool(
+            litter_tc=params["litter_pool"]["litter_tc"],
+            leaf_f=params["litter_pool"]["leaf_f"],
+            proc_mode=ProcMode.YEAR_MEAN,
         )
+
+    return yearly_data
+
+
+@mark_dependency
+@cache(
+    dependencies=[
+        _yearly_stdev,
+        get_yearly_data,
+    ]
+)
+def get_data_yearly_stdev(*, params=None):
+    yearly_data = get_yearly_data(params=params)
+    n_years = next(iter(yearly_data.values())).shape[0]
+    assert n_years == 17
+    yearly_stdev = partial(_yearly_stdev, n_years=n_years)
+
+    output = {key: yearly_stdev(yearly_data=data) for key, data in yearly_data.items()}
 
     # Enforce a minimum standard deviation such that later stages (e.g. sampling
     # algorithm) will not complain about standard deviations being 0.
