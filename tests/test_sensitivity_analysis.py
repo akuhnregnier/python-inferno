@@ -9,6 +9,7 @@ from numpy.testing import assert_allclose
 from python_inferno.hyperopt import get_space_template
 from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 from python_inferno.model_params import get_model_params
+from python_inferno.sensitivity_analysis import SAMetric
 from python_inferno.sobol_sa import BAModelSobolSA, GPUBAModelSobolSA
 
 
@@ -78,7 +79,6 @@ def test_sa_versions(param_index, test_type, land_index, exponent):
         params=params,
         exponent=exponent,
         data_variables=data_variables,
-        df_sel=df_sel,
         fuel_build_up_method=int(params["fuel_build_up_method"]),
         dryness_method=int(params["dryness_method"]),
     )
@@ -87,6 +87,12 @@ def test_sa_versions(param_index, test_type, land_index, exponent):
     gpu_sa = GPUBAModelSobolSA(**sa_params)
 
     si = sa.sobol_sis(land_index=land_index)
-    gpu_si = gpu_sa.sobol_sis(land_index=land_index)
+    gpu_si = gpu_sa.sensitivity_analysis(land_index=land_index)
 
-    assert_allclose(gpu_si["S1"], si["S1"], rtol=1e-4, atol=5e-6)
+    for metric in SAMetric:
+        if metric not in si or metric not in gpu_si:
+            assert metric not in gpu_si and metric not in si
+        else:
+            assert_allclose(
+                gpu_si[metric]["S1"], si[metric]["S1"], rtol=1e-4, atol=5e-6
+            )

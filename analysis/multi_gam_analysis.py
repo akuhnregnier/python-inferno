@@ -40,6 +40,8 @@ from python_inferno.ba_model import ModelParams, calculate_scores
 from python_inferno.cache import cache, mark_dependency
 from python_inferno.configuration import (
     N_pft_groups,
+    get_exp_key,
+    get_exp_name,
     land_pts,
     npft,
     pft_group_names,
@@ -49,13 +51,7 @@ from python_inferno.data import get_processed_climatological_data, load_jules_la
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics_plotting import null_model_analysis
 from python_inferno.plotting import plotting
-from python_inferno.utils import (
-    ConsMonthlyAvg,
-    get_distinct_params,
-    get_exp_key,
-    get_exp_name,
-    memoize,
-)
+from python_inferno.utils import ConsMonthlyAvg, get_distinct_params, memoize
 
 NoVal = Enum("NoVal", ["NoVal"])
 

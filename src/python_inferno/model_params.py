@@ -12,7 +12,7 @@ from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from tqdm import tqdm
 
 from .cache import mark_dependency
-from .utils import get_exp_key, get_exp_name
+from .configuration import get_exp_key, get_exp_name
 
 NoVal = Enum("NoVal", ["NoVal"])
 

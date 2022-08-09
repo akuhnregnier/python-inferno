@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
+from collections import defaultdict
 from copy import deepcopy
+from functools import partial
 from operator import itemgetter
 
 import numpy as np
@@ -14,9 +16,18 @@ from .configuration import Dims, N_pft_groups, npft
 from .data import get_data_yearly_stdev
 from .hyperopt import get_space_template
 from .iter_opt import ALWAYS_OPTIMISED, IGNORED
-from .model_params import get_param_uncertainties
-from .py_gpu_inferno import GPUSA
-from .sensitivity_analysis import GPUSAMixin, LandChecksFailed, SensitivityAnalysis
+from .mcmc import iter_opt_methods
+from .metrics import calculate_phase
+from .sensitivity_analysis import (
+    GPUSAMixin,
+    LandChecksFailed,
+    SAMetric,
+    SensitivityAnalysis,
+    _sis_calc,
+    analyse_sis,
+    batched_sis_calc,
+)
+from .spotpy_mcmc import spotpy_dream
 from .utils import map_keys
 
 
@@ -26,14 +37,8 @@ class SobolQCError(RuntimeError):
 
 class SAParams:
     @mark_dependency
-    def __init__(
-        self, *, dryness_method, fuel_build_up_method, df_sel, data_stats_params
-    ):
-        self._variable_indices = []
-        self._variable_bounds = []
-        self._variable_names = []
-        self._variable_groups = []
-        self._dists = []
+    def __init__(self, *, dryness_method, fuel_build_up_method, data_stats_params):
+        self.initialise()
 
         # Param bound setup.
         space_template = get_space_template(
@@ -45,13 +50,6 @@ class SAParams:
         param_names = [
             key for key in space_template if key not in ALWAYS_OPTIMISED.union(IGNORED)
         ]
-
-        # Filter columns.
-        new_cols = [
-            col
-            for col in df_sel.columns
-            if any(name_root in col for name_root in param_names)
-        ] + ["loss"]
 
         key_mapping = {
             # TARGET: SOURCE
@@ -69,13 +67,68 @@ class SAParams:
             "grouped_dry_bal": "grouped_dry_bal",
         }
 
-        self.param_uncertainties = get_param_uncertainties(df_sel=df_sel[new_cols])
+        # Get parameter bounds from MCMC chains.
+
+        method_index = {(1, 1): 0, (1, 2): 1, (2, 1): 2, (2, 2): 3}[
+            (dryness_method, fuel_build_up_method)
+        ]
+
+        mcmc_kwargs = dict(
+            iter_opt_index=method_index,
+            # 1e5 - 15 mins with beta=0.05
+            # 2e5 - 50 mins with beta=0.05 - due to decreasing acceptance rate over time!
+            N=int(2e5),
+            beta=0.05,
+        )
+        assert spotpy_dream.check_in_store(**mcmc_kwargs), str(mcmc_kwargs)
+        dream_results = spotpy_dream(**mcmc_kwargs)
+        results_df = dream_results["results_df"]
+        space = dream_results["space"]
+
+        # Analysis of results.
+        names = space.continuous_param_names
+
+        # Generate array of chain values, transform back to original ranges.
+        chains = np.hstack(
+            [
+                space.inv_map_float_to_0_1(
+                    {name: np.asarray(results_df[f"par{name}"])}
+                )[name].reshape(-1, 1)
+                for name in names
+            ]
+        )
+
+        # Extract last N/2 values from the chains.
+        chains = chains[chains.shape[0] // 2 :]
+
+        # Get mean and standard deviations.
+        means = np.mean(chains, axis=0)
+        std = np.std(chains, axis=0)
+
+        mins = np.min(chains, axis=0)
+        maxs = np.max(chains, axis=0)
+
+        min_bounds = np.clip(means - std, mins, maxs)
+        max_bounds = np.clip(means + std, mins, maxs)
+
+        self.param_bounds = {
+            name: (min_bound, max_bound)
+            for name, min_bound, max_bound in zip(names, min_bounds, max_bounds)
+        }
+
         # NOTE Missing keys will be silently ignored. The keys present in
         # `data_yearly_stdev` are therefore determined by `data_stats_params`
         # indirectly.
         self.data_yearly_stdev = map_keys(
             get_data_yearly_stdev(params=data_stats_params), key_mapping
         )
+
+    def initialise(self):
+        self._variable_indices = []
+        self._variable_bounds = []
+        self._variable_names = []
+        self._variable_groups = []
+        self._dists = []
 
     @mark_dependency
     def add_param_vars(
@@ -92,7 +145,7 @@ class SAParams:
         for (i, s) in enumerate(slices):
             i_name = f"{name}{i + 1}" if i > 0 else name
 
-            bounds = self.param_uncertainties[i_name]
+            bounds = self.param_bounds[i_name]
 
             if "_weight" in name or name == "crop_f":
                 # NOTE Don't expect crop_f to actually show up here since it is not
@@ -170,22 +223,23 @@ class SAParams:
 
 class SobolSA(SensitivityAnalysis):
     @mark_dependency
-    def __init__(self, *, df_sel, exponent=6, **kwargs):
+    def __init__(self, *, exponent=6, **kwargs):
         super().__init__(**kwargs)
         self.exponent = exponent
-        self.df_sel = df_sel
+
+        self.sa_params = SAParams(
+            dryness_method=self.ba_model.dryness_method,
+            fuel_build_up_method=self.ba_model.fuel_build_up_method,
+            data_stats_params=self.data_stats_params,
+        )
 
     @mark_dependency
     def get_sa_params(self, land_index: int):
         if np.any(self._checks_failed_mask[:, :, land_index]):
             raise LandChecksFailed(f"Some checks failed at location {land_index}.")
 
-        sa_params = SAParams(
-            dryness_method=self.ba_model.dryness_method,
-            fuel_build_up_method=self.ba_model.fuel_build_up_method,
-            df_sel=self.df_sel,
-            data_stats_params=self.data_stats_params,
-        )
+        self.sa_params.initialise()
+
         # For each of the variables to be investigated, define bounds associated with
         # the variable, its name, and the group it belongs to. For variables with
         # multiple PFTs, up to `n` natural PFTs are considered (grouped into the same
@@ -194,20 +248,18 @@ class SobolSA(SensitivityAnalysis):
         # at the given land point / PFT, although this may change.
         for name in self.data_variables:
             if name in self.source_data:
-                sa_params.add_vars(
+                self.sa_params.add_vars(
                     name=name,
                     data=self.source_data[name],
                     land_index=land_index,
                 )
             elif name in self.proc_params:
-                sa_params.add_param_vars(
+                self.sa_params.add_param_vars(
                     name=name,
                     param_data=self.proc_params[name],
                 )
             else:
                 raise ValueError(f"Unsupported name: '{name}'.")
-
-        return sa_params
 
 
 class BAModelSobolSA(SobolSA):
@@ -221,13 +273,14 @@ class BAModelSobolSA(SobolSA):
 
     def sobol_sis(self, *, land_index, verbose=True):
         # Treat each land point individually.
-        sa_params = self.get_sa_params(land_index)
-        problem = sa_params.get_problem()
+        self.get_sa_params(land_index)
+        problem = self.sa_params.get_problem()
 
         param_values = saltelli.sample(problem, 2**self.exponent)
         assert len(param_values.shape) == 2
 
-        Y = np.zeros(param_values.shape[0])
+        Y_asinh_nme = np.zeros(param_values.shape[0])
+        Y_mpd = np.zeros(param_values.shape[0])
 
         for i in tqdm(
             range(param_values.shape[0]), desc="samples", disable=not verbose
@@ -235,7 +288,7 @@ class BAModelSobolSA(SobolSA):
             mod_params = deepcopy(self.params)
 
             # Insert the modified data.
-            for j, index_data in enumerate(sa_params.indices):
+            for j, index_data in enumerate(self.sa_params.indices):
                 name, index_dims, index_slice = itemgetter("name", "dims", "slice")(
                     index_data
                 )
@@ -266,50 +319,85 @@ class BAModelSobolSA(SobolSA):
                 **mod_params,
             )["model_ba"]
 
-            # NOTE Mean BA at the location used as a proxy.
-            Y[i] = np.mean(model_ba[:, land_index])
+            avg_model_ba = (
+                np.einsum(
+                    # (orig_time,), (orig_time, new_time) -> (new_time,)
+                    "m,mn->n",
+                    model_ba[:, land_index],
+                    self.weights,
+                    optimize=True,
+                )
+                / self.cum_weights
+            ).reshape(12, 1)
 
-        return sobol.analyze(problem, Y, print_to_console=False, seed=0)
+            # Mean Error
+
+            # NOTE No denominator is used here, since this would be constant across
+            # all land indices anyway.
+            Y_asinh_nme[i] = self.get_asinh_nme(
+                avg_model_ba=avg_model_ba, land_index=land_index
+            ).mean()
+
+            # Phase Difference
+
+            Y_mpd[i] = self.get_mpd(avg_model_ba=avg_model_ba, land_index=land_index)
+
+        out = {}
+
+        for metric_key, Y in tqdm(
+            [
+                (SAMetric.ARCSINH_NME, Y_asinh_nme),
+                (SAMetric.MPD, Y_mpd),
+            ],
+            desc="Sensitivity metric",
+            disable=not verbose,
+        ):
+            if np.any(np.isnan(Y) | np.isinf(Y)):
+                continue
+
+            try:
+                sa_indices = sobol.sobol_analyze(
+                    problem, Y, print_to_console=False, seed=0
+                )
+            except Exception as exc:
+                logger.exception(exc)
+            else:
+                out[metric_key] = sa_indices
+
+        return out
 
 
-class GPUBAModelSobolSA(SobolSA, GPUSAMixin):
+class GPUBAModelSobolSA(GPUSAMixin, SobolSA):
     @mark_dependency
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-        self.gpu_sa = GPUSA(
-            Nt=self.ba_model.Nt,
-            drynessMethod=self.ba_model.dryness_method,
-            fuelBuildUpMethod=self.ba_model.fuel_build_up_method,
-            includeTemperature=self.ba_model.include_temperature,
-            overallScale=self.params["overall_scale"],
-            crop_f=self.params["crop_f"],
-        )
-
-    @mark_dependency
-    def sobol_sis(self, *, land_index, verbose=True):
+    def sensitivity_analysis(self, *, land_index, verbose=True):
         # Treat each land point individually.
-        sa_params = self.get_sa_params(land_index)
-        problem = sa_params.get_problem()
+        self.get_sa_params(land_index)
+        problem = self.sa_params.get_problem()
 
         param_values = saltelli.sample(problem, 2**self.exponent)
         assert len(param_values.shape) == 2
 
-        total_n_samples = param_values.shape[0]
-        Y = np.zeros(total_n_samples)
+        if getattr(self, "total_n_samples", None) is None:
+            self.total_n_samples = param_values.shape[0]
+            self.Y_asinh_nme = np.zeros(self.total_n_samples) + np.nan
+            self.Y_mpd = np.zeros(self.total_n_samples) + np.nan
+        else:
+            assert self.total_n_samples == param_values.shape[0]
+
+        did_set_defaults = defaultdict(lambda: False)
 
         # Call in batches of `max_n_samples`
         for sl in tqdm(
-            range(0, total_n_samples, self.gpu_sa.max_n_samples),
+            range(0, self.total_n_samples, self.gpu_sa.max_n_samples),
             desc="Batched samples",
             disable=not verbose,
         ):
-            su = min(sl + self.gpu_sa.max_n_samples, total_n_samples)
+            su = min(sl + self.gpu_sa.max_n_samples, self.total_n_samples)
             n_samples = su - sl
 
             # Modify data.
             names_to_set = set(self.gpu_sa.sample_data)
-            for (index, index_data) in enumerate(sa_params.indices):
+            for (index, index_data) in enumerate(self.sa_params.indices):
                 self.set_index_data(
                     names_to_set=names_to_set,
                     param_values=param_values,
@@ -321,24 +409,62 @@ class GPUBAModelSobolSA(SobolSA, GPUSAMixin):
                     land_index=land_index,
                 )
 
-            # Set remaining data using defaults.
-            for name in names_to_set:
-                self.set_defaults(
-                    name=name,
-                    land_index=land_index,
-                    n_samples=n_samples,
-                )
+            if not did_set_defaults[n_samples]:
+                # Set remaining data using defaults.
+
+                # NOTE This only has to be done once, since the default data will not
+                # change between iterations, as it is constant (given the land index)!
+                for name in names_to_set:
+                    self.set_defaults(
+                        name=name,
+                        land_index=land_index,
+                        n_samples=n_samples,
+                    )
+
+                did_set_defaults[n_samples] = True
 
             # Run the model with the new variables.
             model_ba = self.gpu_sa.run(nSamples=n_samples)
 
-            # NOTE Mean BA at the location is used as a proxy.
-            Y[sl:su] = np.mean(model_ba, axis=1)
+            avg_model_ba = self.sa_model_ba_cons_avg(model_ba)
 
-        return sobol.analyze(problem, Y, print_to_console=False, seed=0)
+            # Mean Error
 
-    def release(self):
-        self.gpu_sa.release()
+            # NOTE No denominator is used here, since this would be constant across
+            # all land indices anyway.
+            self.Y_asinh_nme[sl:su] = self.get_asinh_nme(
+                avg_model_ba=avg_model_ba, land_index=land_index
+            )
+
+            # Phase Difference
+
+            self.Y_mpd[sl:su] = self.get_mpd(
+                avg_model_ba=avg_model_ba, land_index=land_index
+            )
+
+        out = {}
+
+        for metric_key, Y in tqdm(
+            [
+                (SAMetric.ARCSINH_NME, self.Y_asinh_nme),
+                (SAMetric.MPD, self.Y_mpd),
+            ],
+            desc="Sensitivity metric",
+            disable=not verbose,
+        ):
+            if np.any(np.isnan(Y) | np.isinf(Y)):
+                continue
+
+            try:
+                sa_indices = sobol.sobol_analyze(
+                    problem, Y, print_to_console=False, seed=0
+                )
+            except Exception as exc:
+                logger.exception(exc)
+            else:
+                out[metric_key] = sa_indices
+
+        return out
 
 
 @mark_dependency
@@ -370,18 +496,29 @@ def sobol_qc(sobol_output):
                 logger.warning(f"{key} large conf ratio {max_ratio}.")
 
 
+analyse_sis = partial(
+    analyse_sis,
+    method_name="Sobol",
+    method_keys=["S1", "ST"],
+    sort_key="ST",
+    to_df_func=sobol.to_df,
+)
+
 # NOTE Due to complications with cpp dependencies, cache should be reset manually when
 # needed.
 @cache(
     dependencies=[
         BAModel.__init__,
         BAModel.process_kwargs,
-        GPUBAModelSobolSA.__init__,
         GPUBAModelSobolSA._get_data_shallow,
+        GPUBAModelSobolSA.get_asinh_nme,
+        GPUBAModelSobolSA.get_mpd,
         GPUBAModelSobolSA.get_sa_params,
+        GPUBAModelSobolSA.sa_model_ba_cons_avg,
+        GPUBAModelSobolSA.sensitivity_analysis,
         GPUBAModelSobolSA.set_defaults,
         GPUBAModelSobolSA.set_index_data,
-        GPUBAModelSobolSA.sobol_sis,
+        GPUSAMixin.__init__,
         SAParams.__init__,
         SAParams._check,
         SAParams.add_param_vars,
@@ -389,45 +526,35 @@ def sobol_qc(sobol_output):
         SAParams.get_problem,
         SensitivityAnalysis.__init__,
         SobolSA.__init__,
+        _sis_calc,
+        batched_sis_calc,
+        calculate_phase,
         get_data_yearly_stdev,
-        get_param_uncertainties,
         get_space_template,
+        iter_opt_methods,
+        sobol.sobol_analyze,
         sobol_qc,
-    ]
+        spotpy_dream,
+    ],
+    ignore=["n_batches"],
 )
-def sis_calc(
+def sobol_sis_calc(
     *,
+    n_batches=1,
+    land_points,
     params,
     exponent=8,
-    land_points,
     data_variables=None,
-    df_sel,
     fuel_build_up_method,
     dryness_method,
 ):
-    sa = GPUBAModelSobolSA(
+    return batched_sis_calc(
+        n_batches=n_batches,
         params=params,
-        exponent=9,
+        exponent=exponent,
         data_variables=data_variables,
-        df_sel=df_sel,
         fuel_build_up_method=fuel_build_up_method,
         dryness_method=dryness_method,
+        land_points=land_points,
+        sa_class=GPUBAModelSobolSA,
     )
-    sobol_sis = {}
-    fail = 0
-    success = 0
-    for i in (prog := tqdm(land_points, desc="land")):
-        try:
-            sobol_sis[i] = sa.sobol_sis(land_index=i, verbose=False)
-            sobol_qc(sobol_sis[i])
-        except (SobolQCError, LandChecksFailed) as exc:
-            logger.warning(exc)
-            fail += 1
-        else:
-            success += 1
-
-        prog.set_description(f"land fail - {fail} success - {success}")
-
-    sa.release()
-
-    return sobol_sis

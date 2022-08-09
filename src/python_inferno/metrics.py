@@ -53,9 +53,9 @@ def nme(*, obs, pred, return_std=False):
     err = np.mean(abs_diff) / denom
 
     if return_std:
-        N = np.ma.getdata(abs_diff)[~np.ma.getmaskarray(abs_diff)].size
-        # Return the standard deviation of the mean.
-        return err, (np.mean(np.abs(pred - obs)) / denom) / (N**0.5)
+        N = np.sum(~np.ma.getmaskarray(abs_diff))
+        # Return the estimated standard error of the mean.
+        return err, (np.std(abs_diff) / denom) / (N**0.5)
     return err
 
 
@@ -156,9 +156,9 @@ def mpd(*, obs, pred, return_ignored=False, return_std=False):
     if return_ignored:
         to_return.append(np.sum(np.all(ignore_mask, axis=0)))
     if return_std:
-        N = np.ma.getdata(vals)[~np.ma.getmaskarray(vals)].size
-        # Return the standard deviation of the mean.
-        to_return.append(np.ma.std(vals) / (N**0.5))
+        N = np.sum(~np.ma.getmaskarray(vals))
+        # Return the estimated standard error of the mean.
+        to_return.append((1 / np.pi) * np.ma.std(vals) / (N**0.5))
     if return_ignored or return_std:
         return tuple(to_return)
     return to_return[0]

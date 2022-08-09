@@ -11,25 +11,22 @@ import numpy as np
 from loguru import logger
 
 from python_inferno.configuration import land_pts
-from python_inferno.hdmr_sa import analyse_sis
-from python_inferno.hdmr_sa import hdmr_sis_calc as sis_calc
 from python_inferno.model_params import get_model_params
+from python_inferno.pawn_sa import analyse_sis
+from python_inferno.pawn_sa import pawn_sis_calc as sis_calc
 from python_inferno.sensitivity_analysis import SAMetric
 from python_inferno.spotpy_mcmc import spotpy_dream
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("-n", type=int, help="method index", default=0)
-    parser.add_argument(
-        "-b", "--batches", type=int, help="number of batches", default=1
-    )
     args = parser.parse_args()
 
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 
-    save_dir = Path("~/tmp/hdmr-sa").expanduser()
+    save_dir = Path("~/tmp/pawn-sa").expanduser()
     save_dir.mkdir(parents=False, exist_ok=True)
 
     record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
@@ -78,14 +75,14 @@ if __name__ == "__main__":
     )
 
     all_sis = sis_calc(
-        n_batches=args.batches,
-        land_points=list(range(land_pts)),
         params=params,
         dryness_method=dryness_method,
         fuel_build_up_method=fuel_build_up_method,
-        N=int(6e3),  # 6e3
+        N=int(1e4),  # 1e3, 1e4
         chain_data=chains,
         chain_names=names,
+        land_points=list(range(land_pts)),
+        verbose=1,
     )
 
     valid_sis = {land_index: sis for land_index, sis in all_sis.items() if sis}

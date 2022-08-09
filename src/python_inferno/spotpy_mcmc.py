@@ -7,12 +7,13 @@ import pandas as pd
 import spotpy
 from tqdm import tqdm
 
-from .cache import cache
+from .cache import cache, mark_dependency
 from .mcmc import iter_opt_methods
 
 assert spotpy.__version__ == "1.5.16.1", spotpy.__version__
 
 
+@mark_dependency
 @cache(dependencies=[iter_opt_methods])
 def spotpy_dream(iter_opt_index=0, N=int(5e5), c=0.1, step=0.5, beta=0.05):
     opt_data = next(

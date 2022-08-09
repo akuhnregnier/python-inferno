@@ -2,111 +2,40 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+from argparse import ArgumentParser
 from itertools import islice
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
-from pylatex.utils import escape_latex
-from tqdm import tqdm
-from wildfires.analysis import cube_plotting
 
-from python_inferno.cache import cache
 from python_inferno.configuration import land_pts
-from python_inferno.data import load_jules_lats_lons
 from python_inferno.hyperopt import get_space_template
 from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 from python_inferno.model_params import get_model_params
-from python_inferno.sobol_sa import sis_calc
-
-
-@cache
-def get_mean_ST_df(*, sobol_sis):
-    data = {}
-    for name in list(next(iter(sobol_sis.values())).to_df()[0].index.values):
-        vals = [si.to_df()[0]["ST"][name] for si in sobol_sis.values()]
-        data[name] = dict(
-            mean=np.nanmean(vals),
-            std=np.nanstd(vals),
-        )
-    df = pd.DataFrame(data).T
-    df["ratio"] = df["std"] / df["mean"]
-    return df.sort_values("mean", ascending=False)
-
-
-def analyse_sobol_sis(*, sobol_sis, save_dir, exp_name, exp_key, analysis_type):
-    df = get_mean_ST_df(sobol_sis=sobol_sis)
-
-    print_df = df.copy()
-    print_df.index = list(map(escape_latex, print_df.index))
-
-    caption_lines = (
-        f"Global Sobol sensitivity analysis of {analysis_type.lower()} for {exp_name}.",
-        f"Computed from individual significance values at {len(sobol_sis)} land points.",
-        f"The ratio is computed as std / mean after averaging.",
-    )
-
-    print(
-        print_df.style.to_latex(
-            caption=(
-                "\n".join(("%", *map(escape_latex, caption_lines), "")),
-                escape_latex(
-                    f"Global Sobol SA of {analysis_type.lower()} for {exp_name}."
-                ),
-            ),
-            label=f"table:global_sis_{analysis_type.lower()}_{exp_key}",
-            hrules=True,
-            position_float="centering",
-            siunitx=True,
-        )
-    )
-
-    jules_lats, jules_lons = load_jules_lats_lons()
-    group_names = list(next(iter(sobol_sis.values())).to_df()[0].index.values)
-
-    # Plotting.
-
-    for name in tqdm(group_names, desc="plotting"):
-        data = np.ma.MaskedArray(np.zeros(land_pts), mask=True)
-        for land_i, val in sobol_sis.items():
-            st_val = val.to_df()[0]["ST"][name]
-            if not np.isnan(st_val):
-                data[land_i] = st_val
-
-        if np.all(np.ma.getmaskarray(data)):
-            logger.warning(f"{name} all masked!")
-            continue
-
-        if np.all(np.isclose(data, 0)):
-            logger.info(f"{name} all close to 0.")
-            continue
-
-        cube_2d = cube_1d_to_2d(
-            get_1d_data_cube(data, lats=jules_lats, lons=jules_lons)
-        )
-
-        fig = plt.figure(figsize=(6, 4), dpi=200)
-        cube_plotting(cube_2d, title=name, fig=fig)
-        fig.savefig(str(save_dir / name))
-        plt.close(fig)
-
+from python_inferno.sensitivity_analysis import SAMetric
+from python_inferno.sobol_sa import analyse_sis
+from python_inferno.sobol_sa import sobol_sis_calc as sis_calc
 
 if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument("-n", type=int, help="method index", default=0)
+    parser.add_argument(
+        "-b", "--batches", type=int, help="number of batches", default=1
+    )
+    args = parser.parse_args()
+
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    sa_plot_dir = Path("~/tmp/sa").expanduser()
-    sa_plot_dir.mkdir(parents=False, exist_ok=True)
+    save_dir = Path("~/tmp/sa").expanduser()
+    save_dir.mkdir(parents=False, exist_ok=True)
 
     record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
     df, method_iter = get_model_params(
         record_dir=record_dir, progress=True, verbose=False
     )
 
-    for (
+    (
         dryness_method,
         fuel_build_up_method,
         df_sel,
@@ -115,50 +44,58 @@ if __name__ == "__main__":
         params,
         exp_name,
         exp_key,
-    ) in islice(method_iter(), 0, None):
-        assert int(params["include_temperature"]) == 1
+    ) = next(islice(method_iter(), args.n, args.n + 1))
+    assert int(params["include_temperature"]) == 1
 
-        logger.info(exp_name)
+    logger.info(exp_name)
 
-        space_template = get_space_template(
-            dryness_method=dryness_method,
+    space_template = get_space_template(
+        dryness_method=dryness_method,
+        fuel_build_up_method=fuel_build_up_method,
+        include_temperature=int(params["include_temperature"]),
+    )
+
+    param_names = [
+        key for key in space_template if key not in ALWAYS_OPTIMISED.union(IGNORED)
+    ]
+    if "crop_f" in param_names:
+        param_names.remove("crop_f")
+
+    for (data_variables, analysis_type) in [
+        (param_names, "Parameters"),
+        (None, "Data"),
+    ]:
+        all_sis = sis_calc(
+            n_batches=args.batches,
+            land_points=list(range(land_pts)),
+            exponent=12,
+            params=params,
+            data_variables=data_variables,
+            # NOTE Derive parameter uncertainty ranges from the existing set of runs.
             fuel_build_up_method=fuel_build_up_method,
-            include_temperature=int(params["include_temperature"]),
+            dryness_method=dryness_method,
         )
 
-        param_names = [
-            key for key in space_template if key not in ALWAYS_OPTIMISED.union(IGNORED)
-        ]
-        if "crop_f" in param_names:
-            param_names.remove("crop_f")
+        valid_sis = {land_index: sis for land_index, sis in all_sis.items() if sis}
 
-        save_dir = sa_plot_dir / exp_key
-        save_dir.mkdir(parents=False, exist_ok=True)
+        logger.info(f"Analysing {analysis_type}: {len(all_sis)}, {len(valid_sis)}.")
 
-        for (data_variables, analysis_type) in [
-            (param_names, "Parameters"),
-            (None, "Data"),
-        ]:
-            if data_variables is None:
-                save_dir2 = save_dir / "data"
-                save_dir2.mkdir(parents=False, exist_ok=True)
-            else:
-                save_dir2 = save_dir / "params"
-                save_dir2.mkdir(parents=False, exist_ok=True)
+        for metric in SAMetric:
+            metric_sis = {
+                land_i: sis[metric]
+                for land_i, sis in valid_sis.items()
+                if metric in sis
+            }
 
-            sobol_sis = sis_calc(
-                params=params,
-                land_points=list(range(land_pts)),
-                data_variables=data_variables,
-                # NOTE Derive parameter uncertainty ranges from the existing set of runs.
-                df_sel=df_sel,
-                fuel_build_up_method=fuel_build_up_method,
-                dryness_method=dryness_method,
-            )
-            analyse_sobol_sis(
-                sobol_sis=sobol_sis,
-                save_dir=save_dir2,
+            logger.info(f"Metric {metric.name}: {len(metric_sis)}.")
+
+            sis_save_dir = save_dir / exp_key / analysis_type.lower() / metric.name
+            sis_save_dir.mkdir(parents=True, exist_ok=True)
+            analyse_sis(
+                sis=metric_sis,
+                save_dir=sis_save_dir,
                 exp_name=exp_name,
                 exp_key=exp_key,
+                metric_name=metric.name,
                 analysis_type=analysis_type,
             )

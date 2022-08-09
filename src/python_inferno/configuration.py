@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Model configuration."""
 from enum import Enum
+from itertools import product
 
 import numpy as np
 
@@ -89,9 +90,41 @@ for pft_group_i, indices in enumerate(pft_groups):
         pft_group_map[i] = pft_group_i
 
 dryness_descr = {1: "Dry Day", 2: "VPD & Precip"}
+dryness_schemes = {1: "A", 2: "B"}
 fuel_descr = {1: "Antec NPP", 2: "Leaf Litter Pool"}
+fuel_schemes = {1: "1", 2: "2"}
 
 dryness_keys = {1: "Dry_Day", 2: "VPD_Precip"}
 fuel_keys = {1: "Antec_NPP", 2: "Leaf_Litter_Pool"}
+
+
+def get_exp_name(*, dryness_method, fuel_build_up_method):
+    return (
+        f"Dry:{dryness_descr[dryness_method]}, Fuel:{fuel_descr[fuel_build_up_method]}"
+    )
+
+
+def get_exp_key(*, dryness_method, fuel_build_up_method):
+    return f"dry_{dryness_keys[dryness_method]}__fuel_{fuel_keys[fuel_build_up_method]}"
+
+
+scheme_name_map = {}
+for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
+    scheme_name = dryness_schemes[dryness_method] + fuel_schemes[fuel_build_up_method]
+
+    scheme_name_map[
+        get_exp_key(
+            dryness_method=dryness_method, fuel_build_up_method=fuel_build_up_method
+        )
+    ] = scheme_name
+
+    scheme_name_map[
+        get_exp_name(
+            dryness_method=dryness_method, fuel_build_up_method=fuel_build_up_method
+        )
+    ] = scheme_name
+
+    scheme_name_map[(dryness_method, fuel_build_up_method)] = scheme_name
+
 
 Dims = Enum("Dims", ["TIME", "PFT", "LAND", "SAMPLE"])

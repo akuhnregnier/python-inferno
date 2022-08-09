@@ -5,6 +5,7 @@ from string import ascii_lowercase
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .configuration import scheme_name_map
 from .data import get_gfed_regions, get_pnv_mega_plot_data
 from .metrics import calculate_resampled_errors, mpd, nme
 
@@ -24,41 +25,78 @@ def error_hist(
     if title_label is not None:
         ax.text(-0.01, 1.05, title_label, transform=ax.transAxes)
 
+    # NOTE Old plot.
+    # if errors is not None:
+    #     ax.hist(errors, bins="auto", density=True)
+
+    # xmins = [np.min(errors)] if errors is not None else []
+    # xmaxs = [np.max(errors)] if errors is not None else []
+
+    # ax2 = ax.twinx()
+
+    # # Indicate other errors.
+    # prev_ylim = ax.get_ylim()
+    # for (i, (key, (err, std))) in enumerate(error_dict.items()):
+    #     ax.vlines(err, *prev_ylim, color=f"C{i+1}", label=key)
+
+    #     xs = np.linspace(err - std, err + std, 100)
+    #     ax2.plot(
+    #         xs,
+    #         (1 / np.sqrt(2 * np.pi * std**2))
+    #         * np.exp(-((xs - err) ** 2) / (2 * std**2)),
+    #         c=f"C{i+1}",
+    #         linestyle="--",
+    #         alpha=0.8,
+    #     )
+
+    #     xmins.append(err - std)
+    #     xmaxs.append(err + std)
+
+    # ax.set_ylim(*prev_ylim)
+    # ax.set_xlim(np.min(xmins), np.max(xmaxs))
+
+    # ax.legend(loc="best")
+
+    # NOTE New box plot.
+
+    # XXX TODO Use median and quantiles, not mean / std?
+
     if errors is not None:
-        ax.hist(errors, bins="auto", density=True)
+        s = {}
+        # NOTE Median and Q1, Q3.
+        # for key, result in zip(
+        #     ["q1", "med", "q3"], np.quantile(errors, [0.25, 0.5, 0.75])
+        # ):
+        #     s[key] = result
+        # NOTE Mean and mean +- std.
+        s["med"] = np.mean(errors)
+        err_std = np.std(errors)
+        s["q1"] = s["med"] - err_std
+        s["q3"] = s["med"] + err_std
 
-    xmins = [np.min(errors)] if errors is not None else []
-    xmaxs = [np.max(errors)] if errors is not None else []
-
-    ax2 = ax.twinx()
-
-    # Indicate other errors.
-    prev_ylim = ax.get_ylim()
-    for (i, (key, (err, std))) in enumerate(error_dict.items()):
-        ax.vlines(err, *prev_ylim, color=f"C{i+1}", label=key)
-
-        xs = np.linspace(err - std, err + std, 100)
-        ax2.plot(
-            xs,
-            (1 / np.sqrt(2 * np.pi * std**2))
-            * np.exp(-((xs - err) ** 2) / (2 * std**2)),
-            c=f"C{i+1}",
-            linestyle="--",
-            alpha=0.8,
+        s["label"] = "resamp"
+        stats = [s]
+    else:
+        stats = []
+    for (key, (err, std)) in error_dict.items():
+        stats.append(
+            {
+                "q1": err - std,
+                "q3": err + std,
+                "med": err,
+                "label": scheme_name_map.get(key, key),
+            }
         )
 
-        xmins.append(err - std)
-        xmaxs.append(err + std)
+    for s in stats:
+        s["whislo"] = None
+        s["whishi"] = None
 
-    ax.set_ylim(*prev_ylim)
-    ax.set_xlim(np.min(xmins), np.max(xmaxs))
+    ax.bxp(stats, showfliers=False)
 
-    ax.legend(loc="best")
     if save_path is not None:
         fig.savefig(save_path)
         plt.close(fig)
-
-    return min(xmins), max(xmaxs)
 
 
 def null_model_analysis(
@@ -116,12 +154,12 @@ def null_model_analysis(
     mpd_error_dict = {}
 
     # Error given just the mean state.
-    nme_error_dict["mean_state"] = nme(
+    nme_error_dict["mean"] = nme(
         obs=valid_reference_data,
         pred=np.zeros_like(valid_reference_data) + np.mean(valid_reference_data),
         return_std=True,
     )
-    mpd_error_dict["mean_state"] = mpd(
+    mpd_error_dict["mean"] = mpd(
         obs=reference_data,
         pred=np.zeros_like(reference_data) + np.mean(valid_reference_data),
         return_std=True,
@@ -161,20 +199,12 @@ def null_model_analysis(
         region_nrows_ncols = dict(nrows=math.ceil(N_plots / 2), ncols=2)
         regions_cube.data.mask |= np.any(total_mask, axis=0)
 
-        sharex = False
-
         nme_fig, nme_axes = plt.subplots(
-            sharex=sharex, sharey=True, figsize=(9, 9), **region_nrows_ncols
+            sharey=True, figsize=(9, 9), **region_nrows_ncols
         )
         mpd_fig, mpd_axes = plt.subplots(
-            sharex=sharex, sharey=True, figsize=(9, 9), **region_nrows_ncols
+            sharey=True, figsize=(9, 9), **region_nrows_ncols
         )
-
-        if sharex:
-            nme_xmin = np.inf
-            nme_xmax = -np.inf
-            mpd_xmin = np.inf
-            mpd_xmax = -np.inf
 
         for (plot_i, (region_code, region_name)) in enumerate(
             {
@@ -222,7 +252,7 @@ def null_model_analysis(
 
             title_label = f"({ascii_lowercase[plot_i]})"
 
-            nme_reg_xmin, nme_reg_xmax = error_hist(
+            error_hist(
                 errors=None,
                 # Show the region name and number of selected locations.
                 title=f"{region_name} (n={np.sum(region_sel) / 12})",
@@ -233,7 +263,7 @@ def null_model_analysis(
                 ax=nme_axes.ravel()[plot_i],
             )
 
-            mpd_reg_xmin, mpd_reg_xmax = error_hist(
+            error_hist(
                 errors=None,
                 # Show the region name and number of selected locations.
                 title=f"{region_name} (n={np.sum(region_sel) / 12})",
@@ -243,22 +273,6 @@ def null_model_analysis(
                 fig=mpd_fig,
                 ax=mpd_axes.ravel()[plot_i],
             )
-
-            if sharex:
-                if nme_reg_xmin < nme_xmin:
-                    nme_xmin = nme_reg_xmin
-                if nme_reg_xmax > nme_xmax:
-                    nme_xmax = nme_reg_xmax
-                if mpd_reg_xmin < mpd_xmin:
-                    mpd_xmin = mpd_reg_xmin
-                if mpd_reg_xmax > mpd_xmax:
-                    mpd_xmax = mpd_reg_xmax
-
-        if sharex:
-            for ax in nme_axes.ravel():
-                ax.set_xlim(nme_xmin, nme_xmax)
-            for ax in mpd_axes.ravel():
-                ax.set_xlim(mpd_xmin, mpd_xmax)
 
         nme_fig.suptitle("Regional NME Errors")
         mpd_fig.suptitle("Regional MPD Errors")

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from functools import partial
 
-from SALib.analyze import hdmr
+from SALib.analyze import delta
 
 from .cache import cache, mark_dependency
 from .sensitivity_analysis import (
@@ -13,15 +13,15 @@ from .sensitivity_analysis import (
 
 analyse_sis = partial(
     analyse_sis,
-    method_name="HDMR",
-    method_keys=["Sa", "Sb", "S", "ST"],
-    sort_key="S",
+    method_name="Delta",
+    method_keys=["delta", "delta_conf", "S1", "S1_conf"],
+    sort_key="delta",
 )
 
 
-class GPU_HDMR_SA(GPUSampleMetricSA):
+class GPUDeltaSA(GPUSampleMetricSA):
 
-    salib_analyze_func = hdmr.hdmr_analyze
+    salib_analyze_func = delta.delta_analyze
 
     @mark_dependency
     def gen_problem(self, *, all_names):
@@ -43,22 +43,19 @@ class GPU_HDMR_SA(GPUSampleMetricSA):
             problem=problem,
             X=X,
             Y=Y,
-            verbose=verbose,
+            num_resamples=100,
             print_to_console=False,
             seed=0,
-            maxorder=1,
-            maxiter=10,
-            K=3,
         )
 
 
 # NOTE Due to complications with cpp dependencies, cache should be reset manually when
 # needed.
 @cache(
-    dependencies=get_gpu_sample_metric_sa_class_dependencies(GPU_HDMR_SA),
+    dependencies=get_gpu_sample_metric_sa_class_dependencies(GPUDeltaSA),
     ignore=["n_batches"],
 )
-def hdmr_sis_calc(
+def delta_sis_calc(
     *,
     n_batches=1,
     params,
@@ -78,5 +75,5 @@ def hdmr_sis_calc(
         chain_data=chain_data,
         chain_names=chain_names,
         land_points=land_points,
-        sa_class=GPU_HDMR_SA,
+        sa_class=GPUDeltaSA,
     )

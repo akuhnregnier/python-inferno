@@ -39,18 +39,18 @@ from tqdm import tqdm
 
 from python_inferno.ba_model import ModelParams, calculate_scores
 from python_inferno.cache import cache
-from python_inferno.configuration import N_pft_groups, land_pts, pft_group_names
+from python_inferno.configuration import (
+    N_pft_groups,
+    get_exp_key,
+    get_exp_name,
+    land_pts,
+    pft_group_names,
+)
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics_plotting import null_model_analysis
 from python_inferno.plotting import plotting
-from python_inferno.utils import (
-    ConsMonthlyAvg,
-    get_exp_key,
-    get_exp_name,
-    masked_frac_weighted_mean,
-    memoize,
-)
+from python_inferno.utils import ConsMonthlyAvg, masked_frac_weighted_mean, memoize
 
 NoVal = Enum("NoVal", ["NoVal"])
 

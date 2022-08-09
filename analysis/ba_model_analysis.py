@@ -3,8 +3,10 @@
 import gc
 import os
 import sys
+from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
+from itertools import islice
 from operator import itemgetter
 from pathlib import Path
 
@@ -24,6 +26,7 @@ from python_inferno.model_params import get_model_params, plot_param_histograms
 from python_inferno.plotting import plotting
 from python_inferno.utils import (
     ConsMonthlyAvg,
+    DebugExecutor,
     PartialDateTime,
     get_apply_mask,
     memoize,
@@ -104,6 +107,16 @@ def get_processed_climatological_jules_ba():
 
 
 if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument("-p", type=int, help="number of processes", default=1)
+    parser.add_argument(
+        "--no-hist-plots", action="store_true", help="do not plot parameter histograms"
+    )
+    parser.add_argument(
+        "-n", type=int, help="method index (-1 selects all; default)", default=-1
+    )
+    args = parser.parse_args()
+
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     save_dir = Path("~/tmp/ba-model-analysis/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
@@ -129,8 +142,13 @@ if __name__ == "__main__":
     plot_data = dict()
     plot_prog = tqdm(desc="Generating plot data", total=6)
 
-    executor = ProcessPoolExecutor(max_workers=10)
+    executor = ProcessPoolExecutor(max_workers=10) if args.p > 1 else DebugExecutor()
     futures = []
+
+    if args.n >= 0:
+        slice_args = (args.n, args.n + 1)
+    else:
+        slice_args = (0, None)
 
     for (
         dryness_method,
@@ -141,17 +159,18 @@ if __name__ == "__main__":
         params,
         exp_name,
         exp_key,
-    ) in method_iter():
+    ) in islice(method_iter(), *slice_args):
         logger.info(exp_name)
         logger.info(exp_key)
 
-        hist_save_dir = save_dir / "parameter_histograms" / exp_key
-        hist_save_dir.mkdir(exist_ok=True, parents=True)
+        if not args.no_hist_plots:
+            hist_save_dir = save_dir / "parameter_histograms" / exp_key
+            hist_save_dir.mkdir(exist_ok=True, parents=True)
 
-        logger.info("Plotting histograms.")
-        futures.append(
-            executor.submit(plot_param_histograms, df_sel, exp_name, hist_save_dir)
-        )
+            logger.info("Plotting histograms.")
+            futures.append(
+                executor.submit(plot_param_histograms, df_sel, exp_name, hist_save_dir)
+            )
 
         logger.info("Predicting BA")
         ba_model = BAModel(**params)
@@ -218,7 +237,7 @@ if __name__ == "__main__":
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
     )
 
-    plot_data["Old INFERNO BA"] = dict(
+    plot_data["Old INFERNO"] = dict(
         raw_data=np.ma.getdata(avg_jules_ba)[~np.ma.getmaskarray(avg_jules_ba)],
         model_ba_2d_data=get_apply_mask(reference_obs.mask)(
             cube_1d_to_2d(

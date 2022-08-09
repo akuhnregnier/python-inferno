@@ -11,9 +11,9 @@ import numpy as np
 from loguru import logger
 
 from python_inferno.configuration import land_pts
-from python_inferno.hdmr_sa import analyse_sis
-from python_inferno.hdmr_sa import hdmr_sis_calc as sis_calc
 from python_inferno.model_params import get_model_params
+from python_inferno.rbd_fast_sa import analyse_sis
+from python_inferno.rbd_fast_sa import rbd_fast_sis_calc as sis_calc
 from python_inferno.sensitivity_analysis import SAMetric
 from python_inferno.spotpy_mcmc import spotpy_dream
 
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 
-    save_dir = Path("~/tmp/hdmr-sa").expanduser()
+    save_dir = Path("~/tmp/rbd-fast-sa").expanduser()
     save_dir.mkdir(parents=False, exist_ok=True)
 
     record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         params=params,
         dryness_method=dryness_method,
         fuel_build_up_method=fuel_build_up_method,
-        N=int(6e3),  # 6e3
+        N=int(5e3),  # 5e3
         chain_data=chains,
         chain_names=names,
     )
