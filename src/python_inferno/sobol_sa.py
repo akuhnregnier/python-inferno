@@ -27,7 +27,7 @@ from .sensitivity_analysis import (
     analyse_sis,
     batched_sis_calc,
 )
-from .spotpy_mcmc import spotpy_dream
+from .spotpy_mcmc import get_cached_mcmc_chains, spotpy_dream
 from .utils import map_keys
 
 
@@ -73,29 +73,8 @@ class SAParams:
             (dryness_method, fuel_build_up_method)
         ]
 
-        mcmc_kwargs = dict(
-            iter_opt_index=method_index,
-            # 1e5 - 15 mins with beta=0.05
-            # 2e5 - 50 mins with beta=0.05 - due to decreasing acceptance rate over time!
-            N=int(2e5),
-            beta=0.05,
-        )
-        assert spotpy_dream.check_in_store(**mcmc_kwargs), str(mcmc_kwargs)
-        dream_results = spotpy_dream(**mcmc_kwargs)
-        results_df = dream_results["results_df"]
-        space = dream_results["space"]
-
-        # Analysis of results.
-        names = space.continuous_param_names
-
-        # Generate array of chain values, transform back to original ranges.
-        chains = np.hstack(
-            [
-                space.inv_map_float_to_0_1(
-                    {name: np.asarray(results_df[f"par{name}"])}
-                )[name].reshape(-1, 1)
-                for name in names
-            ]
+        names, chains = itemgetter("names", "chains")(
+            get_cached_mcmc_chains(method_index=method_index)
         )
 
         # Extract last N/2 values from the chains.
@@ -529,6 +508,7 @@ analyse_sis = partial(
         _sis_calc,
         batched_sis_calc,
         calculate_phase,
+        get_cached_mcmc_chains,
         get_data_yearly_stdev,
         get_space_template,
         iter_opt_methods,

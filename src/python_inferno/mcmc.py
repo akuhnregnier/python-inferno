@@ -16,6 +16,7 @@ from .model_params import get_model_params
 from .space import generate_space_spec
 
 
+@mark_dependency
 def get_sse_func(
     *,
     space,

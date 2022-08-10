@@ -8,13 +8,14 @@ import spotpy
 from tqdm import tqdm
 
 from .cache import cache, mark_dependency
-from .mcmc import iter_opt_methods
+from .hyperopt import get_space_template
+from .mcmc import get_sse_func, iter_opt_methods
 
 assert spotpy.__version__ == "1.5.16.1", spotpy.__version__
 
 
 @mark_dependency
-@cache(dependencies=[iter_opt_methods])
+@cache(dependencies=[iter_opt_methods, get_sse_func, get_space_template])
 def spotpy_dream(iter_opt_index=0, N=int(5e5), c=0.1, step=0.5, beta=0.05):
     opt_data = next(
         iter_opt_methods(
@@ -115,3 +116,33 @@ def plot_spotpy_results_df(*, results_df, save_dir):
         f.result()
 
     executor.shutdown()
+
+
+@mark_dependency
+def get_cached_mcmc_chains(*, method_index):
+    mcmc_kwargs = dict(
+        iter_opt_index=method_index,
+        # 1e5 - 15 mins with beta=0.05
+        # 2e5 - 50 mins with beta=0.05 - due to decreasing acceptance rate over time!
+        N=int(2e5),
+        beta=0.05,
+    )
+    assert spotpy_dream.check_in_store(**mcmc_kwargs), str(mcmc_kwargs)
+    dream_results = spotpy_dream(**mcmc_kwargs)
+    results_df = dream_results["results_df"]
+    space = dream_results["space"]
+
+    # Analysis of results.
+    names = space.continuous_param_names
+
+    # Generate array of chain values, transform back to original ranges.
+    chains = np.hstack(
+        [
+            space.inv_map_float_to_0_1({name: np.asarray(results_df[f"par{name}"])})[
+                name
+            ].reshape(-1, 1)
+            for name in names
+        ]
+    )
+
+    return dict(names=names, chains=chains)

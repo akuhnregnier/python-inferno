@@ -4,10 +4,10 @@ import os
 import sys
 from argparse import ArgumentParser
 from itertools import islice
+from operator import itemgetter
 from pathlib import Path
 
 import matplotlib as mpl
-import numpy as np
 from loguru import logger
 
 from python_inferno.configuration import land_pts
@@ -15,7 +15,7 @@ from python_inferno.delta_sa import analyse_sis
 from python_inferno.delta_sa import delta_sis_calc as sis_calc
 from python_inferno.model_params import get_model_params
 from python_inferno.sensitivity_analysis import SAMetric
-from python_inferno.spotpy_mcmc import spotpy_dream
+from python_inferno.spotpy_mcmc import get_cached_mcmc_chains
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -49,29 +49,8 @@ if __name__ == "__main__":
     ) = next(islice(enumerate(method_iter()), args.n, args.n + 1))
     assert int(params["include_temperature"]) == 1
 
-    mcmc_kwargs = dict(
-        iter_opt_index=method_index,
-        # 1e5 - 15 mins with beta=0.05
-        # 2e5 - 50 mins with beta=0.05 - due to decreasing acceptance rate over time!
-        N=int(2e5),
-        beta=0.05,
-    )
-    assert spotpy_dream.check_in_store(**mcmc_kwargs), str(mcmc_kwargs)
-    dream_results = spotpy_dream(**mcmc_kwargs)
-    results_df = dream_results["results_df"]
-    space = dream_results["space"]
-
-    # Analysis of results.
-    names = space.continuous_param_names
-
-    # Generate array of chain values, transform back to original ranges.
-    chains = np.hstack(
-        [
-            space.inv_map_float_to_0_1({name: np.asarray(results_df[f"par{name}"])})[
-                name
-            ].reshape(-1, 1)
-            for name in names
-        ]
+    names, chains = itemgetter("names", "chains")(
+        get_cached_mcmc_chains(method_index=method_index)
     )
 
     all_sis = sis_calc(

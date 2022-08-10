@@ -27,9 +27,11 @@ from .configuration import Dims, N_pft_groups, land_pts, npft
 from .data import get_yearly_data, load_jules_lats_lons
 from .hyperopt import HyperoptSpace, get_space_template
 from .iter_opt import ALWAYS_OPTIMISED, IGNORED
+from .mcmc import iter_opt_methods
 from .metrics import calculate_phase
 from .py_gpu_inferno import GPUSA
 from .space import generate_space_spec
+from .spotpy_mcmc import get_cached_mcmc_chains, spotpy_dream
 from .stats import gen_correlated_samples, gen_correlated_samples_from_chains
 from .utils import DebugExecutor, map_keys
 
@@ -1117,6 +1119,7 @@ def get_gpu_sample_metric_sa_class_dependencies(sa_class):
             "set_sa_data",
         ]
     )
+
     return class_deps + [
         BAModel.__init__,
         BAModel.process_kwargs,
@@ -1126,6 +1129,9 @@ def get_gpu_sample_metric_sa_class_dependencies(sa_class):
         calculate_phase,
         gen_correlated_samples,
         gen_correlated_samples_from_chains,
+        get_cached_mcmc_chains,
         get_space_template,
         get_yearly_data,
+        iter_opt_methods,
+        spotpy_dream,
     ]
