@@ -18,7 +18,7 @@ from python_inferno.sobol_sa import sobol_sis_calc as sis_calc
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("-n", type=int, help="method index", default=0)
+    parser.add_argument("-n", type=int, help="method index", default=3)
     parser.add_argument(
         "-b", "--batches", type=int, help="number of batches", default=1
     )

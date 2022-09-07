@@ -11,18 +11,19 @@ from tqdm import tqdm
 from .ba_model import GPUConsAvgScoreBAModel
 from .cache import mark_dependency
 from .hyperopt import HyperoptSpace, get_space_template
+from .iter_opt import iterative_ba_model_opt
 from .metrics import Metrics
 from .model_params import get_model_params
 from .space import generate_space_spec
 
 
 @mark_dependency
-def get_sse_func(
+def get_loss_func(
     *,
     space,
     score_model,
 ):
-    def sse_func_with_discrete(theta, data=None):
+    def loss_func_with_discrete(theta, data=None):
         scores = score_model.get_scores(
             requested=(Metrics.ARCSINH_SSE,),
             **space.inv_map_float_to_0_1(
@@ -30,14 +31,23 @@ def get_sse_func(
             ),
         )
 
-        sse = float(scores["arcsinh_sse"])
+        asinh_nme = float(scores["arcsinh_nme"])
 
-        if np.isnan(sse):
+        if np.isnan(asinh_nme):
             return int(1e10)
 
-        return sse
+        mpd = float(scores["mpd"])
 
-    return sse_func_with_discrete
+        loss = asinh_nme + mpd
+
+        n_ignored = int(scores["mpd_ignored"])
+
+        if n_ignored > 2300:
+            loss += ((n_ignored - 2300) / 100) ** 2
+
+        return loss
+
+    return loss_func_with_discrete
 
 
 @mark_dependency
@@ -63,6 +73,10 @@ def iter_opt_methods(indices=None, release_gpu_model=False):
     ) in enumerate(islice(method_iter(), *indices)):
         assert int(params["include_temperature"]) == 1
 
+        results, aic_results, cv_results = iterative_ba_model_opt(
+            params=params, maxiter=1000, niter_success=5
+        )
+
         score_model = GPUConsAvgScoreBAModel(_uncached_data=False, **params)
 
         space = HyperoptSpace(
@@ -79,10 +93,16 @@ def iter_opt_methods(indices=None, release_gpu_model=False):
             {key: params[key] for key in space.continuous_param_names}
         )
 
-        sse_func = get_sse_func(space=space, score_model=score_model)
+        loss_func = get_loss_func(space=space, score_model=score_model)
 
         yield dict(
-            score_model=score_model, space=space, x0_0_1=x0_0_1, sse_func=sse_func
+            score_model=score_model,
+            space=space,
+            x0_0_1=x0_0_1,
+            loss_func=loss_func,
+            # The loss of the most complicated model, optimised using the iterative
+            # model approach.
+            last_model_loss=results[50][0],
         )
 
         if release_gpu_model:

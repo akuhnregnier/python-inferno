@@ -13,12 +13,12 @@ from python_inferno.spotpy_mcmc import plot_spotpy_results_df, spotpy_dream
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("-n", type=int, help="method index", default=0)
+    parser.add_argument("-n", type=int, help="method index", default=3)
     parser.add_argument(
         "--no-chains-plot", action="store_true", help="do not plot chains"
     )
     parser.add_argument(
-        "--no-pair-plot", action="store_true", help="do not plot pairwise correlations"
+        "--pair-plot", action="store_true", help="plot pairwise correlations"
     )
     args = parser.parse_args()
     method_index = args.n
@@ -30,14 +30,25 @@ if __name__ == "__main__":
     root_dir = Path("~/tmp/sinferno-mcmc").expanduser()
     root_dir.mkdir(parents=False, exist_ok=True)
 
-    save_dir = root_dir / str(method_index)
+    param_prod = list()
+
+    beta = 1.0
+    nChains = 50
+    c = 0.1
+
+    save_dir = root_dir / f"{method_index}"
     save_dir.mkdir(parents=False, exist_ok=True)
 
     mcmc_kwargs = dict(
         iter_opt_index=method_index,
         N=int(2e5),
-        beta=0.05,
+        beta=beta,
+        nChains=nChains,
+        c=c,
+        maxTime=5 * 60 * 60,
+        acc_eps_delta=0.002,
     )
+
     dream_results = spotpy_dream(**mcmc_kwargs)
     results_df = dream_results["results_df"]
     space = dream_results["space"]
@@ -55,5 +66,5 @@ if __name__ == "__main__":
         [np.asarray(results_df[f"par{name}"]).reshape(-1, 1) for name in names]
     )
 
-    if not args.no_pair_plot:
+    if args.pair_plot:
         plot_pairwise_grid(chains=chains, names=names, save_dir=save_dir)

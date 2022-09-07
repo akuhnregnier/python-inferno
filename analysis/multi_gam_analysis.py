@@ -344,6 +344,7 @@ def partial_dependence_plots(
     partial_pred_errs,
     save_dir,
     exp_key,
+    exp_name,
 ):
     N_features = len(feature_names)
     nrows = 4
@@ -423,7 +424,7 @@ def partial_dependence_plots(
         for ax in col_axes:
             ax.legend()
 
-    fig.suptitle(exp_name)
+    # fig.suptitle(exp_name)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
 
     plt.savefig(save_dir / f"{exp_key}_gam_curves.png")
@@ -652,6 +653,7 @@ if __name__ == "__main__":
                 partial_pred_errs=partial_pred_errs,
                 save_dir=save_dir,
                 exp_key=exp_key,
+                exp_name=exp_name,
             )
         )
 

@@ -228,7 +228,7 @@ if __name__ == "__main__":
     )
     plot_prog.update()
 
-    # Old INFERNO BA.
+    # Standard INFERNO BA.
     data_dict, jules_time_coord = get_processed_climatological_jules_ba()
     jules_ba_gb = data_dict.pop("jules_ba_gb")
     scores, avg_jules_ba = calculate_scores(
@@ -237,7 +237,7 @@ if __name__ == "__main__":
         mon_avg_gfed_ba_1d=mon_avg_gfed_ba_1d,
     )
 
-    plot_data["Old INFERNO"] = dict(
+    plot_data["standard INFERNO"] = dict(
         raw_data=np.ma.getdata(avg_jules_ba)[~np.ma.getmaskarray(avg_jules_ba)],
         model_ba_2d_data=get_apply_mask(reference_obs.mask)(
             cube_1d_to_2d(
@@ -247,7 +247,7 @@ if __name__ == "__main__":
         hist_bins=hist_bins,
         scores=scores,
         # TODO Which params to use (combination of all?) - call again with actual
-        # old INFERNO params to get corresponding data - is this supported?
+        # standard INFERNO params to get corresponding data - is this supported?
         data_params=params,
     )
     plot_prog.update()
