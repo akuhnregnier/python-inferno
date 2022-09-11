@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import product
 from operator import itemgetter
@@ -397,11 +396,7 @@ def main():
     for plot_dir in [ale_dir, shap_map_dir, ice_map_dir]:
         plot_dir.mkdir(exist_ok=True, parents=False)
 
-    # XXX - 'opt_record_bak' vs. 'opt_record'
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=True, verbose=True
-    )
+    df, method_iter = get_model_params(progress=True, verbose=True)
 
     executor = ProcessPoolExecutor(max_workers=10)
     futures = []

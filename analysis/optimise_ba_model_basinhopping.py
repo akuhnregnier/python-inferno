@@ -62,7 +62,9 @@ def main(
         # Only call the function once to pre-calculate cached results.
         return to_optimise_with_discrete(space.continuous_x0_mid)
 
-    recorder = Recorder(record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record")
+    recorder = Recorder(
+        record_dir=Path(os.environ["EPHEMERAL"]) / "newrun_basinhopping_opt_record"
+    )
 
     def basinhopping_callback(x, f, accept):
         values = space.inv_map_float_to_0_1(

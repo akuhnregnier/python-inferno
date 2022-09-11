@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import sys
 from argparse import ArgumentParser
 from itertools import islice
@@ -32,10 +31,7 @@ if __name__ == "__main__":
     save_dir = Path("~/tmp/rbd-fast-sa").expanduser()
     save_dir.mkdir(parents=False, exist_ok=True)
 
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=True, verbose=False
-    )
+    df, method_iter = get_model_params(progress=True, verbose=False)
 
     (
         method_index,

@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-import os
 from itertools import islice
-from pathlib import Path
 
 import pytest
 from numpy.testing import assert_allclose
@@ -41,10 +39,7 @@ from python_inferno.sobol_sa import BAModelSobolSA, GPUBAModelSobolSA
 )
 @pytest.mark.parametrize("exponent", [6, pytest.param(8, marks=pytest.mark.slow)])
 def test_sa_versions(param_index, test_type, land_index, exponent):
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=True, verbose=False
-    )
+    df, method_iter = get_model_params(progress=True, verbose=False)
 
     (
         dryness_method,

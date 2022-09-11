@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import sys
 from pathlib import Path
 
@@ -21,11 +20,7 @@ if __name__ == "__main__":
     save_dir = Path("~/tmp/iter-opt-models").expanduser()
     save_dir.mkdir(parents=False, exist_ok=True)
 
-    df, method_iter = get_model_params(
-        record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record",
-        progress=False,
-        verbose=False,
-    )
+    df, method_iter = get_model_params(progress=False, verbose=False)
 
     fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(8, 8))
 

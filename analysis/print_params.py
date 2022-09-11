@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import sys
 from itertools import islice
-from pathlib import Path
 from pprint import pprint
 
 from loguru import logger
@@ -14,10 +12,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=True, verbose=False
-    )
+    df, method_iter = get_model_params(progress=True, verbose=False)
 
     for (
         dryness_method,

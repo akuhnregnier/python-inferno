@@ -3,7 +3,6 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - pylatex
   - affine=2.3.1=pyhd8ed1ab_0
   - alembic=1.7.7=pyhd8ed1ab_0
   - antlr-python-runtime=4.7.2=py310hbe9552e_1003
@@ -11,13 +10,13 @@ dependencies:
   - asttokens=2.0.5=pyhd8ed1ab_0
   - autopage=0.5.0=pyhd8ed1ab_0
   - backcall=0.2.0=pyh9f0ad1d_0
-  - backports=1.0=py_2
   - backports.functools_lru_cache=1.6.4=pyhd8ed1ab_0
+  - backports=1.0=py_2
   - black=22.1.0=pyhd8ed1ab_0
   - blosc=1.21.0=h9f76cd9_0
   - boost-cpp=1.74.0=h3afdda6_7
-  - brotli=1.0.9=h1c322ee_7
   - brotli-bin=1.0.9=h1c322ee_7
+  - brotli=1.0.9=h1c322ee_7
   - brotlipy=0.7.0=py310hf8d0d8f_1004
   - bzip2=1.0.8=h3422bc3_4
   - c-ares=1.18.1=h3422bc3_0
@@ -34,8 +33,8 @@ dependencies:
   - cfitsio=4.1.0=hd4f5c17_0
   - cftime=1.6.0=py310hdaceac9_1
   - charset-normalizer=2.0.12=pyhd8ed1ab_0
-  - click=8.1.2=py310hbe9552e_0
   - click-plugins=1.1.1=py_0
+  - click=8.1.2=py310hbe9552e_0
   - cliff=3.10.1=pyhd8ed1ab_0
   - cligj=0.7.2=pyhd8ed1ab_1
   - cloudpickle=2.0.0=pyhd8ed1ab_0
@@ -115,8 +114,8 @@ dependencies:
   - libev=4.33=h642e427_1
   - libffi=3.4.2=h3422bc3_5
   - libgdal=3.4.2=h08ccaa9_4
-  - libgfortran=5.0.0.dev0=11_0_1_hf114ba7_23
   - libgfortran5=11.0.1.dev0=hf114ba7_23
+  - libgfortran=5.0.0.dev0=11_0_1_hf114ba7_23
   - libglib=2.70.2=h67e64d8_4
   - libiconv=1.16=h642e427_0
   - libkml=1.3.0=h893ab4d_1014
@@ -131,8 +130,8 @@ dependencies:
   - libspatialite=5.0.1=he30b116_15
   - libssh2=1.10.0=hb80f160_2
   - libtiff=4.3.0=h77dc3b6_3
-  - libwebp=1.2.2=h0d20362_0
   - libwebp-base=1.2.2=h3422bc3_1
+  - libwebp=1.2.2=h0d20362_0
   - libxcb=1.13=h9b22ae9_1004
   - libxml2=2.9.12=hedbfbf4_1
   - libzip=1.8.0=h3887732_1
@@ -144,9 +143,9 @@ dependencies:
   - lz4-c=1.9.3=hbdafb3b_1
   - mako=1.2.0=pyhd8ed1ab_1
   - markupsafe=2.1.1=py310hf8d0d8f_1
-  - matplotlib=3.5.1=py310hb6292c7_0
   - matplotlib-base=3.5.1=py310hacb9267_0
   - matplotlib-inline=0.1.3=pyhd8ed1ab_0
+  - matplotlib=3.5.1=py310hb6292c7_0
   - msgpack-python=1.0.3=py310hea002bf_1
   - munch=2.5.0=py_0
   - munkres=1.1.4=pyh9f0ad1d_0
@@ -177,8 +176,8 @@ dependencies:
   - pixman=0.40.0=h27ca646_0
   - platformdirs=2.5.1=pyhd8ed1ab_0
   - pluggy=1.0.0=py310hbe9552e_3
-  - poppler=22.01.0=hb0e405e_2
   - poppler-data=0.4.11=hd8ed1ab_0
+  - poppler=22.01.0=hb0e405e_2
   - postgresql=14.2=h8fdef8c_0
   - pre-commit=2.18.1=py310hbe9552e_1
   - prettytable=3.2.0=pyhd8ed1ab_0
@@ -188,11 +187,12 @@ dependencies:
   - pthread-stubs=0.4=h27ca646_1001
   - ptyprocess=0.7.0=pyhd3deb0d_0
   - pure_eval=0.2.2=pyhd8ed1ab_0
-  - py=1.11.0=pyh6c4a22f_0
   - py-cpuinfo=8.0.0=pyhd8ed1ab_0
+  - py=1.11.0=pyh6c4a22f_0
   - pycparser=2.21=pyhd8ed1ab_0
   - pygments=2.11.2=pyhd8ed1ab_0
   - pyhdf=0.10.3=py310h5065edd_2
+  - pylatex
   - pymongo=3.12.0=py310hc377ac9_0
   - pyopenssl=22.0.0=pyhd8ed1ab_0
   - pyparsing=3.0.8=pyhd8ed1ab_0
@@ -200,14 +200,14 @@ dependencies:
   - pyproj=3.3.0=py310h663b337_2
   - pyshp=2.2.0=pyhd8ed1ab_0
   - pysocks=1.7.1=py310hbe9552e_5
-  - pytest=7.1.1=py310hbe9552e_1
   - pytest-benchmark=3.4.1=pyhd8ed1ab_0
   - pytest-cov=3.0.0=pyhd8ed1ab_0
   - pytest-forked=1.4.0=pyhd8ed1ab_0
   - pytest-xdist=2.5.0=pyhd8ed1ab_0
-  - python=3.10.4=hfc7342c_0_cpython
+  - pytest=7.1.1=py310hbe9552e_1
   - python-dateutil=2.8.2=pyhd8ed1ab_0
   - python-xxhash=3.0.0=py310hf8d0d8f_1
+  - python=3.10.4=hfc7342c_0_cpython
   - python_abi=3.10=2_cp310
   - pytz=2022.1=pyhd8ed1ab_0
   - pyyaml=6.0=py310hf8d0d8f_4
@@ -216,8 +216,8 @@ dependencies:
   - requests=2.27.1=pyhd8ed1ab_0
   - scikit-learn=1.0.2=py310h5f111c3_0
   - scipy=1.8.0=py310h6ecf4ae_1
-  - seaborn=0.11.2=hd8ed1ab_0
   - seaborn-base=0.11.2=pyhd8ed1ab_0
+  - seaborn=0.11.2=hd8ed1ab_0
   - setuptools=62.1.0=py310hbe9552e_0
   - shapely=1.8.0=py310h2ff284a_6
   - six=1.16.0=pyh6c4a22f_0
@@ -229,6 +229,7 @@ dependencies:
   - stack_data=0.2.0=pyhd8ed1ab_0
   - statsmodels=0.13.2=py310h949c51b_0
   - stevedore=3.5.0=py310hbe9552e_2
+  - sympy
   - tblib=1.7.0=pyhd8ed1ab_0
   - threadpoolctl=3.1.0=pyh8a188c0_0
   - tiledb=2.7.2=h29b8279_0
@@ -265,9 +266,14 @@ dependencies:
     - git+https://github.com/akuhnregnier/clean_ipynb.git@0.3.3#egg=clean_ipynb
     - git+https://github.com/akuhnregnier/era5analysis.git@0.2.1#egg=era5analysis
     - git+https://github.com/akuhnregnier/hyperopt.git@0.2.7.1#egg=hyperopt
+    - -e /Users/alexander/Documents/PhD/jules_output_analysis
+    - -e /Users/alexander/Documents/PhD/wildfires
+    - -e /Users/alexander/Documents/PhD/newrun
+    - -e /Users/alexander/Documents/PhD/SALib
+    - -e /Users/alexander/Documents/PhD/spotpy
     - appdirs==1.4.4
-    - argon2-cffi==21.3.0
     - argon2-cffi-bindings==21.2.0
+    - argon2-cffi==21.3.0
     - attrs==20.3.0
     - autoflake==1.4
     - beautifulsoup4==4.11.1
@@ -281,10 +287,10 @@ dependencies:
     - ipywidgets==7.7.0
     - isort==5.6.4
     - jsonschema==4.4.0
-    - jupyter==1.0.0
     - jupyter-client==7.2.2
     - jupyter-console==6.4.3
     - jupyter-core==4.9.2
+    - jupyter==1.0.0
     - jupyterlab-pygments==0.2.1
     - jupyterlab-widgets==1.1.0
     - jupytext==1.7.1
@@ -299,6 +305,7 @@ dependencies:
     - prometheus-client==0.14.1
     - psutil==5.9.0
     - pyflakes==2.4.0
+    - pymcmcstat==1.9.1
     - pymodis==2.3.0
     - pyrsistent==0.18.1
     - pyzmq==22.3.0

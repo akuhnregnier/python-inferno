@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import sys
 from collections import defaultdict
 from itertools import islice
-from pathlib import Path
 from time import time
 
 import numpy as np
@@ -20,11 +18,7 @@ if __name__ == "__main__":
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
-    # XXX - 'opt_record_bak' vs. 'opt_record'
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record_bak"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=True, verbose=False
-    )
+    df, method_iter = get_model_params(progress=True, verbose=False)
 
     for (
         _,

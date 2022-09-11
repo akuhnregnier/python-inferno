@@ -18,7 +18,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    exp_base = "exp201"
+    exp_base = "newrun"
 
     dryness_methods = (1, 2)
     fuel_build_up_methods = (1, 2)

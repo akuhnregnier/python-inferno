@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Model configuration."""
+import os
 from enum import Enum
 from itertools import product
+from pathlib import Path
 
 import numpy as np
 
@@ -128,3 +130,5 @@ for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
 
 
 Dims = Enum("Dims", ["TIME", "PFT", "LAND", "SAMPLE"])
+
+default_opt_record_dir = Path(os.environ["EPHEMERAL"]) / "new_run_opt_record"

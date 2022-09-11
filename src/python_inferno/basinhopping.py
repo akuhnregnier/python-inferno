@@ -52,7 +52,7 @@ class BasinHoppingSpace(OptSpace):
 
 
 class Recorder:
-    def __init__(self, record_dir=None):
+    def __init__(self, *, record_dir):
         """Initialise."""
         self.xs = []
         self.fvals = []

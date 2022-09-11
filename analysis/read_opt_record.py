@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import math
-import os
 import pickle
 from collections import defaultdict
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 
+from python_inferno.configuration import default_opt_record_dir
+
 if __name__ == "__main__":
-    opt_record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
+    opt_record_dir = default_opt_record_dir
     xs = []
     fvals = []
     for fpath in opt_record_dir.glob("*.pkl"):
@@ -23,7 +23,7 @@ if __name__ == "__main__":
         keys.update(params.keys())
 
     N = len(keys)
-    nrows = math.floor(N ** 0.5)
+    nrows = math.floor(N**0.5)
     ncols = math.ceil(N / nrows)
 
     fig, axes = plt.subplots(nrows, ncols)

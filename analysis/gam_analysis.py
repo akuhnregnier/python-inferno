@@ -41,6 +41,7 @@ from python_inferno.ba_model import ModelParams, calculate_scores
 from python_inferno.cache import cache
 from python_inferno.configuration import (
     N_pft_groups,
+    default_opt_record_dir,
     get_exp_key,
     get_exp_name,
     land_pts,
@@ -65,7 +66,7 @@ def check_params(params, key, value=NoVal.NoVal):
     return False
 
 
-def read_global_param_data():
+def read_global_param_data(*, record_dir=default_opt_record_dir):
     global_params = []
     global_losses = []
 
@@ -272,7 +273,7 @@ def partial_dependence_plots(
     plt.close()
 
 
-if __name__ == "__main__":
+def main():
     mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     save_dir = Path("~/tmp/gam-model-analysis/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
@@ -290,9 +291,6 @@ if __name__ == "__main__":
     logger.add(sys.stderr, level="INFO")
 
     jules_lats, jules_lons = load_jules_lats_lons()
-
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
-    assert record_dir.is_dir()
 
     # To prevent memory accumulation during repeated calculations below.
     memoize.active = False
@@ -360,7 +358,7 @@ if __name__ == "__main__":
 
         df_sel = df[sel]
         min_index = df_sel["loss"].argmin()
-        min_loss = df_sel.iloc[min_index]["loss"]
+        df_sel.iloc[min_index]["loss"]
 
         params = {
             key: val
@@ -399,7 +397,7 @@ if __name__ == "__main__":
         # memoized copy.
         data_dict = data_dict.copy()
         # Extract variables not used further below.
-        obs_pftcrop_1d = data_dict.pop("obs_pftcrop_1d")
+        data_dict.pop("obs_pftcrop_1d")
 
         # Select single soil layer of soil moisture.
         data_dict["inferno_sm"] = data_dict.pop("sthu_soilt_single")
@@ -529,3 +527,7 @@ if __name__ == "__main__":
         pass
 
     executor.shutdown()
+
+
+if __name__ == "__main__":
+    main()

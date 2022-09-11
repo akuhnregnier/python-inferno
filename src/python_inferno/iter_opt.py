@@ -933,7 +933,7 @@ def iterative_ba_model_opt(
                 fuel_build_up_method=fuel_build_up_method,
                 include_temperature=include_temperature,
                 discrete_params=discrete_params,
-                opt_record_dir="test",
+                opt_record_dir="newrun_iter_opt",
                 defaults={**defaults, **constants},
                 minimizer_options=dict(maxiter=maxiter),
                 basinhopping_options=dict(niter_success=niter_success),

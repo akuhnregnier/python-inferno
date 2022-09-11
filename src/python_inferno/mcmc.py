@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 import math
-import os
 from itertools import islice, product
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -52,11 +50,7 @@ def get_loss_func(
 
 @mark_dependency
 def iter_opt_methods(indices=None, release_gpu_model=False):
-    df, method_iter = get_model_params(
-        record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record",
-        progress=False,
-        verbose=False,
-    )
+    df, method_iter = get_model_params(progress=False, verbose=False)
 
     if indices is None:
         indices = (0, None)

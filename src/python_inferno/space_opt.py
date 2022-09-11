@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-import os
-from pathlib import Path
 
 import numpy as np
 from loguru import logger
@@ -16,7 +14,7 @@ from .ba_model import (
 )
 from .basinhopping import BoundedSteps, Recorder
 from .cache import cache, mark_dependency
-from .configuration import land_pts
+from .configuration import default_opt_record_dir, land_pts
 from .data import get_processed_climatological_data
 from .metrics import mpd, nme
 
@@ -49,7 +47,7 @@ def space_opt(
     fuel_build_up_method,
     include_temperature,
     discrete_params,
-    opt_record_dir="opt_record",
+    opt_record_dir=default_opt_record_dir,
     defaults=None,
     basinhopping_options=None,
     minimizer_options=None,
@@ -78,7 +76,7 @@ def space_opt(
             **defaults_dict,
         )
 
-    recorder = Recorder(record_dir=Path(os.environ["EPHEMERAL"]) / opt_record_dir)
+    recorder = Recorder(record_dir=opt_record_dir)
 
     def basinhopping_callback(x, f, accept):
         # NOTE: Parameters recorded here are authoritative, since hyperopt will not

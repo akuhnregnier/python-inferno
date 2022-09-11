@@ -9,6 +9,7 @@ from hyperopt.pyll import rec_eval
 from loguru import logger
 
 from .cache import mark_dependency
+from .configuration import default_opt_record_dir
 from .space import OptSpace
 from .space_opt import space_opt
 
@@ -117,26 +118,26 @@ class HyperoptSpace(OptSpace):
 @mark_dependency
 def get_space_template(*, dryness_method, fuel_build_up_method, include_temperature):
     space_template = dict(
-        overall_scale=(1, [(1e-3, 1e3)], hp.uniform),
-        fapar_factor=(3, [(-50, -1)], hp.uniform),
-        fapar_centre=(3, [(-0.1, 1.1)], hp.uniform),
-        fapar_shape=(3, [(0.1, 20.0)], hp.uniform),
+        overall_scale=(1, [(1e-3, 3e3)], hp.uniform),
+        fapar_factor=(3, [(-100, -1)], hp.uniform),
+        fapar_centre=(3, [(-1.5, 1.5)], hp.uniform),
+        fapar_shape=(3, [(0.1, 30.0)], hp.uniform),
         # NOTE All weights should be in [0, 1], otherwise unintended -ve values
         # may occur!
         fapar_weight=(3, [(0.01, 1.0)], hp.uniform),
         dryness_weight=(3, [(0.01, 1.0)], hp.uniform),
         fuel_weight=(3, [(0.01, 1.0)], hp.uniform),
-        # Averaged samples between ~1 week and ~1 month (4 hrs per sample).
-        average_samples=(1, [(40, 160, 60)], mod_quniform),
+        # Averaged samples with 42, 114, or 186 4-hour timesteps (7, 19, or 31 days)
+        average_samples=(1, [(42, 186, 72)], mod_quniform),
         # `crop_f` suppresses BA in cropland areas.
-        crop_f=(1, [(0.0, 1.0)], hp.uniform),
+        crop_f=(1, [(0.0, 0.65)], hp.uniform),
     )
     if dryness_method == 1:
         space_template.update(
             dict(
-                dry_day_factor=(3, [(0.0, 0.2)], hp.uniform),
+                dry_day_factor=(3, [(0.0, 0.6)], hp.uniform),
                 dry_day_centre=(3, [(100, 200)], hp.uniform),
-                dry_day_shape=(3, [(0.1, 20.0)], hp.uniform),
+                dry_day_shape=(3, [(0.1, 30.0)], hp.uniform),
             )
         )
     elif dryness_method == 2:
@@ -144,9 +145,9 @@ def get_space_template(*, dryness_method, fuel_build_up_method, include_temperat
             dict(
                 rain_f=(3, [(0.1, 0.6, 0.25)], mod_quniform),
                 vpd_f=(3, [(50, 200, 75)], mod_quniform),
-                dry_bal_factor=(3, [(-100, -1)], hp.uniform),
+                dry_bal_factor=(3, [(-100, -0.1)], hp.uniform),
                 dry_bal_centre=(3, [(-3, 3)], hp.uniform),
-                dry_bal_shape=(3, [(0.1, 20.0)], hp.uniform),
+                dry_bal_shape=(3, [(0.01, 30.0)], hp.uniform),
             )
         )
     else:
@@ -155,10 +156,10 @@ def get_space_template(*, dryness_method, fuel_build_up_method, include_temperat
     if fuel_build_up_method == 1:
         space_template.update(
             dict(
-                fuel_build_up_n_samples=(3, [(100, 1300, 400)], mod_quniform),
+                fuel_build_up_n_samples=(3, [(96, 1302, 402)], mod_quniform),
                 fuel_build_up_factor=(3, [(0.5, 40)], hp.uniform),
-                fuel_build_up_centre=(3, [(-1.0, 1.0)], hp.uniform),
-                fuel_build_up_shape=(3, [(0.1, 20.0)], hp.uniform),
+                fuel_build_up_centre=(3, [(-2, 2)], hp.uniform),
+                fuel_build_up_shape=(3, [(0.05, 40.0)], hp.uniform),
             )
         )
     elif fuel_build_up_method == 2:
@@ -166,9 +167,9 @@ def get_space_template(*, dryness_method, fuel_build_up_method, include_temperat
             dict(
                 litter_tc=(3, [(1e-10, 1e-9, 4.5e-10)], mod_quniform),
                 leaf_f=(3, [(1e-4, 1e-3, 4.5e-4)], mod_quniform),
-                litter_pool_factor=(3, [(0.001, 0.1)], hp.uniform),
-                litter_pool_centre=(3, [(10, 5000)], hp.uniform),
-                litter_pool_shape=(3, [(0.1, 20.0)], hp.uniform),
+                litter_pool_factor=(3, [(5e-4, 0.1)], hp.uniform),
+                litter_pool_centre=(3, [(1, 1e4)], hp.uniform),
+                litter_pool_shape=(3, [(1e-3, 20.0)], hp.uniform),
             )
         )
     else:
@@ -177,9 +178,9 @@ def get_space_template(*, dryness_method, fuel_build_up_method, include_temperat
     if include_temperature == 1:
         space_template.update(
             dict(
-                temperature_factor=(3, [(0.19, 0.3)], hp.uniform),
+                temperature_factor=(3, [(0.05, 1.0)], hp.uniform),
                 temperature_centre=(3, [(280, 320)], hp.uniform),
-                temperature_shape=(3, [(0.1, 20.0)], hp.uniform),
+                temperature_shape=(3, [(0.05, 60.0)], hp.uniform),
                 temperature_weight=(3, [(0.01, 1.0)], hp.uniform),
             )
         )
@@ -222,7 +223,7 @@ def main_opt(
     dryness_method,
     fuel_build_up_method,
     include_temperature,
-    opt_record_dir="opt_record",
+    opt_record_dir=default_opt_record_dir,
 ):
     hyperopt_res, discrete_params = hyperopt_opt(expr=expr, memo=memo, ctrl=ctrl)
     if hyperopt_res is not None:

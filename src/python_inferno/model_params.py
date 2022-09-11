@@ -12,7 +12,7 @@ from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from tqdm import tqdm
 
 from .cache import mark_dependency
-from .configuration import get_exp_key, get_exp_name
+from .configuration import default_opt_record_dir, get_exp_key, get_exp_name
 
 NoVal = Enum("NoVal", ["NoVal"])
 
@@ -27,7 +27,9 @@ def check_params(params, key, value=NoVal.NoVal):
     return False
 
 
-def get_model_params(*, record_dir, verbose=False, progress=True):
+def get_model_params(
+    *, record_dir=default_opt_record_dir, verbose=False, progress=True
+):
     assert record_dir.is_dir()
 
     global_params = []

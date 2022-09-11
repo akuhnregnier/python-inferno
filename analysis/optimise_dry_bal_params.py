@@ -20,7 +20,7 @@ space_template = dict(
 
 space = BasinHoppingSpace(generate_space_spec(space_template))
 
-record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
+record_dir = Path(os.environ["EPHEMERAL"]) / "dry_bal_opt_record"
 
 if record_dir is not None:
     recorder = Recorder(record_dir=record_dir)

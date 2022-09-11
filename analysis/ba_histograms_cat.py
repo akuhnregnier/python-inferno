@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import sys
 from pathlib import Path
 
@@ -25,11 +24,7 @@ if __name__ == "__main__":
     save_dir = Path("~/tmp/ba-histograms-cat").expanduser()
     save_dir.mkdir(parents=False, exist_ok=True)
 
-    df, method_iter = get_model_params(
-        record_dir=Path(os.environ["EPHEMERAL"]) / "opt_record",
-        progress=False,
-        verbose=False,
-    )
+    df, method_iter = get_model_params(progress=False, verbose=False)
 
     method_data = next(method_iter())
     params = method_data[5]

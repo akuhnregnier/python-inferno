@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import gc
-import os
 import sys
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -132,10 +131,7 @@ if __name__ == "__main__":
     # To prevent memory accumulation during repeated calculations below.
     memoize.active = False
 
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=True, verbose=True
-    )
+    df, method_iter = get_model_params(progress=True, verbose=True)
 
     hist_bins = 50
 

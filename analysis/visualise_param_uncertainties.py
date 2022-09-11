@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import sys
 from pathlib import Path
 
@@ -19,10 +18,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="INFO")
 
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=False, verbose=False
-    )
+    df, method_iter = get_model_params(progress=False, verbose=False)
 
     for (
         dryness_method,

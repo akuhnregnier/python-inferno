@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import pickle
 import sys
 from itertools import islice
@@ -22,10 +21,7 @@ if __name__ == "__main__":
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
-    record_dir = Path(os.environ["EPHEMERAL"]) / "opt_record"
-    df, method_iter = get_model_params(
-        record_dir=record_dir, progress=True, verbose=False
-    )
+    df, method_iter = get_model_params(progress=True, verbose=False)
 
     params_dict = {}
     model_ba_dict = {}
