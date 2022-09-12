@@ -132,3 +132,41 @@ for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
 Dims = Enum("Dims", ["TIME", "PFT", "LAND", "SAMPLE"])
 
 default_opt_record_dir = Path(os.environ["EPHEMERAL"]) / "new_run_opt_record"
+
+
+def get_name_key_map(*, dryness_method, fuel_build_up_method):
+    name_map = {
+        "t1p5m_tile": "temperature",
+        "fapar_diag_pft": "fapar",
+    }
+
+    if dryness_method == 1:
+        name_map["dry_days"] = "dry_day"
+    elif dryness_method == 2:
+        name_map["grouped_dry_bal"] = "dry_bal"
+
+    if fuel_build_up_method == 1:
+        name_map["fuel_build_up"] = "fuel_build_up"
+    elif fuel_build_up_method == 2:
+        name_map["litter_pool"] = "litter_pool"
+
+    return name_map
+
+
+def get_weight_key_map(*, dryness_method, fuel_build_up_method):
+    weight_key_map = {
+        "t1p5m_tile": "temperature_weight",
+        "fapar_diag_pft": "fapar_weight",
+    }
+
+    if dryness_method == 1:
+        weight_key_map["dry_days"] = "dryness_weight"
+    elif dryness_method == 2:
+        weight_key_map["grouped_dry_bal"] = "dryness_weight"
+
+    if fuel_build_up_method == 1:
+        weight_key_map["fuel_build_up"] = "fuel_weight"
+    elif fuel_build_up_method == 2:
+        weight_key_map["litter_pool"] = "fuel_weight"
+
+    return weight_key_map

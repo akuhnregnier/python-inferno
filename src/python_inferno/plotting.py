@@ -438,3 +438,45 @@ def plotting(
             )
     else:
         logger.debug("'ref_2d_data' not given.")
+
+
+def get_plot_name_map(*, dryness_method, fuel_build_up_method):
+    name_map = {
+        "t1p5m_tile": "Temperature",
+        "fapar_diag_pft": "NPP",
+    }
+
+    if dryness_method == 1:
+        name_map["dry_days"] = "Dry Days"
+    elif dryness_method == 2:
+        name_map["grouped_dry_bal"] = "Dry Bal"
+
+    if fuel_build_up_method == 1:
+        name_map["fuel_build_up"] = "Antecedent NPP"
+    elif fuel_build_up_method == 2:
+        name_map["litter_pool"] = "Litter Pool"
+
+    return name_map
+
+
+def get_plot_units_map(*, dryness_method, fuel_build_up_method):
+    name_map = {
+        "t1p5m_tile": "K",
+        "fapar_diag_pft": "1",
+    }
+
+    if dryness_method == 1:
+        name_map["dry_days"] = "days"
+    elif dryness_method == 2:
+        name_map["grouped_dry_bal"] = "1"
+
+    if fuel_build_up_method == 1:
+        name_map["fuel_build_up"] = "1"
+    elif fuel_build_up_method == 2:
+        name_map["litter_pool"] = "1"
+
+    return name_map
+
+
+def plot_label_case(label):
+    return label.lower().replace("npp", "NPP")

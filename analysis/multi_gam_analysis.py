@@ -18,10 +18,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
-from functools import partial, reduce
+from functools import reduce
 from itertools import product
 from operator import add
 from pathlib import Path
+from string import ascii_lowercase
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -43,6 +44,8 @@ from python_inferno.configuration import (
     default_opt_record_dir,
     get_exp_key,
     get_exp_name,
+    get_name_key_map,
+    get_weight_key_map,
     land_pts,
     npft,
     pft_group_names,
@@ -51,7 +54,12 @@ from python_inferno.configuration import (
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics_plotting import null_model_analysis
-from python_inferno.plotting import plotting
+from python_inferno.plotting import (
+    get_plot_name_map,
+    get_plot_units_map,
+    plot_label_case,
+    plotting,
+)
 from python_inferno.utils import ConsMonthlyAvg, get_distinct_params, memoize
 
 NoVal = Enum("NoVal", ["NoVal"])
@@ -150,6 +158,8 @@ def gam_analysis(
     save_dir,
     pft_group_names=pft_group_names,
     N_pft_groups=N_pft_groups,
+    exp_key,
+    exp_name,
 ):
     """GAM fitting and prediction using R.
 
@@ -161,6 +171,13 @@ def gam_analysis(
         decorator.
 
     """
+    stdout_dir = save_dir / "stdout"
+    stdout_dir.mkdir(exist_ok=True, parents=False)
+
+    stdout_file = (
+        stdout_dir / f"stdout_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt"
+    )
+
     ro.r("library(mgcv)")
     ro.r(
         """
@@ -339,6 +356,9 @@ def partial_dependence_plots(
     feature_names,
     proc_params,
     name_map,
+    weight_map,
+    plot_name_map,
+    plot_units_map,
     partial_plot_vals,
     inv_link,
     partial_preds,
@@ -346,13 +366,20 @@ def partial_dependence_plots(
     save_dir,
     exp_key,
     exp_name,
+    valid_data_dict,
 ):
+    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+
     N_features = len(feature_names)
     nrows = 4
     ncols = N_features
 
+    assert N_features == len(plot_name_map)
+    # Sort features using the order in `plot_name_map`.
+    assert set(plot_name_map) == set(feature_names) == set(plot_units_map)
+
     fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height))
-    for (col_axes, feature_name) in zip(axes.T, feature_names):
+    for (col_axes, feature_name) in zip(axes.T, plot_name_map):
         sigmoid_params = {}
         for key, suffix in [
             ("factors", "_factor"),
@@ -361,17 +388,39 @@ def partial_dependence_plots(
         ]:
             sigmoid_params[key] = proc_params[name_map[feature_name] + suffix]
 
-        assert all(len(values) == N_pft_groups for values in sigmoid_params.values())
+        weights = proc_params[weight_map[feature_name]]
 
-        col_axes[0].set_title(name_map[feature_name])
+        assert all(len(values) == N_pft_groups for values in sigmoid_params.values())
+        assert len(weights) == N_pft_groups
+
+        col_axes[0].set_title(plot_name_map[feature_name])
+        col_axes[-1].set_xlabel(
+            plot_label_case(plot_name_map[feature_name])
+            + f" ({plot_units_map[feature_name]})"
+        )
 
         shift_mag = 120
         N_shift = 7
 
         for i, pft_group_name in enumerate(pft_group_names):
+            col_ax = col_axes[i + 1]
+
             comb_name = f"{feature_name}_{pft_group_name}"
             ppred = partial_preds[comb_name]
             ppred -= np.mean(ppred)
+
+            # Data for rug plots to visualise data distribution.
+            rug_data = valid_data_dict[comb_name].ravel().copy()
+            np.random.default_rng(0).shuffle(rug_data)
+            rug_data = rug_data[::100]
+            col_ax.plot(
+                rug_data,
+                [0.02] * rug_data.size,
+                marker="|",
+                alpha=0.13,
+                c="k",
+                zorder=5,
+            )
 
             def fn(shift):
                 with numpy2ri_context():
@@ -383,10 +432,10 @@ def partial_dependence_plots(
                 s_ppred = ppred + shift
 
                 with numpy2ri_context():
-                    col_axes[i + 1].plot(
+                    col_ax.plot(
                         partial_plot_vals[comb_name],
                         inv_link(s_ppred),
-                        label=(f"GAM_{pft_group_name}" if shift_i == 0 else None),
+                        label=(f"GAM {pft_group_name}" if shift_i == 0 else None),
                         c=f"C{i}",
                         zorder=3,
                     )
@@ -397,7 +446,7 @@ def partial_dependence_plots(
                 expon = math.floor(np.log10(se_factor))
                 significand = se_factor / 10**expon
                 with numpy2ri_context():
-                    col_axes[i + 1].fill_between(
+                    col_ax.fill_between(
                         partial_plot_vals[comb_name],
                         inv_link(s_ppred - se_factor * partial_pred_errs[comb_name]),
                         inv_link(s_ppred + se_factor * partial_pred_errs[comb_name]),
@@ -411,21 +460,29 @@ def partial_dependence_plots(
                         ),
                     )
 
-        for (i, (pft_group_name, (factor, centre, shape))) in enumerate(
-            zip(pft_group_names, zip(*sigmoid_params.values()))
+        for (i, (pft_group_name, (factor, centre, shape), weight, ls)) in enumerate(
+            zip(
+                pft_group_names,
+                zip(*sigmoid_params.values()),
+                weights,
+                ["--", ":", "-."],
+            )
         ):
             comb_name = f"{feature_name}_{pft_group_name}"
             col_axes[0].plot(
                 partial_plot_vals[comb_name],
                 sigmoid(partial_plot_vals[comb_name], factor, centre, shape),
-                label=pft_group_name,
+                label=f"{pft_group_name} ({weight:0.2f})",
                 c=f"C{i}",
+                ls=ls,
             )
 
         for ax in col_axes:
             ax.legend()
 
-    # fig.suptitle(exp_name)
+    for letter, ax in zip(ascii_lowercase, axes.ravel()):
+        ax.text(-0.01, 1.05, f"({letter})", transform=ax.transAxes)
+
     plt.tight_layout(rect=[0, 0, 1, 0.95])
 
     plt.savefig(save_dir / f"{exp_key}_gam_curves.png")
@@ -433,18 +490,8 @@ def partial_dependence_plots(
 
 
 def main():
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
     save_dir = Path("~/tmp/multi-gam-model-analysis/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
-
-    stdout_dir = save_dir / "stdout"
-    stdout_dir.mkdir(exist_ok=True, parents=False)
-
-    stdout_file = (
-        stdout_dir / f"stdout_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt"
-    )
-
-    plotting = partial(plotting, save_dir=save_dir)
 
     logger.remove()
     logger.add(sys.stderr, level="INFO")
@@ -475,29 +522,13 @@ def main():
 
     plot_data = dict()
 
-    all_name_map = {
-        "fapar_diag_pft": "fapar",
-        "dry_days": "dry_day",
-        "t1p5m_tile": "temperature",
-        "fuel_build_up": "fuel_build_up",
-        "grouped_dry_bal": "dry_bal",
-        "litter_pool": "litter_pool",
-    }
-
     executor = ProcessPoolExecutor(max_workers=10)
     futures = []
 
     for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
-        name_map = all_name_map.copy()
-        if dryness_method == 1:
-            del name_map["grouped_dry_bal"]
-        elif dryness_method == 2:
-            del name_map["dry_days"]
-
-        if fuel_build_up_method == 1:
-            del name_map["litter_pool"]
-        elif fuel_build_up_method == 2:
-            del name_map["fuel_build_up"]
+        name_map = get_name_key_map(
+            dryness_method=dryness_method, fuel_build_up_method=fuel_build_up_method
+        )
 
         sel = (df["dryness_method"] == dryness_method) & (
             df["fuel_build_up_method"] == fuel_build_up_method
@@ -517,7 +548,6 @@ def main():
 
         df_sel = df[sel]
         min_index = df_sel["loss"].argmin()
-        df_sel.iloc[min_index]["loss"]
 
         params = {
             key: val
@@ -636,6 +666,8 @@ def main():
             feature_names=feature_names,
             response=valid_mon_avg_gfed_ba_1d,
             save_dir=save_dir,
+            exp_name=exp_name,
+            exp_key=exp_key,
         )
 
         # Partial dependence plots.
@@ -645,6 +677,18 @@ def main():
                 feature_names=feature_names,
                 proc_params=model_params.process_kwargs(**params),
                 name_map=name_map,
+                weight_map=get_weight_key_map(
+                    dryness_method=dryness_method,
+                    fuel_build_up_method=fuel_build_up_method,
+                ),
+                plot_name_map=get_plot_name_map(
+                    dryness_method=dryness_method,
+                    fuel_build_up_method=fuel_build_up_method,
+                ),
+                plot_units_map=get_plot_units_map(
+                    dryness_method=dryness_method,
+                    fuel_build_up_method=fuel_build_up_method,
+                ),
                 partial_plot_vals=partial_plot_vals,
                 inv_link=inv_link,
                 partial_preds=partial_preds,
@@ -652,6 +696,7 @@ def main():
                 save_dir=save_dir,
                 exp_key=exp_key,
                 exp_name=exp_name,
+                valid_data_dict=valid_data_dict,
             )
         )
 
@@ -663,11 +708,7 @@ def main():
         pred_y_1d[~combined_mask] = gam_pred
         mon_avg_gfed_ba_1d.mask |= combined_mask
 
-        # TODO NOTE How to tie this in GAM analysis??
-        # # Modify the predicted BA using the crop fraction (i.e. assume a certain
-        # # proportion of cropland never burns, even though this may be the case in
-        # # given the weather conditions).
-        # model_ba *= 1 - data_params["crop_f"] * obs_pftcrop_1d
+        # NOTE GAM analysis does not take crop cover into account?
 
         scores, avg_ba = calculate_scores(
             model_ba=pred_y_1d,
@@ -696,10 +737,12 @@ def main():
     reference_obs = cube_1d_to_2d(
         get_1d_data_cube(mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)
     ).data
+
     for exp_name, data in plot_data.items():
         futures.append(
             executor.submit(
                 plotting,
+                save_dir=save_dir,
                 exp_name=exp_name,
                 ref_2d_data=(reference_obs if exp_name != "GFED4" else None),
                 **data,
