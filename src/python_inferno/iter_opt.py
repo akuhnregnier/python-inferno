@@ -75,6 +75,7 @@ Conditional:
  - average_samples ?? (or fixed from optimised full run?)
 
 """
+import os
 from collections import defaultdict
 from collections.abc import Iterable
 from copy import deepcopy
@@ -84,6 +85,7 @@ from functools import reduce
 from itertools import combinations, product
 from multiprocessing import Process, Queue
 from operator import add
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -933,7 +935,7 @@ def iterative_ba_model_opt(
                 fuel_build_up_method=fuel_build_up_method,
                 include_temperature=include_temperature,
                 discrete_params=discrete_params,
-                opt_record_dir="newrun_iter_opt",
+                opt_record_dir=Path(os.environ["EPHEMERAL"]) / "newrun_iter_opt",
                 defaults={**defaults, **constants},
                 minimizer_options=dict(maxiter=maxiter),
                 basinhopping_options=dict(niter_success=niter_success),
