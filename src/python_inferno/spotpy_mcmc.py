@@ -80,8 +80,8 @@ def spotpy_dream(
             release_gpu_model=True,
         )
     )
-    space, x0_0_1, loss_func, last_model_loss = itemgetter(
-        "space", "x0_0_1", "loss_func", "last_model_loss"
+    space, x0_0_1, loss_func, lowest_model_loss = itemgetter(
+        "space", "x0_0_1", "loss_func", "lowest_model_loss"
     )(opt_data)
 
     class spotpy_setup(object):
@@ -119,7 +119,7 @@ def spotpy_dream(
         beta=beta,
         nChains=nChains,
         maxTime=maxTime,
-        acc_eps=last_model_loss + acc_eps_delta,
+        acc_eps=lowest_model_loss + acc_eps_delta,
         runs_after_convergence=int(1e4),
         burnInNSamples=N // 2,
     )

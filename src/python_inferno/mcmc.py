@@ -9,7 +9,6 @@ from tqdm import tqdm
 from .ba_model import GPUConsAvgScoreBAModel
 from .cache import mark_dependency
 from .hyperopt import HyperoptSpace, get_space_template
-from .iter_opt import iterative_ba_model_opt
 from .metrics import Metrics
 from .model_params import get_model_params
 from .space import generate_space_spec
@@ -67,10 +66,6 @@ def iter_opt_methods(indices=None, release_gpu_model=False):
     ) in enumerate(islice(method_iter(), *indices)):
         assert int(params["include_temperature"]) == 1
 
-        results, aic_results, cv_results = iterative_ba_model_opt(
-            params=params, maxiter=1000, niter_success=5
-        )
-
         score_model = GPUConsAvgScoreBAModel(_uncached_data=False, **params)
 
         space = HyperoptSpace(
@@ -94,9 +89,7 @@ def iter_opt_methods(indices=None, release_gpu_model=False):
             space=space,
             x0_0_1=x0_0_1,
             loss_func=loss_func,
-            # The loss of the most complicated model, optimised using the iterative
-            # model approach.
-            last_model_loss=results[50][0],
+            lowest_model_loss=min_loss,
         )
 
         if release_gpu_model:
