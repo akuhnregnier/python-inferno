@@ -24,7 +24,6 @@ from operator import add
 from pathlib import Path
 from string import ascii_lowercase
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -59,6 +58,7 @@ from python_inferno.plotting import (
     get_plot_units_map,
     plot_label_case,
     plotting,
+    use_style,
 )
 from python_inferno.utils import ConsMonthlyAvg, get_distinct_params, memoize
 
@@ -368,7 +368,7 @@ def partial_dependence_plots(
     exp_name,
     valid_data_dict,
 ):
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
 
     N_features = len(feature_names)
     nrows = 4

@@ -5,12 +5,13 @@ from pathlib import Path
 from string import ascii_lowercase
 from warnings import filterwarnings
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import regrid_to_n96e
 from wildfires.data import GFEDv4
 from wildfires.utils import get_land_mask, match_shape
+
+from python_inferno.plotting import use_style
 
 
 def arcsinh_func(data, factor):
@@ -23,7 +24,7 @@ if __name__ == "__main__":
     filterwarnings("ignore", ".*may not be fully.*")
     filterwarnings("ignore", ".*axes.*")
     filterwarnings("ignore")
-    mpl.rc_file("matplotlibrc")
+    use_style()
 
     gfed = GFEDv4()
     gfed = gfed.get_climatology_dataset(gfed.min_time, gfed.max_time)

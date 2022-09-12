@@ -5,7 +5,6 @@ from itertools import product
 from operator import itemgetter
 from pathlib import Path
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -24,6 +23,7 @@ from python_inferno.ba_model import BAModel
 from python_inferno.cache import cache
 from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.model_params import get_model_params
+from python_inferno.plotting import use_style
 from python_inferno.utils import (
     PartialDateTime,
     get_grouped_average,
@@ -286,6 +286,7 @@ def analysis(
     params,
     exp_key,
 ):
+    use_style()
     for key, data in data_dict.items():
         print(key, data.shape)
 
@@ -380,7 +381,7 @@ def analysis(
 
 
 def main():
-    mpl.rc_file(Path(__name__).resolve().parent / "matplotlibrc")
+    use_style()
 
     # No interactive mode.
     plt.ioff()

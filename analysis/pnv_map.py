@@ -11,10 +11,11 @@ from matplotlib import colors
 from wildfires.analysis import cube_plotting
 from wildfires.utils import get_centres
 
+from python_inferno.plotting import use_style
 from python_inferno.pnv import get_pnv_mega_regions, pnv_csv_file
 
 if __name__ == "__main__":
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
 
     mega_pnv_cube = get_pnv_mega_regions()
 

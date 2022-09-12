@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import math
 from numbers import Integral
+from pathlib import Path
 
 import cartopy.crs as ccrs
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import n96e_lats, n96e_lons
@@ -223,6 +225,7 @@ def plotting(
     regions="GFED",
     data_params=None,
 ):
+    use_style()
     # Prep.
 
     if scores is not None:
@@ -480,3 +483,8 @@ def get_plot_units_map(*, dryness_method, fuel_build_up_method):
 
 def plot_label_case(label):
     return label.lower().replace("npp", "NPP")
+
+
+def use_style():
+    """Use common plotting style."""
+    mpl.style.use(Path(__file__).absolute().parent / "../../analysis/matplotlibrc")

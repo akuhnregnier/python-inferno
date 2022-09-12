@@ -8,7 +8,6 @@ from pathlib import Path
 from textwrap import wrap
 
 import cartopy.crs as ccrs
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy
 import numpy as np
@@ -25,6 +24,7 @@ from python_inferno.data import (
     load_single_year_cubes,
     timestep,
 )
+from python_inferno.plotting import use_style
 
 # TIME, PFT, LAND
 
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
 
     jules_lats, jules_lons = load_jules_lats_lons()
     jules_lats = jules_lats.points.ravel()

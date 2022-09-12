@@ -9,7 +9,6 @@ from pprint import pprint
 
 import cartopy.crs as ccrs
 import iris
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -26,6 +25,7 @@ from python_inferno.configuration import land_pts
 from python_inferno.data import load_data, timestep
 from python_inferno.metrics import calculate_factor, loghist, mpd, nme, nmse
 from python_inferno.multi_timestep_inferno import multi_timestep_inferno
+from python_inferno.plotting import use_style
 from python_inferno.precip_dry_day import calculate_inferno_dry_days, filter_rain
 from python_inferno.utils import (
     core_unpack_wrapped,
@@ -40,7 +40,7 @@ from python_inferno.utils import (
 )
 
 memory = Memory(str(Path(os.environ["EPHEMERAL"]) / "joblib_cache"), verbose=10)
-mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+use_style()
 
 dryness_method = 2
 

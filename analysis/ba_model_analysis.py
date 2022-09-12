@@ -9,7 +9,6 @@ from itertools import islice
 from operator import itemgetter
 from pathlib import Path
 
-import matplotlib as mpl
 import numpy as np
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
@@ -22,7 +21,7 @@ from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.metrics import Metrics
 from python_inferno.metrics_plotting import null_model_analysis
 from python_inferno.model_params import get_model_params, plot_param_histograms
-from python_inferno.plotting import plotting
+from python_inferno.plotting import plotting, use_style
 from python_inferno.utils import (
     ConsMonthlyAvg,
     DebugExecutor,
@@ -107,7 +106,7 @@ def get_processed_climatological_jules_ba():
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("-p", type=int, help="number of processes", default=1)
+    parser.add_argument("-p", type=int, help="number of processes", default=10)
     parser.add_argument(
         "--no-hist-plots", action="store_true", help="do not plot parameter histograms"
     )
@@ -116,7 +115,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     save_dir = Path("~/tmp/ba-model-analysis/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
     plotting = partial(plotting, save_dir=save_dir, regions="PNV")

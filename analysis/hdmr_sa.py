@@ -6,13 +6,13 @@ from itertools import islice
 from operator import itemgetter
 from pathlib import Path
 
-import matplotlib as mpl
 from loguru import logger
 
 from python_inferno.configuration import land_pts
 from python_inferno.hdmr_sa import analyse_sis
 from python_inferno.hdmr_sa import hdmr_sis_calc as sis_calc
 from python_inferno.model_params import get_model_params
+from python_inferno.plotting import use_style
 from python_inferno.sensitivity_analysis import SAMetric
 from python_inferno.spotpy_mcmc import get_cached_mcmc_chains
 
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 

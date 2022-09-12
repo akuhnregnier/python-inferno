@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from .cache import mark_dependency
 from .configuration import default_opt_record_dir, get_exp_key, get_exp_name
+from .plotting import use_style
 
 NoVal = Enum("NoVal", ["NoVal"])
 
@@ -242,6 +243,8 @@ def get_param_uncertainties(*, df_sel, plot=False, exp_name=None, save_dir=None)
 
 
 def plot_param_histograms(df_sel, exp_name, hist_save_dir):
+    use_style()
+
     # NOTE Not actually histograms!
     for col in [col for col in df_sel.columns if col != "loss"]:
         if df_sel[col].isna().all():

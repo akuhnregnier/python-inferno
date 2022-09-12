@@ -8,6 +8,7 @@ import numpy as np
 from .configuration import scheme_name_map
 from .data import get_gfed_regions, get_pnv_mega_plot_data
 from .metrics import calculate_resampled_errors, mpd, nme
+from .plotting import use_style
 
 
 def error_hist(
@@ -122,6 +123,8 @@ def null_model_analysis(
             breakdown.
 
     """
+    use_style()
+
     total_mask = np.zeros_like(reference_data, dtype=np.bool_)
 
     if comp_data is None:

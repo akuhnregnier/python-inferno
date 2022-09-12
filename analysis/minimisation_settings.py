@@ -7,7 +7,6 @@ from itertools import islice
 from operator import sub
 from pathlib import Path
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -26,6 +25,7 @@ from python_inferno.iter_opt import (
     next_configurations_iter,
 )
 from python_inferno.metrics import mpd, nme
+from python_inferno.plotting import use_style
 from python_inferno.space import generate_space_spec
 
 
@@ -250,7 +250,7 @@ def get_opt_results(
 
 
 if __name__ == "__main__":
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 

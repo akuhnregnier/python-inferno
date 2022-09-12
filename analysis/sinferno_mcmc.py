@@ -4,11 +4,11 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-import matplotlib as mpl
 import numpy as np
 from loguru import logger
 
 from python_inferno.mcmc import plot_pairwise_grid
+from python_inferno.plotting import use_style
 from python_inferno.spotpy_mcmc import plot_spotpy_results_df, spotpy_dream
 
 if __name__ == "__main__":
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     method_index = args.n
 
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 

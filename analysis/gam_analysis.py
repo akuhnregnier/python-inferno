@@ -25,7 +25,6 @@ from functools import partial, reduce
 from itertools import product
 from pathlib import Path
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -50,7 +49,7 @@ from python_inferno.configuration import (
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
 from python_inferno.metrics_plotting import null_model_analysis
-from python_inferno.plotting import plotting
+from python_inferno.plotting import plotting, use_style
 from python_inferno.utils import ConsMonthlyAvg, masked_frac_weighted_mean, memoize
 
 NoVal = Enum("NoVal", ["NoVal"])
@@ -194,6 +193,8 @@ def partial_dependence_plots(
     save_dir,
     exp_key,
 ):
+    use_style()
+
     # nrows * ncols >= N_features
     # -> nrows >= N_features / ncols
     # nrows / ncols >= fig_height / fig_width
@@ -274,7 +275,7 @@ def partial_dependence_plots(
 
 
 def main():
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     save_dir = Path("~/tmp/gam-model-analysis/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
 

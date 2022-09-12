@@ -12,6 +12,7 @@ from tqdm import tqdm
 from .cache import cache, mark_dependency
 from .hyperopt import get_space_template
 from .mcmc import get_loss_func, iter_opt_methods
+from .plotting import use_style
 
 assert spotpy.__version__ == "1.5.16.1", spotpy.__version__
 
@@ -137,6 +138,8 @@ def plot_combined(param_df, name, n_samples, save_dir, max_n_plot=int(1e4)):
         needed.
 
     """
+    use_style()
+
     plt.ioff()
     fig, axes = plt.subplots(2, 1, figsize=(15, 15))
 

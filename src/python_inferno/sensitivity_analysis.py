@@ -29,6 +29,7 @@ from .hyperopt import HyperoptSpace, get_space_template
 from .iter_opt import ALWAYS_OPTIMISED, IGNORED
 from .mcmc import iter_opt_methods
 from .metrics import calculate_phase
+from .plotting import use_style
 from .py_gpu_inferno import GPUSA
 from .space import generate_space_spec
 from .spotpy_mcmc import get_cached_mcmc_chains, spotpy_dream
@@ -877,6 +878,7 @@ def get_mean_df(*, sis, keys, names):
 
 
 def plot_si(*, data, jules_lats, jules_lons, name, plot_dir):
+    use_style()
     cube_2d = cube_1d_to_2d(get_1d_data_cube(data, lats=jules_lats, lons=jules_lons))
 
     plt.ioff()

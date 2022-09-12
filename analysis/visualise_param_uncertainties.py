@@ -3,15 +3,15 @@
 import sys
 from pathlib import Path
 
-import matplotlib as mpl
 from loguru import logger
 
 from python_inferno.hyperopt import get_space_template
 from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 from python_inferno.model_params import get_model_params, get_param_uncertainties
+from python_inferno.plotting import use_style
 
 if __name__ == "__main__":
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     save_dir = Path("~/tmp/ba-model-param-uncertainties/").expanduser()
     save_dir.mkdir(exist_ok=True, parents=False)
 

@@ -3,7 +3,6 @@
 import sys
 from pathlib import Path
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from loguru import logger
@@ -11,9 +10,10 @@ from tqdm import tqdm
 
 from python_inferno.iter_opt import iterative_ba_model_opt, vis_result
 from python_inferno.model_params import get_model_params
+from python_inferno.plotting import use_style
 
 if __name__ == "__main__":
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 

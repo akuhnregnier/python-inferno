@@ -3,7 +3,6 @@
 import sys
 from pathlib import Path
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
@@ -15,9 +14,10 @@ from python_inferno.configuration import land_pts
 from python_inferno.cv import get_ba_cv_splits
 from python_inferno.data import load_jules_lats_lons
 from python_inferno.model_params import get_model_params
+from python_inferno.plotting import use_style
 
 if __name__ == "__main__":
-    mpl.rc_file(Path(__file__).absolute().parent / "matplotlibrc")
+    use_style()
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 

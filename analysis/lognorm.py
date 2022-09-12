@@ -4,7 +4,6 @@ from pathlib import Path
 from warnings import filterwarnings
 
 import iris
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import get_n96e_land_mask, regrid_to_n96e
@@ -12,13 +11,15 @@ from scipy.stats import lognorm
 from wildfires.configuration import DATA_DIR
 from wildfires.utils import match_shape
 
+from python_inferno.plotting import use_style
+
 if __name__ == "__main__":
     filterwarnings("ignore", ".*divide by zero.*")
     filterwarnings("ignore", ".*invalid units.*")
     filterwarnings("ignore", ".*may not be fully.*")
     filterwarnings("ignore", ".*axes.*")
     filterwarnings("ignore")
-    mpl.rc_file("matplotlibrc")
+    use_style()
 
     cube_2d = regrid_to_n96e(
         iris.load_cube(str(Path(DATA_DIR) / "GFED4_climatology.nc"))
