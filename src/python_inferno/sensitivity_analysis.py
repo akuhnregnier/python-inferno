@@ -1066,33 +1066,50 @@ def batched_sis_calc(
         - dryness_method
 
     """
+    multi = n_batches > 1
+
+    sis_calc_kwargs = {
+        "sa_class": sa_class,
+        "verbose": 1,
+        **kwargs,
+    }
+
+    executor = (
+        ProcessPoolExecutor(max_workers=max(20, n_batches))
+        if multi
+        else DebugExecutor()
+    )
+    futures = []
+
+    if multi:
+        # Evaluate a single land point first to cache data structures, etc... to avoid
+        # expensive calculations happening in multiple processes simultaneously the
+        # first time this is called for given parameters.
+        all_sis = {**_sis_calc(land_points=[land_points[0]], **sis_calc_kwargs)}
+        # Start remainder of calculations at index 1, since index 0 is calculated
+        # above.
+        lower_batch_bound = 1
+    else:
+        all_sis = {}
+        lower_batch_bound = 0
+
     batch_bounds = np.unique(
-        np.linspace(0, len(land_points), n_batches + 1, dtype=np.int64)
+        np.linspace(lower_batch_bound, len(land_points), n_batches + 1, dtype=np.int64)
     )
     batch_land_points = [
         land_points[low:upp] for low, upp in zip(batch_bounds[:-1], batch_bounds[1:])
     ]
-
-    executor = (
-        ProcessPoolExecutor(max_workers=max(20, n_batches))
-        if n_batches > 1
-        else DebugExecutor()
-    )
-    futures = []
 
     for batch_i, batch_land_points in enumerate(batch_land_points):
         futures.append(
             executor.submit(
                 _sis_calc,
                 land_points=batch_land_points,
-                sa_class=sa_class,
-                verbose=1,
                 tqdm_level=batch_i,
-                **kwargs,
+                **sis_calc_kwargs,
             )
         )
 
-    all_sis = {}
     for f in tqdm(
         as_completed(futures),
         total=len(futures),
