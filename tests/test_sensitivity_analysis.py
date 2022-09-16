@@ -91,3 +91,5 @@ def test_sa_versions(param_index, test_type, land_index, exponent):
             assert_allclose(
                 gpu_si[metric]["S1"], si[metric]["S1"], rtol=1e-4, atol=5e-6
             )
+
+    gpu_sa.release()
