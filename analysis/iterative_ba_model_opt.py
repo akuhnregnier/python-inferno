@@ -8,6 +8,7 @@ import numpy as np
 from loguru import logger
 from tqdm import tqdm
 
+from python_inferno.configuration import scheme_name_map
 from python_inferno.iter_opt import iterative_ba_model_opt, vis_result
 from python_inferno.model_params import get_model_params
 from python_inferno.plotting import use_style
@@ -30,7 +31,7 @@ if __name__ == "__main__":
         method_name = method_data[6]
 
         ax = axes.ravel()[i]
-        ax.set_title(method_name)
+        ax.set_title(f"SINFERNO-{scheme_name_map[method_name]}")
 
         method_dir = save_dir / method_name
         method_dir.mkdir(parents=False, exist_ok=True)
