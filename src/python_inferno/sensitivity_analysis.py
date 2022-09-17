@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import math
 import re
 import string
 from collections import defaultdict
@@ -8,6 +9,7 @@ from enum import Enum
 from functools import partial
 from operator import itemgetter
 
+import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -16,6 +18,7 @@ import scipy.signal
 import scipy.stats
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
+from matplotlib.colors import from_levels_and_colors
 from pylatex.utils import escape_latex
 from tqdm import tqdm
 from wildfires.analysis import cube_plotting
@@ -25,13 +28,20 @@ from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 
 from .ba_model import ARCSINH_FACTOR, BAModel
 from .cache import cache, mark_dependency
-from .configuration import Dims, N_pft_groups, land_pts, npft, scheme_name_map
+from .configuration import (
+    Dims,
+    N_pft_groups,
+    inv_scheme_name_map,
+    land_pts,
+    npft,
+    scheme_name_map,
+)
 from .data import get_yearly_data, load_jules_lats_lons
 from .hyperopt import HyperoptSpace, get_space_template
 from .iter_opt import ALWAYS_OPTIMISED, IGNORED
 from .mcmc import iter_opt_methods
 from .metrics import calculate_phase
-from .plotting import use_style
+from .plotting import custom_axes, get_plot_name_map_total, use_style
 from .py_gpu_inferno import GPUSA
 from .space import generate_space_spec
 from .spotpy_mcmc import get_cached_mcmc_chains, spotpy_dream
@@ -856,6 +866,25 @@ def format_stats(success_stats):
 
 
 @cache
+def get_n_sis(sis):
+    return len(sis)
+
+
+@cache
+def get_valid_sis(all_sis):
+    valid_sis = {land_index: sis for land_index, sis in all_sis.items() if sis}
+    return valid_sis
+
+
+@cache
+def get_subset_metric_sis(metric, valid_sis):
+    metric_sis = {
+        land_i: sis[metric] for land_i, sis in valid_sis.items() if metric in sis
+    }
+    return metric_sis
+
+
+@cache
 def get_mean_df(*, sis, keys, names):
     key_data = {}
 
@@ -888,6 +917,76 @@ def plot_si(*, data, jules_lats, jules_lons, name, plot_dir):
     cube_plotting(cube_2d, title=name, fig=fig)
     fig.savefig(plot_dir / name)
     plt.close(fig)
+
+
+def plot_si_collated(
+    *,
+    data_dict,
+    jules_lats,
+    jules_lons,
+    save_name,
+    plot_dir,
+    cbar_label=None,
+    bin_edges=None,
+):
+    use_style()
+
+    # Convert all data to cubes for plotting.
+
+    cube_dict = {
+        key: cube_1d_to_2d(get_1d_data_cube(data, lats=jules_lats, lons=jules_lons))
+        for key, data in data_dict.items()
+    }
+
+    cmap, norm = from_levels_and_colors(
+        levels=list(bin_edges),
+        colors=plt.get_cmap("viridis")(np.linspace(0, 1, len(bin_edges) + 1)),
+        extend="both",
+    )
+
+    plot_name_map = get_plot_name_map_total()
+
+    ncols = 2
+    nrows = math.ceil(len(cube_dict) / ncols)
+    with custom_axes(
+        ncols=ncols,
+        nrows=nrows,
+        nplots=len(cube_dict),
+        height=1.9 * nrows,
+        width=6.2,
+        h_pad=0.04,
+        w_pad=0.02,
+        cbar_pos="bottom",
+        cbar_height=0.012,
+        cbar_width=0.7,
+        cbar_h_pad=0.03,
+        cbar_w_pad=0,
+        projection=ccrs.Robinson(),
+    ) as (fig, axes, cax):
+        for (i, (ax, (title, cube))) in enumerate(zip(axes, cube_dict.items())):
+
+            try:
+                cube_plotting(
+                    cube,
+                    title="",
+                    fig=fig,
+                    ax=ax,
+                    cmap=cmap,
+                    norm=norm,
+                    colorbar_kwargs=dict(
+                        cax=cax,
+                        orientation="horizontal",
+                        label=cbar_label,
+                    )
+                    if i == 0
+                    else False,
+                )
+            except AssertionError:
+                pass
+
+            ax.set_title(plot_name_map[title])
+
+        fig.savefig(plot_dir / save_name)
 
 
 def format_latex_table(table: str):
@@ -1015,6 +1114,18 @@ def format_latex_table(table: str):
     return "\n".join(new_table_lines)
 
 
+# NOTE `to_df_func` is an external dependency.
+
+
+@cache
+def get_sis_names(*, sis, to_df_func):
+    try:
+        names = next(iter(sis.values()))["names"]
+    except KeyError:
+        names = to_df_func(next(iter(sis.values())))[0].index
+    return names
+
+
 def analyse_sis(
     *,
     sis,
@@ -1027,26 +1138,47 @@ def analyse_sis(
     sort_key,
     analysis_type,
     to_df_func=None,
+    executor=None,
 ):
-    try:
-        names = next(iter(sis.values()))["names"]
-    except KeyError:
-        names = to_df_func(next(iter(sis.values())))[0].index
+    names = get_sis_names(sis=sis, to_df_func=to_df_func)
 
     df = get_mean_df(sis=sis, keys=list(sorted(method_keys)), names=names)
     df = df.sort_values(sort_key, ascending=False)
 
     assert len(names) == df.shape[0]
 
+    dryness_method, fuel_build_up_method = inv_scheme_name_map[
+        scheme_name_map[exp_name]
+    ]
+    plot_name_map = get_plot_name_map_total()
+
     print_df = df.copy()
-    print_df.index = list(map(escape_latex, print_df.index))
-    print_df.columns = list(map(escape_latex, print_df.columns))
+    print_df.index = list(
+        map(
+            escape_latex,
+            [plot_name_map[s] for s in print_df.index],
+        )
+    )
+    print_df.columns = list(
+        map(
+            escape_latex,
+            [
+                c.replace("S1_std", "S1 std").replace("ST_std", "ST std")
+                for c in print_df.columns
+            ],
+        )
+    )
 
     scheme_name = f"|SINFERNO|-{scheme_name_map[exp_name]}"
 
     metric_str = {
-        "ARCSINH_NME": r"arcsinh-|NME|",
-        "MPD": r"|MPD|",
+        "ARCSINH_NME": "arcsinh-|NME|",
+        "MPD": "|MPD|",
+    }[metric_name]
+
+    metric_str2 = {
+        "ARCSINH_NME": "arcsinh-NME",
+        "MPD": "MPD",
     }[metric_name]
 
     short_caption = (
@@ -1092,17 +1224,76 @@ def analyse_sis(
     )
 
     print(format_latex_table(latex_table_str))
+    print()
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
     # Plotting.
 
-    executor = ProcessPoolExecutor()
+    wait_for_executor = False
+    if executor is None:
+        wait_for_executor = True
+        executor = ProcessPoolExecutor()
+
     futures = []
+
+    if analysis_type == "Parameters":
+        param_collation_fapar_temp = [
+            "temperature_factor",
+            "temperature_centre",
+            "temperature_shape",
+            "temperature_weight",
+            "fapar_factor",
+            "fapar_centre",
+            "fapar_shape",
+            "fapar_weight",
+        ]
+
+        param_collation_dry_fuel = []
+
+        if dryness_method == 1:
+            param_collation_dry_fuel.extend(
+                [
+                    "dryness_weight",
+                    "dry_day_factor",
+                    "dry_day_centre",
+                    "dry_day_shape",
+                ]
+            )
+        elif dryness_method == 2:
+            param_collation_dry_fuel.extend(
+                [
+                    "dryness_weight",
+                    "dry_bal_factor",
+                    "dry_bal_centre",
+                    "dry_bal_shape",
+                ]
+            )
+
+        if fuel_build_up_method == 1:
+            param_collation_dry_fuel.extend(
+                [
+                    "fuel_weight",
+                    "fuel_build_up_factor",
+                    "fuel_build_up_centre",
+                    "fuel_build_up_shape",
+                ]
+            )
+        elif fuel_build_up_method == 2:
+            param_collation_dry_fuel.extend(
+                [
+                    "fuel_weight",
+                    "litter_pool_factor",
+                    "litter_pool_centre",
+                    "litter_pool_shape",
+                ]
+            )
 
     for method_key in method_keys:
         plot_dir = save_dir / method_key
         plot_dir.mkdir(exist_ok=True)
+
+        plot_data_dict = {}
 
         for i, name in enumerate(tqdm(names, desc="Submitting plots")):
             data = np.ma.MaskedArray(np.zeros(land_pts), mask=True)
@@ -1112,6 +1303,8 @@ def analyse_sis(
                 if not np.isnan(st_val):
                     data[land_i] = st_val
 
+            plot_data_dict[name] = data
+
             if np.all(np.ma.getmaskarray(data)):
                 logger.warning(f"{name} all masked!")
                 continue
@@ -1120,21 +1313,64 @@ def analyse_sis(
                 logger.info(f"{name} all close to 0.")
                 continue
 
+            # futures.append(
+            #     executor.submit(
+            #         plot_si,
+            #         data=data,
+            #         jules_lats=jules_lats,
+            #         jules_lons=jules_lons,
+            #         name=name,
+            #         plot_dir=plot_dir,
+            #     )
+            # )
+
+        # Collated plots.
+
+        suffix = "png"
+        cbar_label = f"Sobol SA {metric_str2}"
+
+        shared_kwargs = dict(
+            bin_edges=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
+            jules_lats=jules_lats,
+            jules_lons=jules_lons,
+            plot_dir=plot_dir,
+        )
+
+        if analysis_type == "Parameters":
+            for collation, save_name in (
+                (param_collation_fapar_temp, f"fapar_temp.{suffix}"),
+                (param_collation_dry_fuel, f"dry_fuel.{suffix}"),
+            ):
+                collated_data_dict = {key: plot_data_dict[key] for key in collation}
+
+                futures.append(
+                    executor.submit(
+                        plot_si_collated,
+                        data_dict=collated_data_dict,
+                        save_name=save_name,
+                        cbar_label=cbar_label,
+                        **shared_kwargs,
+                    )
+                )
+        elif analysis_type == "Data":
             futures.append(
                 executor.submit(
-                    plot_si,
-                    data=data,
-                    jules_lats=jules_lats,
-                    jules_lons=jules_lons,
-                    name=name,
-                    plot_dir=plot_dir,
+                    plot_si_collated,
+                    data_dict=plot_data_dict,
+                    save_name=f"combined.{suffix}",
+                    cbar_label=cbar_label,
+                    **shared_kwargs,
                 )
             )
+        else:
+            raise ValueError(analysis_type)
 
-    for f in tqdm(as_completed(futures), total=len(futures), desc="Plotting"):
-        f.result()
-
-    executor.shutdown()
+    if wait_for_executor:
+        for f in tqdm(as_completed(futures), total=len(futures), desc="Plotting"):
+            f.result()
+        executor.shutdown()
+    else:
+        return futures
 
 
 @mark_dependency

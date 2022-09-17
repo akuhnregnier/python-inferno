@@ -2,16 +2,23 @@
 # -*- coding: utf-8 -*-
 import sys
 from argparse import ArgumentParser
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import islice
 from pathlib import Path
 
 from loguru import logger
+from tqdm import tqdm
 
 from python_inferno.configuration import land_pts
 from python_inferno.hyperopt import get_space_template
 from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 from python_inferno.model_params import get_model_params
-from python_inferno.sensitivity_analysis import SAMetric
+from python_inferno.sensitivity_analysis import (
+    SAMetric,
+    get_n_sis,
+    get_subset_metric_sis,
+    get_valid_sis,
+)
 from python_inferno.sobol_sa import analyse_sis
 from python_inferno.sobol_sa import sobol_sis_calc as sis_calc
 
@@ -57,6 +64,9 @@ if __name__ == "__main__":
     if "crop_f" in param_names:
         param_names.remove("crop_f")
 
+    executor = ProcessPoolExecutor()
+    futures = []
+
     for (data_variables, analysis_type) in [
         (param_names, "Parameters"),
         (None, "Data"),
@@ -72,26 +82,35 @@ if __name__ == "__main__":
             dryness_method=dryness_method,
         )
 
-        valid_sis = {land_index: sis for land_index, sis in all_sis.items() if sis}
+        valid_sis = get_valid_sis(all_sis)
 
-        logger.info(f"Analysing {analysis_type}: {len(all_sis)}, {len(valid_sis)}.")
+        n_all_sis = get_n_sis(all_sis)
+        n_valid_sis = get_n_sis(valid_sis)
+
+        logger.info(f"Analysing {analysis_type}: {n_all_sis}, {n_valid_sis}.")
 
         for metric in SAMetric:
-            metric_sis = {
-                land_i: sis[metric]
-                for land_i, sis in valid_sis.items()
-                if metric in sis
-            }
+            metric_sis = get_subset_metric_sis(metric, valid_sis)
 
-            logger.info(f"Metric {metric.name}: {len(metric_sis)}.")
+            n_metric_sis = get_n_sis(metric_sis)
+
+            logger.info(f"Metric {metric.name}: {n_metric_sis}.")
 
             sis_save_dir = save_dir / exp_key / analysis_type.lower() / metric.name
             sis_save_dir.mkdir(parents=True, exist_ok=True)
-            analyse_sis(
-                sis=metric_sis,
-                save_dir=sis_save_dir,
-                exp_name=exp_name,
-                exp_key=exp_key,
-                metric_name=metric.name,
-                analysis_type=analysis_type,
+            futures.extend(
+                analyse_sis(
+                    sis=metric_sis,
+                    save_dir=sis_save_dir,
+                    exp_name=exp_name,
+                    exp_key=exp_key,
+                    metric_name=metric.name,
+                    analysis_type=analysis_type,
+                    executor=executor,
+                )
             )
+
+    for f in tqdm(as_completed(futures), total=len(futures), desc="Plotting"):
+        f.result()
+
+    executor.shutdown()

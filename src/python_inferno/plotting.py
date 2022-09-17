@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import math
+from contextlib import contextmanager
+from itertools import product
 from numbers import Integral
 from pathlib import Path
 
@@ -462,6 +464,54 @@ def get_plot_name_map(*, dryness_method, fuel_build_up_method):
     return name_map
 
 
+def get_plot_name_map_total():
+    name_map = {
+        "t1p5m_tile": "Temperature",
+        "temperature": "Temperature",
+        "fapar_diag_pft": "NPP",
+        "fapar": "NPP",
+        "dry_days": "Dry Days",
+        "dry_day": "Dry Days",
+        "dry_bal": "Dry Bal",
+        "grouped_dry_bal": "Dry Bal",
+        "fuel_build_up": "Antecedent NPP",
+        "litter_pool": "Litter Pool",
+        "obs_pftcrop_1d": "Cropland",
+        "overall_scale": "Overall Scale",
+        "fapar_factor": "NPP Factor",
+        "fapar_centre": "NPP Centre",
+        "fapar_shape": "NPP Shape",
+        "fapar_weight": "NPP Weight",
+        "dryness_weight": "Dryness Weight",
+        "fuel_weight": "Fuel Weight",
+        "average_samples": "Average Samples",
+        "crop_f": "crop_f",
+        "dry_day_factor": "Dry Day Factor",
+        "dry_day_centre": "Dry Day Centre",
+        "dry_day_shape": "Dry Day Shape",
+        "rain_f": "rain_f",
+        "vpd_f": "vpd_f",
+        "dry_bal_factor": "Dry Bal Factor",
+        "dry_bal_centre": "Dry Bal Centre",
+        "dry_bal_shape": "Dry Bal Shape",
+        "fuel_build_up_n_samples": "Fuel Build Up n_samples",
+        "fuel_build_up_factor": "Fuel Build Up Factor",
+        "fuel_build_up_centre": "Fuel Build Up Centre",
+        "fuel_build_up_shape": "Fuel Build Up Shape",
+        "litter_tc": "litter_tc",
+        "leaf_f": "leaf_f",
+        "litter_pool_factor": "Litter Pool Factor",
+        "litter_pool_centre": "Litter Pool Centre",
+        "litter_pool_shape": "Litter Pool Shape",
+        "temperature_factor": "Temperature Factor",
+        "temperature_centre": "Temperature Centre",
+        "temperature_shape": "Temperature Shape",
+        "temperature_weight": "Temperature Weight",
+    }
+
+    return name_map
+
+
 def get_plot_units_map(*, dryness_method, fuel_build_up_method):
     name_map = {
         "t1p5m_tile": "K",
@@ -488,3 +538,76 @@ def plot_label_case(label):
 def use_style():
     """Use common plotting style."""
     mpl.style.use(Path(__file__).absolute().parent / "../../analysis/matplotlibrc")
+
+
+@contextmanager
+def custom_axes(
+    *,
+    ncols,
+    nrows,
+    nplots,
+    height,
+    width,
+    h_pad,
+    w_pad,
+    cbar_pos,
+    cbar_height,
+    cbar_width,
+    cbar_h_pad,
+    cbar_w_pad,
+    projection,
+):
+    assert cbar_pos == "bottom"
+
+    # Including padding.
+    cbar_total_height = cbar_height + cbar_h_pad
+    cbar_width + cbar_w_pad
+
+    total_ax_height = 1 - cbar_height - cbar_h_pad - (nrows - 1) * h_pad
+    ax_height = total_ax_height / nrows
+
+    total_ax_width = 1 - (ncols - 1) * w_pad
+    ax_width = total_ax_width / ncols
+
+    plt.ioff()
+    fig = plt.figure(figsize=(width, height))
+
+    cax = fig.add_axes(
+        [
+            # xmin
+            0.5 - cbar_width / 2.0,
+            # ymin
+            0,
+            # width (x)
+            cbar_width,
+            # height (y)
+            cbar_height,
+        ]
+    )
+
+    axes = []
+
+    for i, j in product(range(nrows - 1, -1, -1), range(ncols)):
+        # Row index (i), col index (j).
+        axes.append(
+            fig.add_axes(
+                [
+                    # xmin
+                    j * (ax_width + w_pad),
+                    # ymin
+                    cbar_total_height + i * (ax_height + h_pad),
+                    # width (x)
+                    ax_width,
+                    # height (y)
+                    ax_height,
+                ],
+                projection=projection,
+            )
+        )
+        if len(axes) == nplots:
+            # Stop adding axes.
+            break
+
+    yield fig, axes, cax
+
+    plt.close(fig)

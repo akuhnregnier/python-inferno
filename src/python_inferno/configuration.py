@@ -111,6 +111,8 @@ def get_exp_key(*, dryness_method, fuel_build_up_method):
 
 
 scheme_name_map = {}
+inv_scheme_name_map = {}
+
 for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
     scheme_name = dryness_schemes[dryness_method] + fuel_schemes[fuel_build_up_method]
 
@@ -127,6 +129,7 @@ for dryness_method, fuel_build_up_method in product([1, 2], [1, 2]):
     ] = scheme_name
 
     scheme_name_map[(dryness_method, fuel_build_up_method)] = scheme_name
+    inv_scheme_name_map[scheme_name] = (dryness_method, fuel_build_up_method)
 
 
 Dims = Enum("Dims", ["TIME", "PFT", "LAND", "SAMPLE"])
