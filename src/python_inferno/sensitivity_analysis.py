@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import re
+import string
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from copy import deepcopy
@@ -23,7 +25,7 @@ from python_inferno.iter_opt import ALWAYS_OPTIMISED, IGNORED
 
 from .ba_model import ARCSINH_FACTOR, BAModel
 from .cache import cache, mark_dependency
-from .configuration import Dims, N_pft_groups, land_pts, npft
+from .configuration import Dims, N_pft_groups, land_pts, npft, scheme_name_map
 from .data import get_yearly_data, load_jules_lats_lons
 from .hyperopt import HyperoptSpace, get_space_template
 from .iter_opt import ALWAYS_OPTIMISED, IGNORED
@@ -888,6 +890,131 @@ def plot_si(*, data, jules_lats, jules_lons, name, plot_dir):
     plt.close(fig)
 
 
+def format_latex_table(table: str):
+    table_newline_str = r" \\"
+    # Normalise spacing between '&' alignment markers.
+    active = False
+    table_lines = table.strip().split("\n")
+    spacings = None
+    to_align = []
+    for i, line, prev_line, next_line in zip(
+        range(1, len(table_lines) - 1),
+        table_lines[1:-1],
+        table_lines[:-2],
+        table_lines[2:],
+    ):
+        if prev_line.startswith(r"\toprule"):
+            active = True
+
+        if active and " & " in line:
+            to_align.append(i)
+            assert table_newline_str in line
+            line_spacings = tuple(map(len, line.rstrip(table_newline_str).split(" & ")))
+            if spacings is None:
+                spacings = line_spacings
+            else:
+                # Compare to previous.
+                if len(line_spacings) != len(spacings):
+                    raise ValueError(
+                        f"Number of '&' symbols in line: {line} does not "
+                        "match previous lines "
+                        f"({len(line_spacings)} vs. {len(spacings)})."
+                    )
+                # Choose largest spacing for each column.
+                spacings = tuple(max(s1, s2) for s1, s2 in zip(spacings, line_spacings))
+
+        if next_line.startswith(r"\bottomrule"):
+            break
+    else:
+        raise ValueError(f"Bottomrule line not found in: {table}.")
+
+    # Use the previously found spacings to align the columns.
+    assert spacings is not None
+    for i in to_align:
+        assert table_newline_str in table_lines[i]
+        split_line = table_lines[i].rstrip(table_newline_str).split(" & ")
+        assert len(split_line) == len(spacings)
+        new_elements = []
+        for element, spacing in zip(split_line, spacings):
+            if len(
+                set(element).intersection(set(string.digits).union({"-", "."}))
+            ) == len(set(element)):
+                # If the element is purely numeric, right-align.
+                new_elements.append(" " * (spacing - len(element)) + element)
+            else:
+                # Otherwise, left-align.
+                new_elements.append(element + " " * (spacing - len(element)))
+
+        table_lines[i] = " & ".join(new_elements) + table_newline_str
+
+    table = "\n".join(table_lines)
+
+    # Insert '%' on line before label.
+    table_lines = table.split("\n")
+    for i, j in zip(range(len(table_lines) - 1), range(1, len(table_lines))):
+        if table_lines[j].startswith(r"\label"):
+            # Insert '%' on line before label.
+            table_lines[i] = table_lines[i].strip() + "%"
+            # Insert \vspace{1em} on new line after label.
+            table_lines.insert(j + 1, r"\vspace{1em}")
+            table = "\n".join(table_lines)
+            break
+    else:
+        raise ValueError(f"Label line not found in: {table}.")
+
+    # Insert '\rowcolor{lavender}' on alternating lines between '\midrule' and
+    # '\bottomrule'.
+    table_lines = table.split("\n")
+    new_table_lines = table_lines.copy()
+    insertion_counter = 0
+    for (i, (line, next_line)) in enumerate(zip(table_lines[:-1], table_lines[1:])):
+        if next_line.startswith(r"\bottomrule"):
+            break
+        elif line.startswith(r"\midrule") or insertion_counter > 0:
+            insertion_counter += 1
+            if insertion_counter % 2 == 1:
+                # Insert rowcolor.
+                new_table_lines.insert(
+                    i + 1 + (insertion_counter // 2), r"\rowcolor{lavender}"
+                )
+    else:
+        raise ValueError(f"Bottomrule line not found in: {table}.")
+    table = "\n".join(new_table_lines)
+
+    # Add indentation.
+    # +4 spaces (excluding first and last line).
+    # +8 spaces within begin{tabular} / end{tabular}.
+    # +8 spaces within caption.
+    table_lines = table.split("\n")
+    new_table_lines = table_lines.copy()
+    prev_indentation = (None, None)  # Record previous indentation and stop criterion.
+    for i, line, prev_line, next_line in zip(
+        range(1, len(table_lines) - 1),
+        table_lines[1:-1],
+        table_lines[:-2],
+        table_lines[2:],
+    ):
+        if prev_indentation[0] != None:
+            if not line.startswith(prev_indentation[1]):
+                indentation = prev_indentation[0]
+            else:
+                indentation -= 4
+                prev_indentation = (None, None)
+        else:
+            indentation = 4  # Add 4 spaces to all but the first and last lines.
+            # Additional 4 spaces in certain cases.
+            if prev_line.startswith(r"\caption"):
+                indentation += 4
+                prev_indentation = (indentation, r"}%")
+            elif prev_line.startswith(r"\begin{tabular}"):
+                indentation += 4
+                prev_indentation = (indentation, r"\end{tabular}")
+
+        new_table_lines[i] = " " * indentation + line
+
+    return "\n".join(new_table_lines)
+
+
 def analyse_sis(
     *,
     sis,
@@ -915,30 +1042,56 @@ def analyse_sis(
     print_df.index = list(map(escape_latex, print_df.index))
     print_df.columns = list(map(escape_latex, print_df.columns))
 
+    scheme_name = f"|SINFERNO|-{scheme_name_map[exp_name]}"
+
+    metric_str = {
+        "ARCSINH_NME": r"arcsinh-|NME|",
+        "MPD": r"|MPD|",
+    }[metric_name]
+
+    short_caption = (
+        rf"Global {analysis_type.lower()} {method_name} |SA| for {scheme_name} measured "
+        f"by {metric_str}."
+    )
     caption_lines = (
-        f"Global {analysis_type} {method_name} sensitivity analysis of for {exp_name} "
-        f"measured by {metric_name}. Computed from individual significance values at "
-        f"{len(sis)} land points.",
+        rf"Global {analysis_type.lower()} {method_name} |SA| for {scheme_name} "
+        f"measured by {metric_str}.",
+        f"Computed from individual significance values at {len(sis)} land points.",
+    )
+    caption = (
+        "\n".join(("%", *map(escape_latex, caption_lines), "")),
+        escape_latex(short_caption),
     )
 
-    print(
-        print_df.style.to_latex(
-            caption=(
-                "\n".join(("%", *map(escape_latex, caption_lines), "")),
-                escape_latex(
-                    f"Global {analysis_type} {method_name} SA for {exp_name} measured "
-                    f"by {metric_name}."
-                ),
-            ),
-            label=(
-                f"table:global_sis_{analysis_type.lower()}_{exp_key.lower()}"
-                f"_{metric_name.lower()}"
-            ),
-            hrules=True,
-            position_float="centering",
-            siunitx=True,
+    def replace_acros(text: str):
+        return (
+            text.replace("|SA|", r"\acs{sa}")
+            .replace("|SINFERNO|", r"\acs{sinferno}")
+            .replace("|NME|", r"\acs{nme}")
+            .replace("|MPD|", r"\acs{mpd}")
         )
+
+    caption = tuple(map(replace_acros, caption))
+
+    def insert_num(text: str):
+        return re.subn(r"\b(\d+?)\b", r"\\num{\g<1>}", text)[0]
+
+    caption = tuple(map(insert_num, caption))
+
+    label = (
+        f"table:global_sis_{analysis_type.lower()}_{scheme_name_map[exp_name]}"
+        f"_{metric_name.lower()}"
     )
+
+    latex_table_str = print_df.style.to_latex(
+        caption=caption,
+        label=label,
+        hrules=True,
+        position_float="centering",
+        siunitx=True,
+    )
+
+    print(format_latex_table(latex_table_str))
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
