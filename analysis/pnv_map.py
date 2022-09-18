@@ -29,7 +29,7 @@ if __name__ == "__main__":
     cmap = "tab10"
 
     fig, ax = plt.subplots(
-        1, 1, figsize=(8, 4), subplot_kw=dict(projection=ccrs.Robinson())
+        1, 1, figsize=(5.5, 2.8), subplot_kw=dict(projection=ccrs.Robinson())
     )
     cube_plotting(
         mega_pnv_cube,
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     # y-axis for vertical cbar.
     cb.ax.set_yticklabels(list(mega_pnv_cube.attributes["regions_codes"]))
 
-    fig.savefig(Path("~/tmp/mega_biomes.png").expanduser())
+    fig.savefig(Path("~/tmp/mega_biomes.pdf").expanduser())
     plt.close(fig)
 
     pnv_df = pd.read_csv(pnv_csv_file, header=0, index_col=0)
