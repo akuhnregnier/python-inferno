@@ -8,20 +8,27 @@ import numpy as np
 from .configuration import scheme_name_map
 from .data import get_gfed_regions, get_pnv_mega_plot_data
 from .metrics import calculate_resampled_errors, mpd, nme
-from .plotting import use_style
+from .plotting import broken_y_axis, get_fig_ax, use_style
 
 
 def error_hist(
-    *, errors, title, error_dict, save_path, title_label=None, fig=None, ax=None
+    *,
+    errors,
+    title=None,
+    ylabel=None,
+    error_dict,
+    save_path,
+    title_label=None,
+    fig=None,
+    ax=None,
+    ylim=None,
 ):
-    if fig is None and ax is None:
-        fig = plt.figure()
-    elif fig is None:
-        fig = ax.get_figure()
-    if ax is None:
-        ax = plt.axes()
+    fig, ax = get_fig_ax(fig=fig, ax=ax)
 
-    ax.set_title(title)
+    if title is not None:
+        ax.set_title(title)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
 
     if title_label is not None:
         ax.text(-0.01, 1.05, title_label, transform=ax.transAxes)
@@ -96,6 +103,9 @@ def error_hist(
         s["whishi"] = None
 
     ax.bxp(stats, showfliers=False)
+
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
     if save_path is not None:
         fig.savefig(save_path)
@@ -176,21 +186,67 @@ def null_model_analysis(
     for key, data in comp_data.items():
         mpd_error_dict[key] = mpd(obs=reference_data, pred=data, return_std=True)
 
+    single_boxplot_figsize = (4, 2.5)
+
     # NME Errors.
-    error_hist(
-        errors=nme_errors,
-        title="NME errors (with std of mean)",
-        error_dict=nme_error_dict,
+    shared_error_hist_kwargs = dict(
+        errors=nme_errors, error_dict=nme_error_dict, save_path=None
+    )
+    broken_y_axis(
+        figsize=single_boxplot_figsize,
+        ylabel="NME error (std of mean)",
+        ylabelpad=30,
+        height_ratio=0.6,
+        ylims=[
+            (0.93, 1.116),
+            (0.551, 0.595),
+        ],
         save_path=save_dir / "nme_errors.png",
+        plot_func=error_hist,
+        plot_func_kwargs=(
+            shared_error_hist_kwargs,
+            shared_error_hist_kwargs,
+        ),
     )
 
+    # NOTE Single plot.
+    # error_hist(
+    #     errors=nme_errors,
+    #     ylabel="NME error (std of mean)",
+    #     error_dict=nme_error_dict,
+    #     save_path=save_dir / "nme_errors.png",
+    #     fig=plt.figure(figsize=single_boxplot_figsize),
+    # )
+
     # MPD Errors.
-    error_hist(
-        errors=mpd_errors,
-        title="MPD errors (with std of mean)",
-        error_dict=mpd_error_dict,
-        save_path=save_dir / "mpd_errors.png",
+    shared_error_hist_kwargs = dict(
+        errors=mpd_errors, error_dict=mpd_error_dict, save_path=None
     )
+    broken_y_axis(
+        figsize=single_boxplot_figsize,
+        ylabel="MPD error (std of mean)",
+        ylabelpad=30,
+        height_ratio=0.6,
+        ylims=[
+            (0.273, 0.53),
+            (0.201, 0.245),
+        ],
+        save_path=save_dir / "mpd_errors.png",
+        plot_func=error_hist,
+        plot_func_kwargs=(
+            shared_error_hist_kwargs,
+            shared_error_hist_kwargs,
+        ),
+    )
+
+    # NOTE Single plot.
+    # error_hist(
+    #     errors=mpd_errors,
+    #     ylabel="MPD error (std of mean)",
+    #     error_dict=mpd_error_dict,
+    #     save_path=save_dir / "mpd_errors.png",
+    #     fig=plt.figure(figsize=single_boxplot_figsize),
+    # )
 
     if regions is not None:
         # Regional plotting.
@@ -204,21 +260,17 @@ def null_model_analysis(
         region_nrows_ncols = dict(nrows=math.ceil(N_plots / 2), ncols=2)
         regions_cube.data.mask |= np.any(total_mask, axis=0)
 
-        nme_fig, nme_axes = plt.subplots(
-            sharey=True, figsize=(9, 9), **region_nrows_ncols
-        )
-        mpd_fig, mpd_axes = plt.subplots(
-            sharey=True, figsize=(9, 9), **region_nrows_ncols
-        )
+        region_nme_data = {}
+        region_mpd_data = {}
 
-        for (plot_i, (region_code, region_name)) in enumerate(
-            {
-                code: name
-                for code, name in regions_cube.attributes["short_regions"].items()
-                # Ignore the Ocean region.
-                if code != 0
-            }.items()
-        ):
+        n_points_map = {}
+
+        for region_code, region_name in {
+            code: name
+            for code, name in regions_cube.attributes["short_regions"].items()
+            # Ignore the Ocean region.
+            if code != 0
+        }.items():
             region_sel = (
                 np.ones((12, 1, 1), dtype=np.bool_)
                 & (np.ma.getdata(regions_cube.data) == region_code)[np.newaxis]
@@ -255,32 +307,97 @@ def null_model_analysis(
                     obs=reg_reference_data, pred=data, return_std=True
                 )
 
+            region_nme_data[region_name] = reg_nme_error_dict
+            region_mpd_data[region_name] = reg_mpd_error_dict
+
+            n_points = np.sum(region_sel) / 12
+            assert (round(n_points) - n_points) < 1e-10
+            n_points = round(n_points)
+
+            n_points_map[region_name] = n_points
+
+        # Calculate common y-limits excluding the 'desert' region for its anomalous
+        # behaviour.
+        common_nme_y_limit = [math.inf, -math.inf]
+        common_mpd_y_limit = [math.inf, -math.inf]
+
+        for (region_name, reg_nme_error_dict), reg_mpd_error_dict in zip(
+            region_nme_data.items(), region_mpd_data.values()
+        ):
+            if region_name == "desert":
+                continue
+
+            for err, std in reg_nme_error_dict.values():
+                if (err - std) < common_nme_y_limit[0]:
+                    common_nme_y_limit[0] = err - std
+                if (err + std) > common_nme_y_limit[1]:
+                    common_nme_y_limit[1] = err + std
+
+            for err, std in reg_mpd_error_dict.values():
+                if (err - std) < common_mpd_y_limit[0]:
+                    common_mpd_y_limit[0] = err - std
+                if (err + std) > common_mpd_y_limit[1]:
+                    common_mpd_y_limit[1] = err + std
+
+        # Add padding.
+        common_nme_y_limit[0] -= 0.01
+        common_nme_y_limit[1] += 0.01
+        common_mpd_y_limit[0] -= 0.01
+        common_mpd_y_limit[1] += 0.01
+
+        nme_fig, nme_axes = plt.subplots(figsize=(7, 8), **region_nrows_ncols)
+        mpd_fig, mpd_axes = plt.subplots(figsize=(7, 8), **region_nrows_ncols)
+
+        for (
+            plot_i,
+            ((region_name, reg_nme_error_dict), reg_mpd_error_dict, n_points),
+        ) in enumerate(
+            zip(
+                region_nme_data.items(),
+                region_mpd_data.values(),
+                n_points_map.values(),
+            )
+        ):
             title_label = f"({ascii_lowercase[plot_i]})"
+
+            title = f"{region_name} (n={n_points})"
+
+            if region_name != "desert":
+                nme_ylim = common_nme_y_limit
+                mpd_ylim = common_mpd_y_limit
+            else:
+                nme_ylim = None
+                mpd_ylim = None
 
             error_hist(
                 errors=None,
                 # Show the region name and number of selected locations.
-                title=f"{region_name} (n={np.sum(region_sel) / 12})",
+                title=title,
                 title_label=title_label,
+                ylabel="NME error (std of mean)"
+                if not plot_i % region_nrows_ncols["ncols"]
+                else None,
                 error_dict=reg_nme_error_dict,
                 save_path=None,
                 fig=nme_fig,
                 ax=nme_axes.ravel()[plot_i],
+                ylim=nme_ylim,
             )
 
             error_hist(
                 errors=None,
                 # Show the region name and number of selected locations.
-                title=f"{region_name} (n={np.sum(region_sel) / 12})",
+                title=title,
                 title_label=title_label,
+                ylabel="MPD error (std of mean)"
+                if not plot_i % region_nrows_ncols["ncols"]
+                else None,
                 error_dict=reg_mpd_error_dict,
                 save_path=None,
                 fig=mpd_fig,
                 ax=mpd_axes.ravel()[plot_i],
+                ylim=mpd_ylim,
             )
-
-        nme_fig.suptitle("Regional NME Errors")
-        mpd_fig.suptitle("Regional MPD Errors")
 
         for fig in [nme_fig, mpd_fig]:
             fig.tight_layout(rect=[0, 0.0, 1, 0.98])

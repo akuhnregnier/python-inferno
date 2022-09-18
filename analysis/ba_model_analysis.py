@@ -118,9 +118,16 @@ if __name__ == "__main__":
         "--no-hist-plots", action="store_true", help="do not plot parameter histograms"
     )
     parser.add_argument(
+        "--no-phase-diff-locs", action="store_true", help="do not plot phase diff locs"
+    )
+    parser.add_argument(
         "-n", type=int, help="method index (-1 selects all; default)", default=-1
     )
     args = parser.parse_args()
+
+    exclude_plot_keys = []
+    if args.no_phase_diff_locs:
+        exclude_plot_keys.append("data_params")
 
     use_style()
     save_dir = Path("~/tmp/ba-model-analysis/").expanduser()
@@ -261,7 +268,11 @@ if __name__ == "__main__":
                 plotting,
                 exp_name=exp_name,
                 ref_2d_data=(reference_obs if exp_name != "GFED4" else None),
-                **data,
+                **{
+                    key: val
+                    for key, val in data.items()
+                    if key not in exclude_plot_keys
+                },
             )
         )
 

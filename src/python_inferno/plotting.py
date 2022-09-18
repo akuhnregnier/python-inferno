@@ -3,6 +3,7 @@ import math
 from contextlib import contextmanager
 from itertools import product
 from numbers import Integral
+from operator import add, sub
 from pathlib import Path
 from string import ascii_lowercase
 
@@ -22,6 +23,16 @@ from .configuration import pft_group_names, scheme_name_map
 from .data import get_2d_cubes, get_gfed_regions, get_pnv_mega_plot_data
 from .metrics import calculate_phase, calculate_phase_2d
 from .utils import wrap_phase_diffs
+
+
+def get_fig_ax(*, fig=None, ax=None):
+    if fig is None and ax is None:
+        fig = plt.figure()
+    elif fig is None:
+        fig = ax.get_figure()
+    if ax is None:
+        ax = plt.axes()
+    return fig, ax
 
 
 def lin_cube_plotting(*, data, title, label="BA"):
@@ -744,3 +755,90 @@ def collated_ba_log_plot(*, ba_data_dict, plot_dir, save_name):
         assert found_standard_inferno
 
         fig.savefig(plot_dir / save_name)
+
+
+def broken_y_axis(
+    *,
+    figsize=None,
+    ylabel=None,
+    ylabelpad=None,
+    axes_hspace=0.05,
+    height_ratio=1,
+    margin_f=(0.22, 0.05),
+    ylims=None,
+    plot_func,
+    plot_func_kwargs,
+    save_path=None,
+):
+    fig = plt.figure(figsize=figsize)
+
+    all_ax = fig.add_subplot(1, 1, 1)
+
+    if ylabel is not None:
+        all_ax.set_ylabel(ylabel, labelpad=ylabelpad)
+
+    all_ax.set_xticks([])
+    all_ax.set_yticks([])
+    all_ax.set_frame_on(
+        False
+    )  # So we don't get black bars showing through the 'broken' gap.
+
+    # Break the y-axis into 2 parts.
+    ax1, ax2 = fig.subplots(
+        2, 1, sharex=True, gridspec_kw=dict(height_ratios=[height_ratio, 1])
+    )
+    fig.subplots_adjust(hspace=axes_hspace)  # adjust space between axes
+
+    # Plot data.
+
+    for ax, kwargs in zip((ax1, ax2), plot_func_kwargs):
+        plot_func(fig=fig, ax=ax, **kwargs)
+
+    if ylims is None:
+        ylim_1 = ax1.get_ylim()
+        ylim_2 = ax2.get_ylim()
+
+        # Two-sided relative margin addition.
+        ax1.set_ylim(
+            [
+                op(ylim_val, factor * np.ptp(ylim_1))
+                for ylim_val, factor, op in zip(ylim_1, margin_f, (sub, add))
+            ]
+        )
+        ax2.set_ylim(
+            [
+                op(ylim_val, factor * np.ptp(ylim_1) / height_ratio)
+                for ylim_val, factor, op in zip(ylim_2, margin_f, (sub, add))
+            ]
+        )
+    else:
+        ylim_1, ylim_2 = ylims
+        ax1.set_ylim(ylim_1)
+        ax2.set_ylim(ylim_2)
+
+    # Hide the spines between ax and ax2.
+    ax1.spines["bottom"].set_visible(False)
+    ax2.spines["top"].set_visible(False)
+    ax1.xaxis.tick_top()
+    ax1.tick_params(labeltop=False)  # don't put tick labels at the top
+    ax1.xaxis.set_ticks_position("none")  # hide top ticks themselves (not just labels)
+
+    ax2.xaxis.tick_bottom()
+
+    # Cut-out slanted lines.
+
+    kwargs = dict(
+        marker=[(-1, -0.5), (1, 0.5)],
+        markersize=8,
+        linestyle="none",
+        color="k",
+        mec="k",
+        mew=1,
+        clip_on=False,
+    )
+    ax1.plot([0, 1], [0, 0], transform=ax1.transAxes, **kwargs)
+    ax2.plot([0, 1], [1, 1], transform=ax2.transAxes, **kwargs)
+
+    if save_path is not None:
+        fig.savefig(save_path)
+        plt.close(fig)
