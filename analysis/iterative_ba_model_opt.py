@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     df, method_iter = get_model_params(progress=False, verbose=False)
 
-    fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(8, 8))
+    fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(6, 6))
 
     for i, method_data in enumerate(method_iter()):
         full_opt_loss = method_data[4]
