@@ -5,7 +5,11 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import networkx as nx
 
+from python_inferno.plotting import use_style
+
 if __name__ == "__main__":
+    use_style()
+
     # Nodes
     # 0
     # 1, 2, 3
@@ -77,12 +81,12 @@ if __name__ == "__main__":
     nx.draw_networkx(
         G,
         pos=pos,
-        font_size=36,
-        node_size=3000,
+        font_size=18,
+        node_size=1000,
         node_color=node_colors,
         edgecolors="black",
-        linewidths=5,
-        width=5,
+        linewidths=3,
+        width=4,
     )
 
     # Set margins for the axes so that nodes aren't clipped
