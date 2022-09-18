@@ -2,6 +2,7 @@
 import math
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from operator import itemgetter
+from string import ascii_lowercase
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,9 +11,10 @@ import spotpy
 from tqdm import tqdm
 
 from .cache import cache, mark_dependency
+from .configuration import pft_group_names
 from .hyperopt import get_space_template
 from .mcmc import get_loss_func, iter_opt_methods
-from .plotting import use_style
+from .plotting import get_plot_name_map_total, use_style
 
 assert spotpy.__version__ == "1.5.16.1", spotpy.__version__
 
@@ -141,7 +143,7 @@ def plot_combined(param_df, name, n_samples, save_dir, max_n_plot=int(1e4)):
     use_style()
 
     plt.ioff()
-    fig, axes = plt.subplots(2, 1, figsize=(15, 15))
+    fig, axes = plt.subplots(2, 1, figsize=(6, 5))
 
     # Plot chains.
 
@@ -158,8 +160,21 @@ def plot_combined(param_df, name, n_samples, save_dir, max_n_plot=int(1e4)):
 
     name = name.lstrip("par")
 
-    ax.set_ylabel(name)
-    ax.set_xlabel("iterations")
+    if name.endswith("2") or name.endswith("3"):
+        param_number = int(name[-1]) - 1
+        par_name = name[:-1]
+    else:
+        par_name = name
+        param_number = 0
+
+    pft_group_name = pft_group_names[param_number]
+    if par_name != "log_simulation_0":
+        label = f"{get_plot_name_map_total()[par_name]} {pft_group_name}"
+    else:
+        label = par_name
+
+    ax.set_ylabel(label)
+    ax.set_xlabel("Iterations")
     ax.grid(alpha=0.5, linestyle="--", color=tuple([0.8] * 3))
 
     # Plot histogram.
@@ -168,10 +183,16 @@ def plot_combined(param_df, name, n_samples, save_dir, max_n_plot=int(1e4)):
     hist_data = np.asarray(param_df[data_col])
     assert hist_data.ndim == 1
     hist_data = hist_data[hist_data.size // 2 :]  # Only use last 1/2.
-    axes[1].hist(hist_data, bins=100)
+    axes[1].hist(hist_data, bins=100, density=True)
+    axes[1].set_xlabel(label)
+    axes[1].set_ylabel("Density")
+
+    for ax, label in zip(axes.ravel(), ascii_lowercase):
+        ax.text(-0.01, 1.05, f"({label})", transform=ax.transAxes)
 
     # Save.
 
+    plt.tight_layout()
     fig.savefig(save_dir / name, bbox_inches="tight")
     plt.close(fig)
 
