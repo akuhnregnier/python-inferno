@@ -49,6 +49,7 @@ from python_inferno.configuration import (
     npft,
     pft_group_names,
     pft_groups,
+    scheme_name_map,
 )
 from python_inferno.data import get_processed_climatological_data, load_jules_lats_lons
 from python_inferno.inferno import sigmoid
@@ -374,11 +375,14 @@ def partial_dependence_plots(
     nrows = 4
     ncols = N_features
 
+    scheme_name = scheme_name_map[exp_key]
+
     assert N_features == len(plot_name_map)
     # Sort features using the order in `plot_name_map`.
     assert set(plot_name_map) == set(feature_names) == set(plot_units_map)
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height), sharey=True)
+
     for (col_axes, feature_name) in zip(axes.T, plot_name_map):
         sigmoid_params = {}
         for key, suffix in [
@@ -477,8 +481,15 @@ def partial_dependence_plots(
                 ls=ls,
             )
 
-        for ax in col_axes:
+        if feature_name == "litter_pool" and scheme_name == "B2":
+            col_axes[0].set_xlim(3100, 5700)
+
+        for ax in col_axes[0:1]:
             ax.legend()
+
+    axes[0, 0].set_ylabel(f"SINFERNO-{scheme_name}")
+    for i in range(3):
+        axes[i + 1, 0].set_ylabel(f"GAM {pft_group_names[i]}")
 
     for letter, ax in zip(ascii_lowercase, axes.ravel()):
         ax.text(-0.01, 1.05, f"({letter})", transform=ax.transAxes)

@@ -603,7 +603,9 @@ def get_plot_units_map(*, dryness_method, fuel_build_up_method):
 
 
 def plot_label_case(label):
-    return label.lower().replace("npp", "NPP")
+    return " ".join([s.capitalize() for s in label.lower().split(" ")]).replace(
+        "Npp", "NPP"
+    )
 
 
 def use_style():
