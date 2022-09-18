@@ -143,7 +143,7 @@ def plot_combined(param_df, name, n_samples, save_dir, max_n_plot=int(1e4)):
     use_style()
 
     plt.ioff()
-    fig, axes = plt.subplots(2, 1, figsize=(6, 5))
+    fig, axes = plt.subplots(2, 1, figsize=(5, 3.5))
 
     # Plot chains.
 
