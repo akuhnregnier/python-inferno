@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from itertools import product
 from numbers import Integral
 from pathlib import Path
+from string import ascii_lowercase
 
 import cartopy.crs as ccrs
 import matplotlib as mpl
@@ -12,11 +13,12 @@ import numpy as np
 from jules_output_analysis.data import n96e_lats, n96e_lons
 from jules_output_analysis.utils import PFTs, pft_acronyms
 from loguru import logger
+from matplotlib.colors import from_levels_and_colors
 from matplotlib.transforms import offset_copy
 from wildfires.analysis import cube_plotting
 
 from .ba_model import ARCSINH_FACTOR, BAModel
-from .configuration import pft_group_names
+from .configuration import pft_group_names, scheme_name_map
 from .data import get_2d_cubes, get_gfed_regions, get_pnv_mega_plot_data
 from .metrics import calculate_phase, calculate_phase_2d
 from .utils import wrap_phase_diffs
@@ -33,7 +35,7 @@ def lin_cube_plotting(*, data, title, label="BA"):
     )
 
 
-def log_cube_plotting(*, data, title, raw_data, label="log(BA)"):
+def log_cube_plotting(*, data, title, raw_data, label="BA"):
     cube_plotting(
         data * 1e6,
         title=title,
@@ -445,6 +447,64 @@ def plotting(
         logger.debug("'ref_2d_data' not given.")
 
 
+def plot_collated_phase_diffs(*, phase_diff_dict, save_dir, save_name):
+    # Global phase difference maps.
+    use_style()
+
+    bin_edges = np.linspace(-6, 6, 10)
+
+    cmap, norm = from_levels_and_colors(
+        levels=list(bin_edges),
+        colors=plt.get_cmap("twilight_shifted")(np.linspace(0, 1, len(bin_edges) - 1)),
+        extend="neither",
+    )
+
+    ncols = 2
+    nrows = math.ceil(len(phase_diff_dict) / ncols)
+
+    with custom_axes(
+        ncols=ncols,
+        nrows=nrows,
+        nplots=len(phase_diff_dict),
+        height=1.9 * nrows,
+        width=6.2,
+        h_pad=0.04,
+        w_pad=0.02,
+        cbar_pos="bottom",
+        cbar_height=0.012,
+        cbar_width=0.6,
+        cbar_h_pad=0.03,
+        cbar_w_pad=0,
+        projection=ccrs.Robinson(),
+    ) as (fig, axes, cax):
+        for (i, (ax, (title, phase_diff))) in enumerate(
+            zip(axes, phase_diff_dict.items())
+        ):
+            cube_plotting(
+                phase_diff,
+                title="",
+                fig=fig,
+                ax=ax,
+                cmap=cmap,
+                norm=norm,
+                colorbar_kwargs=dict(
+                    cax=cax,
+                    orientation="horizontal",
+                    label="phase diff (obs - model)",
+                    format="%.1f",
+                )
+                if i == 0
+                else False,
+            )
+
+            if title in scheme_name_map:
+                ax.set_title(f"SINFERNO-{scheme_name_map[title]}")
+            else:
+                ax.set_title(title)
+
+        fig.savefig(save_dir / save_name)
+
+
 def get_plot_name_map(*, dryness_method, fuel_build_up_method):
     name_map = {
         "t1p5m_tile": "Temperature",
@@ -587,7 +647,9 @@ def custom_axes(
 
     axes = []
 
-    for i, j in product(range(nrows - 1, -1, -1), range(ncols)):
+    for (label, (i, j)) in zip(
+        ascii_lowercase, product(range(nrows - 1, -1, -1), range(ncols))
+    ):
         # Row index (i), col index (j).
         axes.append(
             fig.add_axes(
@@ -604,6 +666,9 @@ def custom_axes(
                 projection=projection,
             )
         )
+
+        axes[-1].text(0.01, 1.05, f"({label})", transform=axes[-1].transAxes)
+
         if len(axes) == nplots:
             # Stop adding axes.
             break
@@ -611,3 +676,71 @@ def custom_axes(
     yield fig, axes, cax
 
     plt.close(fig)
+
+
+def collated_ba_log_plot(*, ba_data_dict, plot_dir, save_name):
+    use_style()
+
+    bin_edges = np.geomspace(5e-6, 5e-3, 8)
+
+    cmap, norm = from_levels_and_colors(
+        levels=list(bin_edges),
+        colors=plt.get_cmap("inferno")(np.linspace(0, 1, len(bin_edges) + 1)),
+        extend="both",
+    )
+
+    ncols = 2
+    nrows = math.ceil(len(ba_data_dict) / ncols)
+
+    found_standard_inferno = False
+
+    with custom_axes(
+        ncols=ncols,
+        nrows=nrows,
+        nplots=len(ba_data_dict),
+        height=1.9 * nrows,
+        width=6.2,
+        h_pad=0.04,
+        w_pad=0.02,
+        cbar_pos="bottom",
+        cbar_height=0.012,
+        cbar_width=0.6,
+        cbar_h_pad=0.03,
+        cbar_w_pad=0,
+        projection=ccrs.Robinson(),
+    ) as (fig, axes, cax):
+        for (i, (ax, (title, data))) in enumerate(zip(axes, ba_data_dict.items())):
+
+            if title == "standard INFERNO":
+                # Multiply by number of seconds in month.
+                data = 31 * 24 * 60 * 60 * data.copy()
+                found_standard_inferno = True
+
+            try:
+                cube_plotting(
+                    data,
+                    title="",
+                    fig=fig,
+                    ax=ax,
+                    cmap=cmap,
+                    norm=norm,
+                    colorbar_kwargs=dict(
+                        cax=cax,
+                        orientation="horizontal",
+                        label="BA",
+                        format="%.1e",
+                    )
+                    if i == 0
+                    else False,
+                )
+            except AssertionError:
+                pass
+
+            if title in scheme_name_map:
+                ax.set_title(f"SINFERNO-{scheme_name_map[title]}")
+            else:
+                ax.set_title(title)
+
+        assert found_standard_inferno
+
+        fig.savefig(plot_dir / save_name)

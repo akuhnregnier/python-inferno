@@ -21,7 +21,14 @@ from python_inferno.data import load_data, load_jules_lats_lons
 from python_inferno.metrics import Metrics
 from python_inferno.metrics_plotting import null_model_analysis
 from python_inferno.model_params import get_model_params, plot_param_histograms
-from python_inferno.plotting import plotting, use_style
+from python_inferno.plotting import (
+    collated_ba_log_plot,
+    phase_calc,
+    plot_collated_phase_diffs,
+    plotting,
+    use_style,
+    wrap_phase_diffs,
+)
 from python_inferno.utils import (
     ConsMonthlyAvg,
     DebugExecutor,
@@ -257,6 +264,38 @@ if __name__ == "__main__":
                 **data,
             )
         )
+
+    # Collated phase difference map.
+    phase_diff_dict = {}
+    for exp_name, data in plot_data.items():
+        if exp_name == "GFED4":
+            continue
+
+        model_phase_2d = phase_calc(data=data["model_ba_2d_data"])
+        phase_diff_dict[exp_name] = wrap_phase_diffs(
+            phase_calc(data=reference_obs) - model_phase_2d
+        )
+    futures.append(
+        executor.submit(
+            plot_collated_phase_diffs,
+            phase_diff_dict=phase_diff_dict,
+            save_dir=save_dir,
+            save_name="collated_phase_diffs.png",
+        )
+    )
+
+    # Collated log plotting of 2D BA cubes.
+    futures.append(
+        executor.submit(
+            collated_ba_log_plot,
+            ba_data_dict={
+                exp_name: data_dict["model_ba_2d_data"]
+                for exp_name, data_dict in plot_data.items()
+            },
+            plot_dir=save_dir,
+            save_name="collated_log.png",
+        )
+    )
 
     orig_reference_obs = cube_1d_to_2d(
         get_1d_data_cube(orig_mon_avg_gfed_ba_1d, lats=jules_lats, lons=jules_lons)

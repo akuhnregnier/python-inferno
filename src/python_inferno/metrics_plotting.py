@@ -85,7 +85,9 @@ def error_hist(
                 "q1": err - std,
                 "q3": err + std,
                 "med": err,
-                "label": scheme_name_map.get(key, key),
+                "label": scheme_name_map.get(key, key)
+                if key != "standard INFERNO"
+                else "standard\nINFERNO",
             }
         )
 
