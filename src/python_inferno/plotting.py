@@ -382,7 +382,7 @@ def plotting(
     # Phase difference (relative to GFED4) plots.
     if ref_2d_data is not None:
         phase_diff = wrap_phase_diffs(phase_calc(data=ref_2d_data) - model_phase_2d)
-        xlabel = "phase diff (obs - model)"
+        xlabel = "Phase Diff (Obs - Model)"
         bins = np.linspace(-6, 6, 20)
         assert not np.any(phase_diff) < bins[0]
         assert not np.any(phase_diff) > bins[-1]
@@ -483,7 +483,7 @@ def plot_collated_phase_diffs(*, phase_diff_dict, save_dir, save_name):
         w_pad=0.02,
         cbar_pos="bottom",
         cbar_height=0.012,
-        cbar_width=0.6,
+        cbar_width=0.4,
         cbar_h_pad=0.03,
         cbar_w_pad=0,
         projection=ccrs.Robinson(),
@@ -501,7 +501,7 @@ def plot_collated_phase_diffs(*, phase_diff_dict, save_dir, save_name):
                 colorbar_kwargs=dict(
                     cax=cax,
                     orientation="horizontal",
-                    label="phase diff (obs - model)",
+                    label="Phase Diff (Obs - Model)",
                     format="%.1f",
                 )
                 if i == 0
@@ -717,7 +717,7 @@ def collated_ba_log_plot(*, ba_data_dict, plot_dir, save_name):
         w_pad=0.02,
         cbar_pos="bottom",
         cbar_height=0.012,
-        cbar_width=0.6,
+        cbar_width=0.55,
         cbar_h_pad=0.03,
         cbar_w_pad=0,
         projection=ccrs.Robinson(),

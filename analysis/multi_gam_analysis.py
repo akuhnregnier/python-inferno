@@ -351,8 +351,8 @@ def gam_analysis(
 
 def partial_dependence_plots(
     *,
-    fig_width=8,
-    fig_height=7,
+    fig_width=7,
+    fig_height=6.5,
     se_factor=1e-4,
     feature_names,
     proc_params,

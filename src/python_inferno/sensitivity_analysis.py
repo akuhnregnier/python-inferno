@@ -958,7 +958,7 @@ def plot_si_collated(
         w_pad=0.02,
         cbar_pos="bottom",
         cbar_height=0.012,
-        cbar_width=0.7,
+        cbar_width=0.4,
         cbar_h_pad=0.03,
         cbar_w_pad=0,
         projection=ccrs.Robinson(),

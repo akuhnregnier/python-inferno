@@ -293,9 +293,9 @@ if __name__ == "__main__":
         split_ax.legend(loc="upper center")
 
         if i in (0, 2):
-            split_ax.set_ylabel("performance (loss)")
+            split_ax.set_ylabel("Performance (loss)")
         if i in (2, 3):
-            split_ax.set_xlabel("nr. of optimised parameters")
+            split_ax.set_xlabel("Nr. of Optimised Parameters")
 
     fig.savefig(save_dir / "iter_model_perf.pdf")
     plt.close(fig)
