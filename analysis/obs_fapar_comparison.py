@@ -11,6 +11,7 @@ from wildfires.analysis import cube_plotting
 
 from python_inferno.cache import cache
 from python_inferno.data import load_data, load_jules_lats_lons
+from python_inferno.plotting import use_style
 from python_inferno.utils import frac_weighted_mean, monthly_average_data
 
 
@@ -41,6 +42,8 @@ def _time_coord_passthrough(time_coord):
 
 
 if __name__ == "__main__":
+    use_style()
+
     jules_lats, jules_lons = load_jules_lats_lons()
 
     def convert_to_2d(data_1d):
@@ -108,18 +111,15 @@ if __name__ == "__main__":
 
     # Plotting.
 
-    interactive = False
-
-    if not interactive:
-        plt.ioff()
+    plt.ioff()
 
     ###
 
-    cube_plotting(mean_jules_fapar_2d, title="JULES")
+    # cube_plotting(mean_jules_fapar_2d, title="JULES")
 
     ###
 
-    cube_plotting(mean_obs_fapar_2d, title="Obs")
+    # cube_plotting(mean_obs_fapar_2d, title="Obs")
 
     ###
 
@@ -130,28 +130,41 @@ if __name__ == "__main__":
         squeeze=True,
         figsize=(5, 4.5),
     )
-    common_kwargs = dict(
-        title="",
-        boundaries=[-10, -1, 0, 0.2, 0.4],
-        fig=fig,
-        colorbar_kwargs=dict(label="R2"),
+
+    def get_common_kwargs(cax):
+        return dict(
+            title="",
+            boundaries=[-10, -1, 0, 0.2, 0.4],
+            fig=fig,
+            colorbar_kwargs=dict(label=r"$\mathrm{R}^2$", cax=cax),
+        )
+
+    axes[0].set_title(r"Obs FAPAR $\leftrightarrow$ JULES FAPAR")
+    axes[1].set_title(r"Obs FAPAR $\leftrightarrow$ JULES NPP")
+
+    cbar_width = 0.01
+    cbar_height = 0.25
+    cbar_x = 0.85
+
+    cube_plotting(
+        fapar_r2_2d,
+        ax=axes[0],
+        **get_common_kwargs(fig.add_axes([cbar_x, 0.58, cbar_width, cbar_height]))
+    )
+    cube_plotting(
+        npp_r2_2d,
+        ax=axes[1],
+        **get_common_kwargs(fig.add_axes([cbar_x, 0.16, cbar_width, cbar_height]))
     )
 
-    axes[0].set_title(r"FAPAR $\leftrightarrow$ FAPAR")
-    axes[0].text(-0.01, 1.05, "(a)", transform=axes[0].transAxes)
-    cube_plotting(fapar_r2_2d, ax=axes[0], **common_kwargs)
+    axes[0].text(0.01, 1.05, "(a)", transform=axes[0].transAxes)
+    axes[1].text(0.01, 1.05, "(b)", transform=axes[1].transAxes)
 
-    axes[1].set_title(r"FAPAR $\leftrightarrow$ NPP")
-    axes[1].text(-0.01, 1.05, "(b)", transform=axes[1].transAxes)
-    cube_plotting(npp_r2_2d, ax=axes[1], **common_kwargs)
     fig.savefig(Path("~/tmp/r2_fapar_npp.png").expanduser())
 
     ###
 
-    plt.figure()
-    plt.hexbin(jules_fapar_1d.ravel(), obs_fapar_1d.ravel())
-    plt.xlabel("jules fapar")
-    plt.ylabel("obs fapar")
-
-    if interactive:
-        plt.show()
+    # plt.figure()
+    # plt.hexbin(jules_fapar_1d.ravel(), obs_fapar_1d.ravel())
+    # plt.xlabel("jules fapar")
+    # plt.ylabel("obs fapar")
