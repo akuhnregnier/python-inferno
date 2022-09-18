@@ -7,8 +7,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from python_inferno.inferno import sigmoid
+from python_inferno.plotting import use_style
 
 if __name__ == "__main__":
+    use_style()
+
     factors = [-1, 0.5, 3]
     centres = [0]
     shapes = [0.2, 1, 4]
@@ -20,7 +23,8 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(
         nrows,
         ncols,
-        figsize=np.array([1, 1]) + np.array([2.5, 1.5]) * np.array([ncols, nrows]),
+        figsize=np.array([1, 1])
+        + np.array([2.5, 1.5]) * np.array([ncols, nrows]) / 1.5,
         sharex=True,
         sharey=True,
     )
