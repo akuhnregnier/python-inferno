@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
         new_dir = fig_dir / "selection"
         new_dir.mkdir(exist_ok=True)
-        plt.savefig(new_dir / f"{name}.png")
+        plt.savefig(new_dir / f"{name}.pdf")
 
         plt.figure()
         plt.title(name)
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
         new_dir = fig_dir / "raw"
         new_dir.mkdir(exist_ok=True)
-        plt.savefig(new_dir / f"{name}.png")
+        plt.savefig(new_dir / f"{name}.pdf")
 
     # Calculate and plot the minimum loss up to and including the current iteration.
     min_losses = []
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     plt.plot(min_losses)
     plt.ylabel("Minimum loss")
     plt.xlabel("Iteration")
-    plt.savefig(fig_dir / "min_loss_evolution.png")
+    plt.savefig(fig_dir / "min_loss_evolution.pdf")
 
     with (fig_dir / "argmin.json").open("w") as f:
         json.dump(trials.argmin, f, indent=4)

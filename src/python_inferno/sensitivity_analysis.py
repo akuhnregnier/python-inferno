@@ -1326,7 +1326,7 @@ def analyse_sis(
 
         # Collated plots.
 
-        suffix = "png"
+        suffix = "pdf"
         cbar_label = f"Sobol SA {metric_str2}"
 
         shared_kwargs = dict(

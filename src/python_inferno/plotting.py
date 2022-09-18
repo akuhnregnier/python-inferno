@@ -219,11 +219,11 @@ def plot_phase_diff_locs(
             # variables, e.g. as aggregated as part of the GAM analysis scripts.
 
             if save_dir is not None:
-                loc_fig.savefig(save_dir / f"{i}_{exp_key}.png")
+                loc_fig.savefig(save_dir / f"{i}_{exp_key}.pdf")
             plt.close(loc_fig)
 
     if save_dir is not None:
-        fig.savefig(save_dir / f"phase_diff_locs_{exp_key}.png")
+        fig.savefig(save_dir / f"phase_diff_locs_{exp_key}.pdf")
     plt.close(fig)
 
 
@@ -292,7 +292,7 @@ def plotting(
     if save_dir is not None:
         ba_hist_dir = save_dir / "BA_hist"
         ba_hist_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_hist_dir / f"hist_{exp_key}.png")
+        plt.savefig(ba_hist_dir / f"hist_{exp_key}.pdf")
     plt.close()
 
     # Regional BA histograms.
@@ -337,7 +337,7 @@ def plotting(
     if save_dir is not None:
         ba_reg_hist_dir = save_dir / "BA_reg_hist"
         ba_reg_hist_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_reg_hist_dir / f"reg_hists_{exp_key}.png")
+        plt.savefig(ba_reg_hist_dir / f"reg_hists_{exp_key}.pdf")
     plt.close()
 
     # Global BA map with log bins.
@@ -345,7 +345,7 @@ def plotting(
     if save_dir is not None:
         ba_map_log_dir = save_dir / "BA_map_log"
         ba_map_log_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_map_log_dir / f"BA_map_log_{exp_key}.png")
+        plt.savefig(ba_map_log_dir / f"BA_map_log_{exp_key}.pdf")
     plt.close()
 
     # Global BA map with linear bins.
@@ -353,7 +353,7 @@ def plotting(
     if save_dir is not None:
         ba_map_lin_dir = save_dir / "BA_map_lin"
         ba_map_lin_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_map_lin_dir / f"BA_map_lin_{exp_key}.png")
+        plt.savefig(ba_map_lin_dir / f"BA_map_lin_{exp_key}.pdf")
     plt.close()
 
     # Global BA map with linear bins and arcsinh transform.
@@ -365,7 +365,7 @@ def plotting(
     if save_dir is not None:
         ba_map_arcsinh_dir = save_dir / "BA_map_arcsinh"
         ba_map_arcsinh_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_map_arcsinh_dir / f"BA_map_arcsinh_{exp_key}.png")
+        plt.savefig(ba_map_arcsinh_dir / f"BA_map_arcsinh_{exp_key}.pdf")
     plt.close()
 
     # Global phase map plot.
@@ -376,7 +376,7 @@ def plotting(
     if save_dir is not None:
         phase_map_dir = save_dir / "phase_map"
         phase_map_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(phase_map_dir / f"phase_map_{exp_key}.png")
+        plt.savefig(phase_map_dir / f"phase_map_{exp_key}.pdf")
     plt.close()
 
     # Phase difference (relative to GFED4) plots.
@@ -400,7 +400,7 @@ def plotting(
         if save_dir is not None:
             phase_diff_hist_dir = save_dir / "phase_diff_hist"
             phase_diff_hist_dir.mkdir(exist_ok=True, parents=False)
-            plt.savefig(phase_diff_hist_dir / f"phase_diff_hist_{exp_key}.png")
+            plt.savefig(phase_diff_hist_dir / f"phase_diff_hist_{exp_key}.pdf")
         plt.close()
 
         # Regional phase difference histograms.
@@ -431,7 +431,7 @@ def plotting(
         if save_dir is not None:
             reg_phase_diff_hist_dir = save_dir / "reg_phase_diff_hist"
             reg_phase_diff_hist_dir.mkdir(exist_ok=True, parents=False)
-            plt.savefig(reg_phase_diff_hist_dir / f"reg_phase_diff_hists_{exp_key}.png")
+            plt.savefig(reg_phase_diff_hist_dir / f"reg_phase_diff_hists_{exp_key}.pdf")
         plt.close()
 
         # Global phase difference map.
@@ -439,7 +439,7 @@ def plotting(
         if save_dir is not None:
             phase_diff_map_dir = save_dir / "phase_diff_map"
             phase_diff_map_dir.mkdir(exist_ok=True, parents=False)
-            plt.savefig(phase_diff_map_dir / f"phase_diff_map_{exp_key}.png")
+            plt.savefig(phase_diff_map_dir / f"phase_diff_map_{exp_key}.pdf")
         plt.close()
 
         if data_2d_cubes is not None:

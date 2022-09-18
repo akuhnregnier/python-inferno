@@ -201,7 +201,7 @@ def null_model_analysis(
             (0.93, 1.116),
             (0.551, 0.595),
         ],
-        save_path=save_dir / "nme_errors.png",
+        save_path=save_dir / "nme_errors.pdf",
         plot_func=error_hist,
         plot_func_kwargs=(
             shared_error_hist_kwargs,
@@ -214,7 +214,7 @@ def null_model_analysis(
     #     errors=nme_errors,
     #     ylabel="NME error (std of mean)",
     #     error_dict=nme_error_dict,
-    #     save_path=save_dir / "nme_errors.png",
+    #     save_path=save_dir / "nme_errors.pdf",
     #     fig=plt.figure(figsize=single_boxplot_figsize),
     # )
 
@@ -231,7 +231,7 @@ def null_model_analysis(
             (0.273, 0.53),
             (0.201, 0.245),
         ],
-        save_path=save_dir / "mpd_errors.png",
+        save_path=save_dir / "mpd_errors.pdf",
         plot_func=error_hist,
         plot_func_kwargs=(
             shared_error_hist_kwargs,
@@ -244,7 +244,7 @@ def null_model_analysis(
     #     errors=mpd_errors,
     #     ylabel="MPD error (std of mean)",
     #     error_dict=mpd_error_dict,
-    #     save_path=save_dir / "mpd_errors.png",
+    #     save_path=save_dir / "mpd_errors.pdf",
     #     fig=plt.figure(figsize=single_boxplot_figsize),
     # )
 
@@ -402,8 +402,8 @@ def null_model_analysis(
         for fig in [nme_fig, mpd_fig]:
             fig.tight_layout(rect=[0, 0.0, 1, 0.98])
 
-        nme_fig.savefig(save_dir / "regional_nme_errors.png")
-        mpd_fig.savefig(save_dir / "regional_mpd_errors.png")
+        nme_fig.savefig(save_dir / "regional_nme_errors.pdf")
+        mpd_fig.savefig(save_dir / "regional_mpd_errors.pdf")
 
         for fig in [nme_fig, mpd_fig]:
             plt.close(fig)

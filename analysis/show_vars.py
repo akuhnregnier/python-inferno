@@ -229,13 +229,13 @@ if __name__ == "__main__":
         sub_dir = output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
         sub_dir.mkdir(exist_ok=True, parents=False)
 
-        fig.savefig(sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png")
+        fig.savefig(sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.pdf")
 
         if mean_frac >= 1e-3:
             filtered_sub_dir = filtered_output_dir / f"lat_{lat:.2f}_lon_{lon:.2f}"
             filtered_sub_dir.mkdir(exist_ok=True, parents=False)
 
             fig.savefig(
-                filtered_sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.png"
+                filtered_sub_dir / f"lat_{lat:.2f}_lon_{lon:.2f}_pft_{pft_acronym}.pdf"
             )
         plt.close(fig)

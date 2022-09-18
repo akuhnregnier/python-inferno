@@ -132,5 +132,5 @@ if __name__ == "__main__":
         if i in (2, 3):
             ax.set_xlabel("nr. of optimised parameters")
 
-    fig.savefig(save_dir / "iter_model_perf.png")
+    fig.savefig(save_dir / "iter_model_perf.pdf")
     plt.close(fig)

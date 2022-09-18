@@ -193,7 +193,7 @@ def plot_combined(param_df, name, n_samples, save_dir, max_n_plot=int(1e4)):
     # Save.
 
     plt.tight_layout()
-    fig.savefig(save_dir / name, bbox_inches="tight")
+    fig.savefig(save_dir / f"{name}.pdf", bbox_inches="tight")
     plt.close(fig)
 
 

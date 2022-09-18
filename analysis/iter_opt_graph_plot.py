@@ -90,6 +90,6 @@ if __name__ == "__main__":
     ax.margins(0.20)
     plt.axis("off")
 
-    plt.savefig(Path("~/tmp/iter_opt_graph.png").expanduser())
+    plt.savefig(Path("~/tmp/iter_opt_graph.pdf").expanduser())
 
     plt.close()

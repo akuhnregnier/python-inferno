@@ -496,7 +496,7 @@ def partial_dependence_plots(
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
 
-    plt.savefig(save_dir / f"{exp_key}_gam_curves.png")
+    plt.savefig(save_dir / f"{exp_key}_gam_curves.pdf")
     plt.close()
 
 

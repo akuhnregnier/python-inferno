@@ -104,4 +104,4 @@ if __name__ == "__main__":
     ax2.set_ylabel("Factor", color="C2")
     ax2.grid(False)
 
-    fig.savefig(Path("~/tmp/dry_day_threshold_estimate.png").expanduser())
+    fig.savefig(Path("~/tmp/dry_day_threshold_estimate.pdf").expanduser())

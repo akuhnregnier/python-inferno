@@ -153,7 +153,7 @@ def ale_analysis(
     for column in tqdm(df_X.columns, desc="ALE plotting"):
         fig = plt.figure()
         ale_plot(rf, df_X, column, bins=15, fig=fig)
-        fig.savefig(exp_ale_dir / f"{column}.png")
+        fig.savefig(exp_ale_dir / f"{column}.pdf")
         plt.close(fig)
 
 
@@ -211,7 +211,7 @@ def shap_analysis(
 
             sub_dir = exp_shap_map_dir / key
             sub_dir.mkdir(exist_ok=True, parents=False)
-            fig.savefig(sub_dir / f"{key}_shap_{col}.png")
+            fig.savefig(sub_dir / f"{key}_shap_{col}.pdf")
             plt.close(fig)
 
 
@@ -268,7 +268,7 @@ def ice_analysis(
             cmap_symmetric=True,
         )
 
-        fig.savefig(exp_ice_map_dir / f"{col}.png")
+        fig.savefig(exp_ice_map_dir / f"{col}.pdf")
         plt.close(fig)
 
 

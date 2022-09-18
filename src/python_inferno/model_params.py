@@ -142,7 +142,7 @@ def param_fig(*, param_vals, losses, title, col, save_dir):
 
         yield fig, ax
     finally:
-        plt.savefig(save_dir / f"{col}.png")
+        plt.savefig(save_dir / f"{col}.pdf")
         plt.close()
 
 
