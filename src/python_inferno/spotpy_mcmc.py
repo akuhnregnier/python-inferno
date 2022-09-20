@@ -258,3 +258,18 @@ def get_cached_mcmc_chains(*, method_index):
     )
 
     return dict(names=names, chains=chains)
+
+
+def get_cached_mcmc_r_hat(*, method_index):
+    mcmc_kwargs = dict(
+        iter_opt_index=method_index,
+        N=int(2e5),
+        beta=1.0,
+        nChains=50,
+        c=0.1,
+        maxTime=5 * 60 * 60,
+        acc_eps_delta=0.002,
+    )
+    assert spotpy_dream.check_in_store(**mcmc_kwargs), str(mcmc_kwargs)
+    dream_results = spotpy_dream(**mcmc_kwargs)
+    return dream_results["r_hat"]

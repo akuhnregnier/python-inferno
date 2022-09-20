@@ -4,6 +4,7 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
+import joblib
 import numpy as np
 from loguru import logger
 
@@ -52,6 +53,8 @@ if __name__ == "__main__":
     dream_results = spotpy_dream(**mcmc_kwargs)
     results_df = dream_results["results_df"]
     space = dream_results["space"]
+
+    print("r-hat hash:", joblib.hashing.hash(dream_results["r_hat"]))
 
     if not args.no_chains_plot:
         chain_save_dir = save_dir / f"chains_{method_index}"
