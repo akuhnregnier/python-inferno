@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import sys
 from pathlib import Path
+from string import ascii_lowercase
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -120,6 +121,7 @@ def setup_quad_split_axes(
     top_ylim,
     bottom_ylim,
     ylabelpad=0.08,
+    panel_labels=True,
 ):
     fig = plt.figure(figsize=figsize)
     split_axes = []
@@ -127,12 +129,15 @@ def setup_quad_split_axes(
     eff_height = height - h_pad
 
     # Generate 4 pairs of axes.
-    for (i, (c_x, c_y)) in enumerate(
-        (
-            [0.25, 0.75],
-            [0.75, 0.75],
-            [0.25, 0.25],
-            [0.75, 0.25],
+    for (i, ((c_x, c_y), letter)) in enumerate(
+        zip(
+            (
+                [0.25, 0.75],
+                [0.75, 0.75],
+                [0.25, 0.25],
+                [0.75, 0.25],
+            ),
+            ascii_lowercase,
         )
     ):
         bottom_left = (c_x - width / 2.0, c_y - width / 2.0)
@@ -156,6 +161,21 @@ def setup_quad_split_axes(
                 top_height,
             ]
         )
+
+        if panel_labels:
+            tl, tb, tw, th = top_ax.get_position().bounds
+            bl, bb, bw, bh = bottom_ax.get_position().bounds
+
+            # Determine centred position to place the label at.
+            x = tl
+            y = tb + th + 0.018 * (th + bh)
+
+            top_ax.text(
+                x,
+                y,
+                f"({letter})",
+                transform=fig.transFigure,
+            )
 
         if (i + 1) % 2 == 0:
             for ax in (top_ax, bottom_ax):
@@ -193,6 +213,7 @@ if __name__ == "__main__":
         figsize=(5.5, 5.5),
         top_ylim=(1.255, 1.38),
         bottom_ylim=(0.74, 0.99),
+        panel_labels=True,
     )
 
     df_data_methods = {}
