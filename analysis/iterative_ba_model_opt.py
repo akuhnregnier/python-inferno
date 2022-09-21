@@ -354,7 +354,7 @@ if __name__ == "__main__":
             0,
             max(n_params),
             colors="C6",
-            label="Basinhopping",
+            label="1000,15",
             linestyles="--",
             zorder=1,
         )
