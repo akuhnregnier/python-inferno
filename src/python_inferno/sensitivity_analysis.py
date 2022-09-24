@@ -991,62 +991,71 @@ def plot_si_collated(
 
 def format_latex_table(table: str):
     table_newline_str = r" \\"
-    # Normalise spacing between '&' alignment markers.
-    active = False
-    table_lines = table.strip().split("\n")
-    spacings = None
-    to_align = []
-    for i, line, prev_line, next_line in zip(
-        range(1, len(table_lines) - 1),
-        table_lines[1:-1],
-        table_lines[:-2],
-        table_lines[2:],
-    ):
-        if prev_line.startswith(r"\toprule"):
-            active = True
 
-        if active and " & " in line:
-            to_align.append(i)
-            assert table_newline_str in line
-            line_spacings = tuple(map(len, line.rstrip(table_newline_str).split(" & ")))
-            if spacings is None:
-                spacings = line_spacings
-            else:
-                # Compare to previous.
-                if len(line_spacings) != len(spacings):
-                    raise ValueError(
-                        f"Number of '&' symbols in line: {line} does not "
-                        "match previous lines "
-                        f"({len(line_spacings)} vs. {len(spacings)})."
+    try:
+        # Normalise spacing between '&' alignment markers.
+        active = False
+        table_lines = table.strip().split("\n")
+        spacings = None
+        to_align = []
+        for i, line, prev_line, next_line in zip(
+            range(1, len(table_lines) - 1),
+            table_lines[1:-1],
+            table_lines[:-2],
+            table_lines[2:],
+        ):
+            if prev_line.startswith(r"\toprule"):
+                active = True
+
+            if active and " & " in line:
+                to_align.append(i)
+                assert table_newline_str in line
+                line_spacings = tuple(
+                    map(len, line.rstrip(table_newline_str).split(" & "))
+                )
+                if spacings is None:
+                    spacings = line_spacings
+                else:
+                    # Compare to previous.
+                    if len(line_spacings) != len(spacings):
+                        raise ValueError(
+                            f"Number of '&' symbols in line: {line} does not "
+                            "match previous lines, e.g. "
+                            f"{prev_line} "
+                            f"({len(line_spacings)} vs. {len(spacings)})."
+                        )
+                    # Choose largest spacing for each column.
+                    spacings = tuple(
+                        max(s1, s2) for s1, s2 in zip(spacings, line_spacings)
                     )
-                # Choose largest spacing for each column.
-                spacings = tuple(max(s1, s2) for s1, s2 in zip(spacings, line_spacings))
 
-        if next_line.startswith(r"\bottomrule"):
-            break
-    else:
-        raise ValueError(f"Bottomrule line not found in: {table}.")
+            if next_line.startswith(r"\bottomrule"):
+                break
+        else:
+            raise ValueError(f"Bottomrule line not found in: {table}.")
 
-    # Use the previously found spacings to align the columns.
-    assert spacings is not None
-    for i in to_align:
-        assert table_newline_str in table_lines[i]
-        split_line = table_lines[i].rstrip(table_newline_str).split(" & ")
-        assert len(split_line) == len(spacings)
-        new_elements = []
-        for element, spacing in zip(split_line, spacings):
-            if len(
-                set(element).intersection(set(string.digits).union({"-", "."}))
-            ) == len(set(element)):
-                # If the element is purely numeric, right-align.
-                new_elements.append(" " * (spacing - len(element)) + element)
-            else:
-                # Otherwise, left-align.
-                new_elements.append(element + " " * (spacing - len(element)))
+        # Use the previously found spacings to align the columns.
+        assert spacings is not None
+        for i in to_align:
+            assert table_newline_str in table_lines[i]
+            split_line = table_lines[i].rstrip(table_newline_str).split(" & ")
+            assert len(split_line) == len(spacings)
+            new_elements = []
+            for element, spacing in zip(split_line, spacings):
+                if len(
+                    set(element).intersection(set(string.digits).union({"-", "."}))
+                ) == len(set(element)):
+                    # If the element is purely numeric, right-align.
+                    new_elements.append(" " * (spacing - len(element)) + element)
+                else:
+                    # Otherwise, left-align.
+                    new_elements.append(element + " " * (spacing - len(element)))
 
-        table_lines[i] = " & ".join(new_elements) + table_newline_str
+            table_lines[i] = " & ".join(new_elements) + table_newline_str
 
-    table = "\n".join(table_lines)
+        table = "\n".join(table_lines)
+    except ValueError:
+        pass
 
     # Insert '%' on line before label.
     table_lines = table.split("\n")
@@ -1126,6 +1135,190 @@ def get_sis_names(*, sis, to_df_func):
     return names
 
 
+class FormattedTable:
+    plot_name_map = get_plot_name_map_total()
+
+    def __init__(
+        self,
+        *,
+        df,
+        metric_name,
+        analysis_type,
+        method_name,
+        n_land_points,
+        exp_name,
+    ):
+        self.df = df.copy()
+        self.metric_name = metric_name
+        self.analysis_type = analysis_type
+        self.method_name = method_name
+        self.n_land_points = n_land_points
+        self.exp_name = exp_name
+
+        self.metric_str = {
+            "ARCSINH_NME": "arcsinh-|NME|",
+            "MPD": "|MPD|",
+        }[self.metric_name]
+        self.scheme_name = f"|SINFERNO|-{scheme_name_map[self.exp_name]}"
+
+    @staticmethod
+    def replace_acros(text: str):
+        return (
+            text.replace("|SA|", r"\acs{sa}")
+            .replace("|SINFERNO|", r"\acs{sinferno}")
+            .replace("|NME|", r"\acs{nme}")
+            .replace("|MPD|", r"\acs{mpd}")
+        )
+
+    @staticmethod
+    def insert_num(text: str):
+        return re.subn(r"\b(\d+?)\b", r"\\num{\g<1>}", text)[0]
+
+    @property
+    def caption(self):
+        _caption = (
+            "\n".join(("%", *map(escape_latex, self.caption_lines), "")),
+            escape_latex(self.short_caption),
+        )
+
+        _caption = tuple(map(self.replace_acros, _caption))
+        _caption = tuple(map(self.insert_num, _caption))
+
+        return _caption
+
+    def __str__(self):
+        df = self.prepare_str_format()
+
+        latex_table_str = df.style.to_latex(
+            caption=self.caption,
+            label=self.label,
+            hrules=True,
+            position_float="centering",
+            siunitx=True,
+        )
+
+        return "\n" + format_latex_table(latex_table_str) + "\n"
+
+
+class FormattedSobolTable(FormattedTable):
+    @property
+    def short_caption(self):
+        return (
+            rf"Global {self.analysis_type.lower()} {self.method_name} |SA| for {self.scheme_name} measured "
+            f"by {self.metric_str}."
+        )
+
+    @property
+    def caption_lines(self):
+        return (
+            rf"Global {self.analysis_type.lower()} {self.method_name} |SA| for {self.scheme_name} "
+            f"measured by {self.metric_str}.",
+            f"Computed from individual significance values at {self.n_land_points} land points.",
+        )
+
+    @property
+    def label(self):
+        return (
+            f"table:global_sis_{self.analysis_type.lower()}_{scheme_name_map[self.exp_name]}"
+            f"_{self.metric_name.lower()}"
+        )
+
+    def prepare_str_format(self):
+        df = self.df.copy()
+
+        df.index = list(
+            map(
+                escape_latex,
+                [self.plot_name_map[s] for s in df.index],
+            )
+        )
+        df.columns = list(
+            map(
+                escape_latex,
+                [
+                    c.replace("S1_std", "S1 std").replace("ST_std", "ST std")
+                    for c in df.columns
+                ],
+            )
+        )
+        return df
+
+
+class FormattedAggSobolTable(FormattedTable):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.df = self._get_agg_st_df(self.df.copy())
+
+    @staticmethod
+    def _mean_std_agg(x):
+        if "std" in x.name.lower():
+            # Add in quadrature.
+            return ((x**2).sum() / x.size) ** 0.5
+        else:
+            return x.mean()
+
+    def _get_agg_st_df(self, df):
+        data = {}
+
+        for param in ("centre", "weight", "factor", "shape"):
+            data[param] = df.loc[[param in i for i in df.index]].apply(
+                self._mean_std_agg
+            )
+
+        agg_df = pd.DataFrame(data).T[["ST", "ST_std"]]
+        agg_df = agg_df / agg_df["ST"].sum()
+
+        agg_df.columns = pd.MultiIndex.from_tuples(
+            [(self.metric_str, measure) for measure in agg_df.columns],
+        )
+
+        return agg_df
+
+    @property
+    def short_caption(self):
+        return (
+            rf"Aggregated mean global {self.analysis_type.lower()} Sobol ST |SA| for {self.scheme_name} measured "
+            f"by {self.metric_str}."
+        )
+
+    @property
+    def caption_lines(self):
+        return (
+            rf"Aggregated mean global {self.analysis_type.lower()} Sobol ST |SA| for {self.scheme_name} "
+            f"measured by {self.metric_str}.",
+            f"Computed from individual significance values at {self.n_land_points} land points.",
+        )
+
+    @property
+    def label(self):
+        return (
+            f"table:global_agg_sis_{self.analysis_type.lower()}_{scheme_name_map[self.exp_name]}"
+            f"_{self.metric_name.lower()}"
+        )
+
+    def prepare_str_format(self):
+        df = self.df.copy()
+
+        df.index = list(
+            map(
+                escape_latex,
+                [s.capitalize() for s in df.index],
+            )
+        )
+
+        def format_multi_c(multi_c):
+            out = []
+            for c in multi_c:
+                out.append(
+                    self.replace_acros(escape_latex(c.replace("ST_std", "ST std")))
+                )
+            return out
+
+        df.columns = pd.MultiIndex.from_tuples(list(map(format_multi_c, df.columns)))
+
+        return df
+
+
 def analyse_sis(
     *,
     sis,
@@ -1150,81 +1343,35 @@ def analyse_sis(
     dryness_method, fuel_build_up_method = inv_scheme_name_map[
         scheme_name_map[exp_name]
     ]
-    plot_name_map = get_plot_name_map_total()
-
-    print_df = df.copy()
-    print_df.index = list(
-        map(
-            escape_latex,
-            [plot_name_map[s] for s in print_df.index],
-        )
-    )
-    print_df.columns = list(
-        map(
-            escape_latex,
-            [
-                c.replace("S1_std", "S1 std").replace("ST_std", "ST std")
-                for c in print_df.columns
-            ],
-        )
-    )
-
-    scheme_name = f"|SINFERNO|-{scheme_name_map[exp_name]}"
-
-    metric_str = {
-        "ARCSINH_NME": "arcsinh-|NME|",
-        "MPD": "|MPD|",
-    }[metric_name]
 
     metric_str2 = {
         "ARCSINH_NME": "arcsinh-NME",
         "MPD": "MPD",
     }[metric_name]
 
-    short_caption = (
-        rf"Global {analysis_type.lower()} {method_name} |SA| for {scheme_name} measured "
-        f"by {metric_str}."
-    )
-    caption_lines = (
-        rf"Global {analysis_type.lower()} {method_name} |SA| for {scheme_name} "
-        f"measured by {metric_str}.",
-        f"Computed from individual significance values at {len(sis)} land points.",
-    )
-    caption = (
-        "\n".join(("%", *map(escape_latex, caption_lines), "")),
-        escape_latex(short_caption),
-    )
-
-    def replace_acros(text: str):
-        return (
-            text.replace("|SA|", r"\acs{sa}")
-            .replace("|SINFERNO|", r"\acs{sinferno}")
-            .replace("|NME|", r"\acs{nme}")
-            .replace("|MPD|", r"\acs{mpd}")
+    df.copy()
+    print(
+        FormattedSobolTable(
+            df=df.copy(),
+            n_land_points=len(sis),
+            metric_name=metric_name,
+            analysis_type=analysis_type,
+            method_name=method_name,
+            exp_name=exp_name,
         )
-
-    caption = tuple(map(replace_acros, caption))
-
-    def insert_num(text: str):
-        return re.subn(r"\b(\d+?)\b", r"\\num{\g<1>}", text)[0]
-
-    caption = tuple(map(insert_num, caption))
-
-    label = (
-        f"table:global_sis_{analysis_type.lower()}_{scheme_name_map[exp_name]}"
-        f"_{metric_name.lower()}"
     )
 
-    latex_table_str = print_df.style.to_latex(
-        caption=caption,
-        label=label,
-        hrules=True,
-        position_float="centering",
-        siunitx=True,
-    )
-
-    print(format_latex_table(latex_table_str))
-    print()
+    if analysis_type == "Parameters":
+        print(
+            FormattedAggSobolTable(
+                df=df.copy(),
+                n_land_points=len(sis),
+                metric_name=metric_name,
+                analysis_type=analysis_type,
+                method_name=method_name,
+                exp_name=exp_name,
+            )
+        )
 
     jules_lats, jules_lons = load_jules_lats_lons()
 
