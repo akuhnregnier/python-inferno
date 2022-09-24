@@ -938,6 +938,34 @@ def plot_si_collated(
         for key, data in data_dict.items()
     }
 
+    # Reorder `cube_dict` to ensure uniformity.
+
+    # fmt: off
+    orderings = (
+        (
+            "temperature_factor", "temperature_centre", "temperature_shape",
+            "temperature_weight", "fapar_factor", "fapar_centre", "fapar_shape",
+            "fapar_weight",
+        ),
+        (
+            "dry_bal_factor", "dry_bal_centre", "dry_bal_shape", "dryness_weight",
+            "litter_pool_factor", "litter_pool_centre", "litter_pool_shape",
+            "fuel_weight",
+        ),
+        (
+            "t1p5m_tile", "grouped_dry_bal", "litter_pool", "fapar_diag_pft",
+            "obs_pftcrop_1d",
+        ),
+    )
+    # fmt: on
+
+    for ordering in orderings:
+        if set(list(cube_dict.keys())) == set(ordering):
+            # Apply ordering.
+            cube_dict = {key: cube_dict[key] for key in ordering}
+            # Do not look for any other orderings.
+            break
+
     cmap, norm = from_levels_and_colors(
         levels=list(bin_edges),
         colors=plt.get_cmap("viridis")(np.linspace(0, 1, len(bin_edges) + 1)),

@@ -382,7 +382,7 @@ def plotting(
     # Phase difference (relative to GFED4) plots.
     if ref_2d_data is not None:
         phase_diff = wrap_phase_diffs(phase_calc(data=ref_2d_data) - model_phase_2d)
-        xlabel = "Phase Diff (Obs - Model)"
+        xlabel = "Phase Diff (Obs - Model) (months)"
         bins = np.linspace(-6, 6, 20)
         assert not np.any(phase_diff) < bins[0]
         assert not np.any(phase_diff) > bins[-1]
@@ -501,7 +501,7 @@ def plot_collated_phase_diffs(*, phase_diff_dict, save_dir, save_name):
                 colorbar_kwargs=dict(
                     cax=cax,
                     orientation="horizontal",
-                    label="Phase Diff (Obs - Model)",
+                    label="Phase Diff (Obs - Model) (months)",
                     format="%.1f",
                 )
                 if i == 0
