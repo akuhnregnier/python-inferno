@@ -254,4 +254,36 @@ def get_pnv_mega_regions():
 
     mega_pnv_cube.data[(mega_pnv_cube.data == 3) | (mega_pnv_cube.data == 8)] = 10
 
+    # Rename savanna -> savannah.
+    mega_pnv_cube.attributes["regions"] = {
+        1: "boreal forest",
+        2: "desert",
+        4: "grassland and dry shrubland",
+        5: "savannah and dry woodland",
+        6: "temperate forest",
+        7: "tropical forest",
+        9: "warm-temperate forest",
+        10: "tundra",
+    }
+    mega_pnv_cube.attributes["short_regions"] = {
+        1: "boreal forest",
+        2: "desert",
+        4: "grassland and dry shrubland",
+        5: "savannah and dry woodland",
+        6: "temperate forest",
+        7: "tropical forest",
+        9: "warm-temperate forest",
+        10: "tundra",
+    }
+    mega_pnv_cube.attributes["regions_codes"] = {
+        "boreal forest": 1,
+        "desert": 2,
+        "grassland and dry shrubland": 4,
+        "savannah and dry woodland": 5,
+        "temperate forest": 6,
+        "tropical forest": 7,
+        "warm-temperate forest": 9,
+        "tundra": 10,
+    }
+
     return mega_pnv_cube
