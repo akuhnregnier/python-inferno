@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 
+import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import numpy as np
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
@@ -55,15 +56,28 @@ if __name__ == "__main__":
     )
     split_data_2d_cube = cube_1d_to_2d(split_data_1d_cube)
 
-    fig = plt.figure(figsize=(12, 5))
-    cube_plotting(
+    fig = plt.figure(figsize=(4.4, 2.7))
+
+    # (left, bottom, width, height)
+    ax = fig.add_axes([0, 0, 0.9, 1], projection=ccrs.Robinson())
+    cbar_h = 0.35
+    cax = fig.add_axes([0.925, 0.5 - cbar_h / 2, 0.015, cbar_h])
+
+    fig, cbar = cube_plotting(
         split_data_2d_cube,
-        title="CV Splits",
-        nbins=9,
+        fig=fig,
+        ax=ax,
+        title="",
         boundaries=np.arange(6) - 0.5,
         cmap="tab10",
-        fig=fig,
+        colorbar_kwargs=dict(label="CV split", cax=cax),
+        return_cbar=True,
+        coastline_kwargs=dict(linewidth=0.5),
     )
+
+    cbar.set_ticks(np.arange(5))
+    cbar.set_ticklabels(np.arange(5))
+
     fig.savefig(save_dir / "split_map.pdf")
     plt.close(fig)
 
