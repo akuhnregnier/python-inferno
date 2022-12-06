@@ -38,7 +38,7 @@ if __name__ == "__main__":
     plt.figure()
     plt.hist(gfed_ba.ravel(), bins=50)
     plt.yscale("log")
-    plt.savefig(save_dir / "raw_ba.pdf")
+    plt.savefig(save_dir / "raw_ba")
     plt.close()
 
     train_grids, test_grids, test_grid_map = get_ba_cv_splits(gfed_ba)
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     cbar.set_ticks(np.arange(5))
     cbar.set_ticklabels(np.arange(5))
 
-    fig.savefig(save_dir / "split_map.pdf")
+    fig.savefig(save_dir / "split_map")
     plt.close(fig)
 
     cat_boundaries = [-1, 1e-4, 1e-2, 0.1, 1]

@@ -75,5 +75,5 @@ if __name__ == "__main__":
         ax.text(-0.01, 1.05, f"({letter})", transform=ax.transAxes)
 
     plt.tight_layout()
-    fig.savefig(Path("~/tmp/ba_transformations.pdf").expanduser())
+    fig.savefig(Path("~/tmp/ba_transformations").expanduser())
     plt.close(fig)

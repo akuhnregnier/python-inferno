@@ -291,7 +291,7 @@ if __name__ == "__main__":
             plot_collated_phase_diffs,
             phase_diff_dict=phase_diff_dict,
             save_dir=save_dir,
-            save_name="collated_phase_diffs.pdf",
+            save_name="collated_phase_diffs",
         )
     )
 
@@ -304,7 +304,7 @@ if __name__ == "__main__":
                 for exp_name, data_dict in plot_data.items()
             },
             plot_dir=save_dir,
-            save_name="collated_log.pdf",
+            save_name="collated_log",
         )
     )
 

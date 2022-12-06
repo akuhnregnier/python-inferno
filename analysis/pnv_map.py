@@ -64,7 +64,7 @@ if __name__ == "__main__":
     # y-axis for vertical cbar.
     cb.ax.set_yticklabels(list(mega_pnv_cube.attributes["regions_codes"]))
 
-    fig.savefig(Path("~/tmp/mega_biomes.pdf").expanduser())
+    fig.savefig(Path("~/tmp/mega_biomes").expanduser())
     plt.close(fig)
 
     pnv_df = pd.read_csv(pnv_csv_file, header=0, index_col=0)

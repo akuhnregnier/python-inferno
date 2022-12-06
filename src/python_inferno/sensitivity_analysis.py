@@ -1501,7 +1501,6 @@ def analyse_sis(
 
         # Collated plots.
 
-        suffix = "pdf"
         cbar_label = f"Sobol SA {metric_str2}"
 
         shared_kwargs = dict(
@@ -1513,8 +1512,8 @@ def analyse_sis(
 
         if analysis_type == "Parameters":
             for collation, save_name in (
-                (param_collation_fapar_temp, f"fapar_temp.{suffix}"),
-                (param_collation_dry_fuel, f"dry_fuel.{suffix}"),
+                (param_collation_fapar_temp, "fapar_temp"),
+                (param_collation_dry_fuel, "dry_fuel"),
             ):
                 collated_data_dict = {key: plot_data_dict[key] for key in collation}
 
@@ -1532,7 +1531,7 @@ def analyse_sis(
                 executor.submit(
                     plot_si_collated,
                     data_dict=plot_data_dict,
-                    save_name=f"combined.{suffix}",
+                    save_name="combined",
                     cbar_label=cbar_label,
                     **shared_kwargs,
                 )

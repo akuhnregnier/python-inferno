@@ -160,7 +160,7 @@ if __name__ == "__main__":
     axes[0].text(0.01, 1.05, "(a)", transform=axes[0].transAxes)
     axes[1].text(0.01, 1.05, "(b)", transform=axes[1].transAxes)
 
-    fig.savefig(Path("~/tmp/r2_fapar_npp.pdf").expanduser())
+    fig.savefig(Path("~/tmp/r2_fapar_npp").expanduser())
 
     ###
 

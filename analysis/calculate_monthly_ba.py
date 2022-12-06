@@ -110,7 +110,7 @@ def plot_comparison(jules_ba_gb, python_ba_gb, obs_ba, label="BA", title=""):
         },
     )
     fig.subplots_adjust(wspace=0.045, hspace=-0.2)
-    fig.savefig(figure_dir / "mean_ba_all.pdf")
+    fig.savefig(figure_dir / "mean_ba_all")
 
     # Set up the plots.
     fig, axes = plt.subplots(
@@ -138,7 +138,7 @@ def plot_comparison(jules_ba_gb, python_ba_gb, obs_ba, label="BA", title=""):
         },
     )
     fig.subplots_adjust(wspace=0.045, hspace=-0.2)
-    fig.savefig(figure_dir / "mean_ba.pdf")
+    fig.savefig(figure_dir / "mean_ba")
 
 
 def run_inferno(*, jules_lats, jules_lons, obs_fapar_1d, jules_fapar, **inferno_kwargs):
@@ -381,7 +381,7 @@ if __name__ == "__main__":
             plt.title(name)
             plt.yscale("log")
             plt.legend()
-            fig.savefig(figure_dir / f"{name}_hist.pdf")
+            fig.savefig(figure_dir / f"{name}_hist")
 
         return y_pred, adj_factor
 
@@ -582,7 +582,7 @@ if __name__ == "__main__":
                         ax=ax,
                     )
                     ax.grid()
-                    fig.savefig(save_dir / f"{feature}.pdf")
+                    fig.savefig(save_dir / f"{feature}")
 
         for combination, title in (
             (("obs-train", "new-target"), "New Parametrisation (with obs)"),
@@ -615,7 +615,7 @@ if __name__ == "__main__":
                 )
                 ax.grid()
                 fig.savefig(
-                    figure_dir / f"{combination[0]}_{combination[1]}_{feature}_ales.pdf"
+                    figure_dir / f"{combination[0]}_{combination[1]}_{feature}_ales"
                 )
 
     plt.show()

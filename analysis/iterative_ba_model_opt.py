@@ -381,7 +381,7 @@ if __name__ == "__main__":
         if method_index in (2, 3):
             split_ax.set_xlabel("Nr. of Optimised Parameters")
 
-    fig.savefig(save_dir / "iter_model_perf.pdf")
+    fig.savefig(save_dir / "iter_model_perf")
     plt.close(fig)
 
     df = pd.concat({k: pd.DataFrame(v).T for k, v in df_data_methods.items()}, axis=0)

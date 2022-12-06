@@ -43,5 +43,5 @@ if __name__ == "__main__":
                 i += 1
 
     plt.tight_layout()
-    fig.savefig(Path("~/tmp/sigmoid_curves.pdf").expanduser())
+    fig.savefig(Path("~/tmp/sigmoid_curves").expanduser())
     plt.close(fig)

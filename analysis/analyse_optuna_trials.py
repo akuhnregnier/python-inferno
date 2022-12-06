@@ -52,7 +52,7 @@ if __name__ == "__main__":
     pprint(space.remap_if_needed(study.best_params))
 
     if save:
-        plt.savefig(fig_dir / "min_loss_evolution.pdf")
+        plt.savefig(fig_dir / "min_loss_evolution")
 
         with (fig_dir / "argmin.json").open("w") as f:
             json.dump(space.remap_if_needed(study.best_params), f, indent=4)
@@ -82,4 +82,4 @@ for col in [col for col in df.columns if col.startswith("params_")]:
     plt.show()
 
     if save:
-        plt.savefig(fig_dir / f"{name}_values.pdf")
+        plt.savefig(fig_dir / f"{name}_values")

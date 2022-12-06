@@ -21,3 +21,5 @@ figure.dpi    :    200
 
 savefig.dpi:       450          # figure dots per inch or 'figure'
 savefig.bbox:      tight # {tight, standard}
+savefig.format:    png
+

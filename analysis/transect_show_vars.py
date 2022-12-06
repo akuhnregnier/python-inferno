@@ -282,7 +282,7 @@ if __name__ == "__main__":
         plot_map(plt.axes([0.6, 0.85, 0.35, 0.14], projection=ccrs.Robinson()))
 
         # Save.
-        fig.savefig(loc_dir / "all_variables.pdf")
+        fig.savefig(loc_dir / "all_variables")
         plt.close(fig)
 
         # Single variables per plot.
@@ -305,5 +305,5 @@ if __name__ == "__main__":
             # [left, bottom, width, height]
             plot_map(plt.axes([0.6, 0.75, 0.4, 0.24], projection=ccrs.Robinson()))
 
-            fig.savefig(loc_dir / f"{name}.pdf")
+            fig.savefig(loc_dir / f"{name}")
             plt.close(fig)
