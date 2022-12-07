@@ -269,9 +269,7 @@ def plot_locs_graphs(
         _plot_ids[(lat_i, lon_i)] = f"{lat_i}_{lon_i}"
 
     _fig_names = {}
-    _all_existing_filenames = set(
-        _path.with_suffix("").name for _path in save_dir.glob("*")
-    )
+    _all_existing_filenames = set(_path.stem for _path in save_dir.glob("*"))
     for _loc_key, _lat_lon_id in _plot_ids.items():
         _fig_filename = f"{_lat_lon_id}_{exp_key}"
         if _fig_filename not in _all_existing_filenames:
