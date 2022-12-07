@@ -1383,5 +1383,5 @@ def vis_result(
     ax.axis("equal")
     ax.set_axis_off()
     ax.set_ylim(0, cat_height * 1.1)
-    fig.savefig(save_dir / f"{save_key}.pdf")
+    fig.savefig(save_dir / f"{save_key}")
     plt.close()

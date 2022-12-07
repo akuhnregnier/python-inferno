@@ -104,9 +104,6 @@ def get_model_params(
                 for key, val in df_sel.iloc[min_index].to_dict().items()
                 if not pd.isna(val) and key not in ("loss",)
             }
-            if verbose:
-                pprint(params)
-
             exp_name = get_exp_name(
                 dryness_method=dryness_method, fuel_build_up_method=fuel_build_up_method
             )
@@ -114,6 +111,13 @@ def get_model_params(
             exp_key = get_exp_key(
                 dryness_method=dryness_method, fuel_build_up_method=fuel_build_up_method
             )
+
+            if verbose:
+                print("\n" * 3)
+                print(exp_name)
+                print(exp_key)
+                print()
+                pprint(params)
 
             yield (
                 dryness_method,
@@ -142,7 +146,7 @@ def param_fig(*, param_vals, losses, title, col, save_dir):
 
         yield fig, ax
     finally:
-        plt.savefig(save_dir / f"{col}.pdf")
+        plt.savefig(save_dir / f"{col}")
         plt.close()
 
 

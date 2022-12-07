@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import math
+from collections import namedtuple
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from itertools import product
 from numbers import Integral
@@ -16,6 +18,7 @@ from jules_output_analysis.utils import PFTs, pft_acronyms
 from loguru import logger
 from matplotlib.colors import from_levels_and_colors
 from matplotlib.transforms import offset_copy
+from tqdm import tqdm
 from wildfires.analysis import cube_plotting
 
 from .ba_model import ARCSINH_FACTOR, BAModel
@@ -107,7 +110,142 @@ def plot_phase_diff_map(*, phase_diff, title, label, figsize=(12, 5)):
     return fig, ax
 
 
-def plot_phase_diff_locs(
+LocPlotIterInfo = namedtuple("LocPlotIterInfo", ["lat_i", "lon_i"])
+
+
+def _all_locs_overall_plot(
+    *,
+    save_dir,
+    exp_key,
+    plot_ids,
+    phase_diff,
+    title,
+    label,
+    loc_plot_infos: list[LocPlotIterInfo],
+):
+    print("Overall plot")
+    _fname = save_dir / f"global_locs_{exp_key}"
+
+    if any(save_dir.glob(f"{_fname.name}.*")):
+        print("Found file.")
+        return
+
+    fig, ax = plot_phase_diff_map(
+        phase_diff=phase_diff, title=title, label=label, figsize=(40, 20)
+    )
+
+    for loc_plot_info in tqdm(loc_plot_infos, desc="Overall locs"):
+        lat_i = loc_plot_info.lat_i
+        lon_i = loc_plot_info.lon_i
+        lat = n96e_lats[lat_i]
+        lon = n96e_lons[lon_i]
+        text_transform = offset_copy(
+            ccrs.PlateCarree()._as_mpl_transform(ax), units="dots", x=0
+        )
+        ax.text(
+            lon,
+            lat,
+            f"{lat_i}\n{lon_i}",
+            horizontalalignment="center",
+            transform=text_transform,
+            bbox=dict(boxstyle="square,pad=0", facecolor="white", alpha=0.6, ec="grey"),
+            fontsize=2,
+        )
+
+    print("Saving overall plot")
+    fig.savefig(_fname, dpi=700)
+    plt.close(fig)
+
+    print("Done with overall plot")
+
+
+def _single_loc_plot(
+    lat_i, lon_i, _fig_names, data_2d_cubes, model_ba_2d_data, ref_2d_data
+):
+    n96e_lats[lat_i]
+    n96e_lons[lon_i]
+
+    _fig_savepath = _fig_names[(lat_i, lon_i)]
+
+    N_plots = len(data_2d_cubes) + 1  # +1 for the BA plots.
+    ncols = 5
+    nrows = math.ceil(N_plots / ncols)
+
+    loc_fig, loc_axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 3 * nrows))
+    loc_axes.ravel()[0].plot(model_ba_2d_data[:, lat_i, lon_i], label="model")
+    loc_axes.ravel()[0].plot(ref_2d_data[:, lat_i, lon_i], label="ref")
+    loc_axes.ravel()[0].set_title("BA")
+    loc_axes.ravel()[0].legend()
+
+    _plotted_legends = set()
+
+    for (j, (name, cube)) in enumerate(data_2d_cubes.items()):
+        loc_ax = loc_axes.ravel()[j + 1]
+        loc_ax.set_title(name)
+        loc_ax.grid()
+
+        if len(cube.shape) == 3:
+            loc_ax.plot(cube[:, lat_i, lon_i].data)
+        elif len(cube.shape) == 4:
+            if cube.shape[1] == 3:
+                labels = pft_group_names
+                colors = plt.get_cmap("tab10").colors
+            else:
+                labels = pft_acronyms[PFTs.VEG13]
+                colors = plt.get_cmap("tab20").colors
+
+            _cube_n = min(13, cube.shape[1])
+
+            for k in range(_cube_n):
+                loc_ax.plot(cube[:, k, lat_i, lon_i].data, label=labels[k], c=colors[k])
+
+            if _cube_n not in _plotted_legends:
+                _legend_kwargs = dict(
+                    loc="center left",
+                    bbox_transform=loc_fig.transFigure,
+                )
+                _x_coord = 0.99
+                if _cube_n == 3:
+                    loc_ax.legend(bbox_to_anchor=[_x_coord, 0.8], **_legend_kwargs)
+                else:
+                    loc_ax.legend(bbox_to_anchor=[_x_coord, 0.3], **_legend_kwargs)
+                _plotted_legends.add(_cube_n)
+
+        else:
+            print(f"Unsupported shape: {cube.shape}")
+
+    for loc_ax in loc_axes.ravel()[N_plots:]:
+        loc_ax.set_axis_off()
+
+    # NOTE Most time is spent here.
+    loc_fig.savefig(_fig_savepath, dpi=80, bbox_inches="tight")
+    plt.close(loc_fig)
+
+
+def _loc_plot(
+    _fig_names,
+    data_2d_cubes,
+    model_ba_2d_data,
+    ref_2d_data,
+    loc_plot_infos: list[LocPlotIterInfo],
+    pos: int = 1,
+):
+    for loc_plot_info in tqdm(
+        loc_plot_infos, smoothing=1, miniters=1, position=pos, desc="Loc plots"
+    ):
+        lat_i = loc_plot_info.lat_i
+        lon_i = loc_plot_info.lon_i
+        _single_loc_plot(
+            lat_i,
+            lon_i,
+            _fig_names,
+            data_2d_cubes,
+            model_ba_2d_data,
+            ref_2d_data,
+        )
+
+
+def plot_locs_graphs(
     *,
     model_ba_2d_data,
     ref_2d_data,
@@ -118,113 +256,94 @@ def plot_phase_diff_locs(
     exp_key,
     data_2d_cubes,
 ):
-    if save_dir is not None:
-        save_dir.mkdir(exist_ok=True, parents=False)
-        save_dir = save_dir / exp_key
-        save_dir.mkdir(exist_ok=True, parents=False)
+    save_dir.mkdir(exist_ok=True, parents=False)
+    save_dir = save_dir / exp_key
+    save_dir.mkdir(exist_ok=True, parents=False)
 
-    fig, ax = plot_phase_diff_map(
-        phase_diff=phase_diff, title=title, label=label, figsize=(24, 10)
+    _valid_locs = []
+    _plot_ids = {}
+    for lat_i, lon_i in np.ndindex(*phase_diff.shape):
+        if phase_diff.mask[lat_i, lon_i]:
+            continue
+        _valid_locs.append((lat_i, lon_i))
+        _plot_ids[(lat_i, lon_i)] = f"{lat_i}_{lon_i}"
+
+    _fig_names = {}
+    _all_existing_filenames = set(
+        _path.with_suffix("").name for _path in save_dir.glob("*")
+    )
+    for _loc_key, _lat_lon_id in _plot_ids.items():
+        _fig_filename = f"{_lat_lon_id}_{exp_key}"
+        if _fig_filename not in _all_existing_filenames:
+            _fig_names[_loc_key] = save_dir / _fig_filename
+
+    # Processes with manual batching.
+    workers = 6
+
+    _all_futures = []
+
+    all_loc_plot_infos = []
+    all_valid_loc_plot_infos = []
+
+    for (lat_i, lon_i) in _valid_locs:
+        assert not phase_diff.mask[lat_i, lon_i]
+        _lat_lon_id = _plot_ids[(lat_i, lon_i)]
+        all_valid_loc_plot_infos.append(
+            LocPlotIterInfo(
+                lat_i=lat_i,
+                lon_i=lon_i,
+            )
+        )
+        if (lat_i, lon_i) not in _fig_names:
+            continue
+
+        all_loc_plot_infos.append(
+            LocPlotIterInfo(
+                lat_i=lat_i,
+                lon_i=lon_i,
+            )
+        )
+
+    _all_locs_overall_plot(
+        save_dir=save_dir,
+        exp_key=exp_key,
+        plot_ids=_plot_ids,
+        phase_diff=phase_diff,
+        title=title,
+        label=label,
+        loc_plot_infos=all_valid_loc_plot_infos,
     )
 
-    valid_phase_diffs = np.ma.getdata(phase_diff)[~np.ma.getmaskarray(phase_diff)]
-    unique_phase_diffs = list(np.unique(valid_phase_diffs))
+    if len(all_loc_plot_infos) > 0:
+        _batch_n = math.ceil(len(all_loc_plot_infos) / workers)
 
-    plotted_coord_indices = []
-
-    for i in range(40):
-        target_phase_diff = unique_phase_diffs[-i]
-        lat_indices, lon_indices = np.where(phase_diff == target_phase_diff)
-
-        for lat_i, lon_i in zip(lat_indices, lon_indices):
-            lat = n96e_lats[lat_i]
-            lon = n96e_lons[lon_i]
-
-            if plotted_coord_indices and (
-                np.min(
-                    np.sum(
-                        np.abs(
-                            np.array(plotted_coord_indices) - np.array([lat_i, lon_i])
-                        ),
-                        axis=1,
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            for _worker_i in range(workers):
+                _all_futures.append(
+                    executor.submit(
+                        _loc_plot,
+                        _fig_names,
+                        data_2d_cubes,
+                        model_ba_2d_data,
+                        ref_2d_data,
+                        all_loc_plot_infos[
+                            _worker_i * _batch_n : (_worker_i + 1) * _batch_n
+                        ],
+                        pos=_worker_i + 1,
                     )
                 )
-                <= 3
+
+            for _f in tqdm(
+                as_completed(_all_futures),
+                total=len(_all_futures),
+                desc="Plotting all locs",
+                smoothing=1,
+                miniters=1,
+                position=0,
             ):
-                continue
+                _f.result()
 
-            plotted_coord_indices.append((lat_i, lon_i))
-
-            ax.plot(
-                lon,
-                lat,
-                marker="o",
-                markerfacecolor="None",
-                markeredgecolor="red",
-                markersize=8,
-                transform=ccrs.PlateCarree(),
-                alpha=0.7,
-            )
-            text_transform = offset_copy(
-                ccrs.PlateCarree()._as_mpl_transform(ax), units="dots", x=40
-            )
-            ax.text(
-                lon,
-                lat,
-                i,
-                horizontalalignment="left",
-                transform=text_transform,
-                bbox=dict(
-                    boxstyle="square,pad=0", facecolor="white", alpha=0.7, ec="grey"
-                ),
-            )
-
-            N_plots = len(data_2d_cubes) + 1  # +1 for the BA plots.
-            ncols = 5
-            nrows = math.ceil(N_plots / ncols)
-
-            loc_fig, loc_axes = plt.subplots(
-                nrows, ncols, figsize=(3 * ncols, 3 * nrows)
-            )
-            loc_axes.ravel()[0].plot(model_ba_2d_data[:, lat_i, lon_i], label="model")
-            loc_axes.ravel()[0].plot(ref_2d_data[:, lat_i, lon_i], label="ref")
-            loc_axes.ravel()[0].set_title("BA")
-            loc_axes.ravel()[0].legend()
-
-            for (j, (name, cube)) in enumerate(data_2d_cubes.items()):
-                loc_ax = loc_axes.ravel()[j + 1]
-                loc_ax.set_title(name)
-
-                if len(cube.shape) == 3:
-                    loc_ax.plot(cube[:, lat_i, lon_i].data)
-                elif len(cube.shape) == 4:
-                    if cube.shape[1] == 3:
-                        labels = pft_group_names
-                        colors = plt.get_cmap("tab10").colors
-                    else:
-                        labels = pft_acronyms[PFTs.VEG13]
-                        colors = plt.get_cmap("tab20").colors
-                    for k in range(min(13, cube.shape[1])):
-                        loc_ax.plot(
-                            cube[:, k, lat_i, lon_i].data, label=labels[k], c=colors[k]
-                        )
-                    loc_ax.legend()
-                else:
-                    print(f"Unsupported shape: {cube.shape}")
-
-            for loc_ax in loc_axes.ravel()[N_plots:]:
-                loc_ax.set_axis_off()
-
-            # TODO Maybe combine plots with plots of the model response to individual
-            # variables, e.g. as aggregated as part of the GAM analysis scripts.
-
-            if save_dir is not None:
-                loc_fig.savefig(save_dir / f"{i}_{exp_key}.pdf")
-            plt.close(loc_fig)
-
-    if save_dir is not None:
-        fig.savefig(save_dir / f"phase_diff_locs_{exp_key}.pdf")
-    plt.close(fig)
+    print("Done plotting all locs.")
 
 
 def plotting(
@@ -292,7 +411,7 @@ def plotting(
     if save_dir is not None:
         ba_hist_dir = save_dir / "BA_hist"
         ba_hist_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_hist_dir / f"hist_{exp_key}.pdf")
+        plt.savefig(ba_hist_dir / f"hist_{exp_key}")
     plt.close()
 
     # Regional BA histograms.
@@ -337,7 +456,7 @@ def plotting(
     if save_dir is not None:
         ba_reg_hist_dir = save_dir / "BA_reg_hist"
         ba_reg_hist_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_reg_hist_dir / f"reg_hists_{exp_key}.pdf")
+        plt.savefig(ba_reg_hist_dir / f"reg_hists_{exp_key}")
     plt.close()
 
     # Global BA map with log bins.
@@ -345,7 +464,7 @@ def plotting(
     if save_dir is not None:
         ba_map_log_dir = save_dir / "BA_map_log"
         ba_map_log_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_map_log_dir / f"BA_map_log_{exp_key}.pdf")
+        plt.savefig(ba_map_log_dir / f"BA_map_log_{exp_key}")
     plt.close()
 
     # Global BA map with linear bins.
@@ -353,7 +472,7 @@ def plotting(
     if save_dir is not None:
         ba_map_lin_dir = save_dir / "BA_map_lin"
         ba_map_lin_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_map_lin_dir / f"BA_map_lin_{exp_key}.pdf")
+        plt.savefig(ba_map_lin_dir / f"BA_map_lin_{exp_key}")
     plt.close()
 
     # Global BA map with linear bins and arcsinh transform.
@@ -365,7 +484,7 @@ def plotting(
     if save_dir is not None:
         ba_map_arcsinh_dir = save_dir / "BA_map_arcsinh"
         ba_map_arcsinh_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(ba_map_arcsinh_dir / f"BA_map_arcsinh_{exp_key}.pdf")
+        plt.savefig(ba_map_arcsinh_dir / f"BA_map_arcsinh_{exp_key}")
     plt.close()
 
     # Global phase map plot.
@@ -376,7 +495,7 @@ def plotting(
     if save_dir is not None:
         phase_map_dir = save_dir / "phase_map"
         phase_map_dir.mkdir(exist_ok=True, parents=False)
-        plt.savefig(phase_map_dir / f"phase_map_{exp_key}.pdf")
+        plt.savefig(phase_map_dir / f"phase_map_{exp_key}")
     plt.close()
 
     # Phase difference (relative to GFED4) plots.
@@ -400,7 +519,7 @@ def plotting(
         if save_dir is not None:
             phase_diff_hist_dir = save_dir / "phase_diff_hist"
             phase_diff_hist_dir.mkdir(exist_ok=True, parents=False)
-            plt.savefig(phase_diff_hist_dir / f"phase_diff_hist_{exp_key}.pdf")
+            plt.savefig(phase_diff_hist_dir / f"phase_diff_hist_{exp_key}")
         plt.close()
 
         # Regional phase difference histograms.
@@ -431,7 +550,7 @@ def plotting(
         if save_dir is not None:
             reg_phase_diff_hist_dir = save_dir / "reg_phase_diff_hist"
             reg_phase_diff_hist_dir.mkdir(exist_ok=True, parents=False)
-            plt.savefig(reg_phase_diff_hist_dir / f"reg_phase_diff_hists_{exp_key}.pdf")
+            plt.savefig(reg_phase_diff_hist_dir / f"reg_phase_diff_hists_{exp_key}")
         plt.close()
 
         # Global phase difference map.
@@ -439,18 +558,17 @@ def plotting(
         if save_dir is not None:
             phase_diff_map_dir = save_dir / "phase_diff_map"
             phase_diff_map_dir.mkdir(exist_ok=True, parents=False)
-            plt.savefig(phase_diff_map_dir / f"phase_diff_map_{exp_key}.pdf")
+            plt.savefig(phase_diff_map_dir / f"phase_diff_map_{exp_key}")
         plt.close()
 
         if data_2d_cubes is not None:
-            # Global phase difference map with focus on individual locations.
-            plot_phase_diff_locs(
+            plot_locs_graphs(
                 model_ba_2d_data=model_ba_2d_data,
                 ref_2d_data=ref_2d_data,
                 phase_diff=phase_diff,
                 title=title,
                 label=xlabel,
-                save_dir=save_dir / "phase_diff_locs",
+                save_dir=save_dir / "all_locs",
                 exp_key=exp_key,
                 data_2d_cubes=data_2d_cubes,
             )

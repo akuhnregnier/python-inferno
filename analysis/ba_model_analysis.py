@@ -8,6 +8,7 @@ from functools import partial
 from itertools import islice
 from operator import itemgetter
 from pathlib import Path
+from warnings import filterwarnings
 
 import numpy as np
 from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
@@ -37,6 +38,11 @@ from python_inferno.utils import (
     memoize,
     temporal_processing,
 )
+
+filterwarnings("ignore", ".*divide by zero.*")
+filterwarnings("ignore", ".*invalid units.*")
+filterwarnings("ignore", ".*may not be fully.*")
+filterwarnings("ignore", ".*axes.*")
 
 
 @cache(dependencies=[load_data, temporal_processing])
@@ -124,6 +130,8 @@ if __name__ == "__main__":
         "-n", type=int, help="method index (-1 selects all; default)", default=-1
     )
     args = parser.parse_args()
+
+    assert args.p == 1, "Loc plotting always uses multiprocessing too."
 
     exclude_plot_keys = []
     if args.no_phase_diff_locs:
