@@ -36,6 +36,22 @@ def nme_simple(*, obs, pred):
     return err
 
 
+def individual_nme(*, obs, pred):
+    """Individual normalised mean error.
+
+    Args:
+        obs (array-like): Observations.
+        pred (array-like): Predictions.
+
+    """
+    obs = np.asarray(obs)
+    pred = np.asarray(pred)
+    denom = np.mean(np.abs(obs - np.mean(obs)))
+
+    abs_diff = np.abs(pred - obs)
+    return abs_diff / denom
+
+
 @mark_dependency
 def nme(*, obs, pred, return_std=False):
     """Normalised mean error.
@@ -106,6 +122,49 @@ def calculate_phase_2d(x):
     for i in range(x.shape[1]):
         phase[i] = calculate_phase(x[:, i])
     return phase
+
+
+def individual_mpd(*, obs, pred):
+    """Individual MPD errors.
+
+    Args:
+        obs (array-like): Observations.
+        pred (array-like): Predictions.
+
+    """
+    if len(obs.shape) == 2 and len(pred.shape) == 2:
+        phase_func = calculate_phase
+    elif len(obs.shape) == 3 and len(pred.shape) == 3:
+        phase_func = calculate_phase_2d
+    else:
+        raise ValueError(f"Shape should be (12, N), got {obs.shape} and {pred.shape}.")
+    if obs.shape[0] != 12 or pred.shape[0] != 12:
+        raise ValueError(f"Shape should be (12, N), got {obs.shape} and {pred.shape}.")
+
+    # Ignore those locations with all 0s in either `obs` or `pred`.
+    def close_func(a, b):
+        return np.all(np.isclose(a, b, rtol=0, atol=1e-15), axis=0)
+
+    ignore_mask = (
+        close_func(np.ma.getdata(obs), 0) | close_func(np.ma.getdata(pred), 0)
+    ).reshape(1, *(obs.shape[1:]))
+
+    combined_mask = (
+        np.any(np.ma.getmaskarray(pred), axis=0)
+        | np.any(np.ma.getmaskarray(obs), axis=0)
+        | ignore_mask
+    )
+
+    def add_mask(arr):
+        return np.ma.MaskedArray(np.ma.getdata(arr), mask=combined_mask)
+
+    phase_diff = phase_func(x=pred) - phase_func(x=obs)
+    # assert obs.shape == pred.shape
+    # all_phases = phase_func(x=np.concatenate((pred, obs), axis=1))
+    # phase_diff = all_phases[: obs.shape[1]] - all_phases[obs.shape[1] :]
+
+    vals = add_mask(np.arccos(np.cos(phase_diff)))
+    return (1 / np.pi) * np.ma.getdata(vals)[~np.ma.getmaskarray(vals)]
 
 
 @mark_dependency

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from functools import reduce
 from operator import add
+from pathlib import Path
 
 import cartopy.crs as ccrs
 import iris
@@ -10,33 +11,34 @@ from jules_output_analysis.data import cube_1d_to_2d
 from jules_output_analysis.utils import PFTs, pft_acronyms, pft_names
 from wildfires.analysis import cube_plotting
 
+from python_inferno.configuration import N_pft_groups, pft_group_names, pft_groups
 from python_inferno.data import load_data
 
 if __name__ == "__main__":
     (
-        t1p5m_tile,
-        q1p5m_tile,
-        pstar,
-        sthu_soilt_single,
+        _,
+        _,
+        _,
+        _,
         frac,
-        c_soil_dpm_gb,
-        c_soil_rpm_gb,
-        canht,
-        ls_rain,
-        con_rain,
-        fuel_build_up,
-        fapar_diag_pft,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
         jules_lats,
         jules_lons,
-        gfed_ba_1d,
-        obs_fapar_1d,
-        obs_fuel_build_up_1d,
-        jules_ba_gb,
-        jules_time_coord,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
     ) = load_data(N=None)
-
-    # Define the ignition method (`ignition_method`).
-    ignition_method = 1
 
     cube = iris.cube.Cube(np.expand_dims(np.mean(frac, axis=0), 1))
     cube.add_aux_coord(jules_lats, data_dims=(1, 2))
@@ -75,10 +77,9 @@ if __name__ == "__main__":
 
     fig.subplots_adjust(bottom=0.07, wspace=0.03, hspace=-0.4)
 
-    # plt.show()
+    fig.savefig(Path("~/tmp/jules_all_mean_frac").expanduser())
 
     # Separate the PFTs into groups
-    pft_groups = ((0, 1, 2, 3, 4), (5, 6, 7, 8, 9, 10, 11, 12), (13, 14, 15, 16))
 
     group_cubes = []
     for pft_group in pft_groups:
@@ -88,7 +89,9 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(
         1, len(pft_groups), subplot_kw=dict(projection=ccrs.Robinson()), figsize=(15, 6)
     )
-    for ax, group_cube, pft_group in zip(axes.ravel(), group_cubes, pft_groups):
+    for ax, group_cube, pft_group_name in zip(
+        axes.ravel(), group_cubes, pft_group_names
+    ):
         cube_plotting(
             group_cube,
             ax=ax,
@@ -106,11 +109,18 @@ if __name__ == "__main__":
                 else False
             ),
         )
-        ax.set_title("+".join(pft_acronyms[PFTs.VEG13_ALL][i] for i in pft_group))
+        ax.set_title(pft_group_name)
 
-    total_group_frac = group_cubes[0] + group_cubes[1]
+    fig.savefig(Path("~/tmp/jules_grouped_frac").expanduser())
+
+    assert len(group_cubes) == N_pft_groups == 3
+
     stacked = np.vstack(
-        (group_cubes[0].data[np.newaxis], group_cubes[1].data[np.newaxis])
+        (
+            group_cubes[0].data[np.newaxis],
+            group_cubes[1].data[np.newaxis],
+            group_cubes[2].data[np.newaxis],
+        )
     )
     dominant = np.ma.MaskedArray(
         np.argmax(stacked, axis=0), mask=np.sum(stacked, axis=0) < 0.1
@@ -123,14 +133,11 @@ if __name__ == "__main__":
         title="Dominant PFT group",
         colorbar_kwargs=dict(label="PFT Group"),
         return_cbar=True,
-        boundaries=np.arange(3, dtype=np.float64) - 0.5,
+        boundaries=np.arange(4, dtype=np.float64) - 0.5,
     )
     cbar.set_ticks(np.arange(3, dtype=np.float64))
-    cbar.set_ticklabels(
-        [
-            "+".join(pft_acronyms[PFTs.VEG13_ALL][i] for i in pft_groups[0]),
-            "+".join(pft_acronyms[PFTs.VEG13_ALL][i] for i in pft_groups[1]),
-        ]
-    )
+    cbar.set_ticklabels(pft_group_names)
 
-    plt.show()
+    fig.savefig(Path("~/tmp/jules_dominant_group_frac").expanduser())
+
+    plt.close("all")

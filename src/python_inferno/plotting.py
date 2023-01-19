@@ -574,6 +574,71 @@ def plotting(
         logger.debug("'ref_2d_data' not given.")
 
 
+def plot_collated_abs_arcsinh_diffs(*, plot_data_dict, save_dir, save_name):
+    # Global phase difference maps.
+    use_style()
+
+    _global_min = np.inf
+    _global_max = -np.inf
+
+    for data in plot_data_dict.values():
+        if (_min := np.min(data)) < _global_min:
+            _global_min = _min
+        if (_max := np.max(data)) > _global_max:
+            _global_max = _max
+
+    bin_edges = np.linspace(_global_min, _global_max, 10)
+
+    cmap, norm = from_levels_and_colors(
+        levels=list(bin_edges),
+        colors=plt.get_cmap("inferno")(np.linspace(0, 1, len(bin_edges) - 1)),
+        extend="neither",
+    )
+
+    ncols = 2
+    nrows = math.ceil(len(plot_data_dict) / ncols)
+
+    with custom_axes(
+        ncols=ncols,
+        nrows=nrows,
+        nplots=len(plot_data_dict),
+        height=1.9 * nrows,
+        width=6.2,
+        h_pad=0.04,
+        w_pad=0.02,
+        cbar_pos="bottom",
+        cbar_height=0.012,
+        cbar_width=0.4,
+        cbar_h_pad=0.03,
+        cbar_w_pad=0,
+        projection=ccrs.Robinson(),
+    ) as (fig, axes, cax):
+        for (i, (ax, (title, _data))) in enumerate(zip(axes, plot_data_dict.items())):
+            cube_plotting(
+                _data,
+                title="",
+                fig=fig,
+                ax=ax,
+                cmap=cmap,
+                norm=norm,
+                colorbar_kwargs=dict(
+                    cax=cax,
+                    orientation="horizontal",
+                    label="Abs Arcsinh Diff",
+                    format="%.1f",
+                )
+                if i == 0
+                else False,
+            )
+
+            if title in scheme_name_map:
+                ax.set_title(f"SINFERNO-{scheme_name_map[title]}")
+            else:
+                ax.set_title(title)
+
+        fig.savefig(save_dir / save_name)
+
+
 def plot_collated_phase_diffs(*, phase_diff_dict, save_dir, save_name):
     # Global phase difference maps.
     use_style()

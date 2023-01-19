@@ -1,14 +1,89 @@
 # -*- coding: utf-8 -*-
 import math
+from collections import namedtuple
 from string import ascii_lowercase
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from scipy.stats import ttest_ind
 
 from .configuration import scheme_name_map
 from .data import get_gfed_regions, get_pnv_mega_plot_data
-from .metrics import calculate_resampled_errors, mpd, nme
+from .metrics import (
+    calculate_resampled_errors,
+    individual_mpd,
+    individual_nme,
+    mpd,
+    nme,
+)
 from .plotting import broken_y_axis, get_fig_ax, use_style
+
+T_Result = namedtuple("T_Result", ("n_deg", "pvalue", "statistic", "alternative"))
+
+
+def calculate_t_stats(error_dict, alternative=None):
+    result_dict = {}
+
+    _items = list(error_dict.items())
+
+    # Calculate for all pairs, with single-tailed test!
+
+    for (i, (key, data)) in enumerate(_items):
+        for key2, data2 in _items:
+            if key == key2:
+                continue
+
+            if alternative is None:
+                _alternative = "two-sided"
+            else:
+                assert alternative == "less"
+                _alternative = "less"
+
+            t_result = ttest_ind(
+                data, data2, nan_policy="raise", alternative=_alternative
+            )
+            result_dict[(key, key2)] = T_Result(
+                n_deg=data.shape[0] + data2.shape[0] - 2,
+                pvalue=t_result.pvalue,
+                statistic=t_result.statistic,
+                alternative=f"{key} {_alternative} {key2}",
+            )
+
+    return result_dict
+
+
+def get_full_dfs(result_dict):
+    output = {}
+    _keys = ("A1", "A2", "B1", "B2", "standard INFERNO")
+    for result_key in T_Result._fields:
+        _df_dict = {}
+        for _key in _keys:
+            _df_dict[_key] = {
+                _k: getattr(
+                    result_dict.get((_key, _k), result_dict.get((_k, _key))),
+                    result_key,
+                    None,
+                )
+                for _k in _keys
+            }
+        output[result_key] = pd.DataFrame(_df_dict).T
+    return output
+
+
+def print_t_dfs(t_dfs: dict[str, pd.DataFrame], title: str) -> None:
+    print()
+    print("-" * 50)
+    print(" ", title)
+    print("-" * 50)
+    print()
+
+    for key, df in t_dfs.items():
+        print()
+        print(" - ", key)
+        print(df)
+
+    print()
 
 
 def error_hist(
@@ -186,12 +261,38 @@ def null_model_analysis(
     for key, data in comp_data.items():
         mpd_error_dict[key] = mpd(obs=reference_data, pred=data, return_std=True)
 
+    # Individual errors for t-test
+
+    sample_nme_error_dict = {}
+    sample_mpd_error_dict = {}
+
+    for key, data in valid_comp_data.items():
+        sample_nme_error_dict[scheme_name_map.get(key, key)] = individual_nme(
+            obs=valid_reference_data, pred=data
+        )
+    for key, data in comp_data.items():
+        sample_mpd_error_dict[scheme_name_map.get(key, key)] = individual_mpd(
+            obs=reference_data, pred=data
+        )
+
+    t_result_nme_dict = calculate_t_stats(sample_nme_error_dict)
+    t_result_mpd_dict = calculate_t_stats(sample_mpd_error_dict, alternative="less")
+
+    t_nme_dfs = get_full_dfs(t_result_nme_dict)
+    t_mpd_dfs = get_full_dfs(t_result_mpd_dict)
+
+    print_t_dfs(t_nme_dfs, "NME")
+    print_t_dfs(t_mpd_dfs, "MPD")
+
+    # Plotting.
+
     single_boxplot_figsize = (4, 2.5)
 
     # NME Errors.
     shared_error_hist_kwargs = dict(
         errors=nme_errors, error_dict=nme_error_dict, save_path=None
     )
+
     broken_y_axis(
         figsize=single_boxplot_figsize,
         ylabel="NME error (std of mean)",

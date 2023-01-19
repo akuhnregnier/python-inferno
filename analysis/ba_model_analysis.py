@@ -15,7 +15,7 @@ from jules_output_analysis.data import cube_1d_to_2d, get_1d_data_cube
 from loguru import logger
 from tqdm import tqdm
 
-from python_inferno.ba_model import BAModel, calculate_scores
+from python_inferno.ba_model import ARCSINH_FACTOR, BAModel, calculate_scores
 from python_inferno.cache import cache
 from python_inferno.configuration import land_pts
 from python_inferno.data import load_data, load_jules_lats_lons
@@ -25,6 +25,7 @@ from python_inferno.model_params import get_model_params, plot_param_histograms
 from python_inferno.plotting import (
     collated_ba_log_plot,
     phase_calc,
+    plot_collated_abs_arcsinh_diffs,
     plot_collated_phase_diffs,
     plotting,
     use_style,
@@ -300,6 +301,24 @@ if __name__ == "__main__":
             phase_diff_dict=phase_diff_dict,
             save_dir=save_dir,
             save_name="collated_phase_diffs",
+        )
+    )
+
+    # Collated arcsinh-error map.
+    abs_diff_arcsinh_dict = {}
+    for exp_name, data in plot_data.items():
+        if exp_name == "GFED4":
+            continue
+        abs_diff_arcsinh_dict[exp_name] = np.abs(
+            np.arcsinh(ARCSINH_FACTOR * data["model_ba_2d_data"])
+            - np.arcsinh(ARCSINH_FACTOR * reference_obs)
+        )
+    futures.append(
+        executor.submit(
+            plot_collated_abs_arcsinh_diffs,
+            plot_data_dict=abs_diff_arcsinh_dict,
+            save_dir=save_dir,
+            save_name="collated_abs_arcsinh_diffs",
         )
     )
 
