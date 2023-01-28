@@ -99,10 +99,15 @@ from .cv import get_ba_cv_splits
 from .data import get_processed_climatological_data
 from .hyperopt import HyperoptSpace, get_space_template
 from .metrics import Metrics
+from .plotting import get_plot_name_map_total, plot_label_case
 from .space import generate_space_spec
 from .space_opt import calculate_split_loss, space_opt, split_min_space_opt
 
 Mode = Enum("Mode", ["R", "N"])
+
+
+def plot_text(x: str) -> str:
+    return plot_label_case(get_plot_name_map_total().get(x, x))
 
 
 @mark_dependency
@@ -1242,7 +1247,7 @@ def vis_result(
 
     for (cat_i, (x, (category, box_dict))) in enumerate(zip(cat_xs, boxes.items())):
         ax.annotate(
-            category,
+            plot_text(category),
             (x + cat_width / 2.0, cat_height + nested_padding),
             color="k",
             fontsize=14,
